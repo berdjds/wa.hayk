@@ -1,0 +1,15 @@
+node_modules
+.next
+.git
+.env
+.env*.local
+dev.db
+*.db-journal
+.wwebjs_auth
+.wwebjs_cache
+public/uploads
+Dockerfile
+.dockerignore
+doc
+*.md
+*.tar.gz

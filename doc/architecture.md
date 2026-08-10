@@ -1,0 +1,84 @@
+# Architecture
+
+## Tech Stack
+
+| Layer | Technology | Purpose |
+|-------|------------|---------|
+| Framework | Next.js 14 (App Router) | Web application framework |
+| Language | TypeScript 5 | Type safety |
+| Styling | TailwindCSS 3 + shadcn/ui-style Radix components | UI styling and components |
+| Authentication | NextAuth.js 4 (credentials) | User sessions |
+| Database | SQLite via Prisma 5 | Data persistence |
+| Real-time | Socket.io | Live message and state updates |
+| WhatsApp | whatsapp-web.js + Puppeteer | WhatsApp Web automation |
+| Build runner | tsx | Run TypeScript server directly |
+
+## Directory Structure
+
+```
+WAControl/
+├── app/                    # Next.js App Router pages and API routes
+│   ├── (pages)
+│   │   ├── page.tsx        # Root redirect
+│   │   ├── login/          # Login page
+│   │   ├── admin/          # Admin dashboard
+│   │   └── dashboard/      # Chat dashboard
+│   └── api/                # API route handlers
+│       ├── auth/[...nextauth]/
+│       ├── chats/
+│       ├── messages/
+│       ├── send/
+│       ├── users/
+│       ├── logs/
+│       └── whatsapp/status/
+├── components/             # React components
+│   ├── ui/                 # shadcn/ui base components
+│   ├── admin/              # Admin dashboard UI
+│   └── dashboard/          # Chat dashboard UI
+├── lib/                    # Core business logic
+│   ├── auth.ts             # NextAuth configuration
+│   ├── prisma.ts           # Prisma singleton
+│   ├── utils.ts            # Tailwind class merging
+│   └── whatsapp.ts         # WhatsApp client service
+├── hooks/                  # React hooks
+│   └── useSocket.ts        # Socket.io client hook
+├── prisma/                 # Prisma schema and seed
+│   ├── schema.prisma
+│   └── seed.ts
+├── server.ts               # Custom Next.js + Socket.io server
+└── next.config.js          # Next.js configuration
+```
+
+## Application Flow
+
+1. **Startup**: `server.ts` prepares the Next.js app, creates an HTTP server, attaches Socket.io, and initializes the WhatsApp client after a short delay.
+2. **Authentication**: Users sign in with email and password. NextAuth validates credentials against the `User` table and issues a JWT session.
+3. **WhatsApp Connection**: The admin scans a QR code. The `whatsapp-web.js` client authenticates and stores session data in `.wwebjs_auth/`.
+4. **Message Handling**: Incoming and outgoing messages are persisted to SQLite and broadcast via Socket.io.
+5. **Dashboard**: Authenticated users view chats, send messages, and admins manage users and connection state.
+
+## Server Architecture
+
+The application uses a custom server entry point (`server.ts`) instead of the default Next.js CLI. This allows Socket.io to share the same HTTP server as Next.js.
+
+```
+HTTP Server
+├── Next.js request handler
+└── Socket.io server (path: /api/socket)
+    └── WhatsApp service events (message, chat_update, whatsapp_state)
+```
+
+## Data Flow for Incoming Messages
+
+1. WhatsApp Web emits a `message_create` event.
+2. `lib/whatsapp.ts` receives the message, downloads media if present, and saves it to `public/uploads/`.
+3. The chat and message are upserted in Prisma.
+4. Socket.io emits `message` and `chat_update` events to connected clients.
+5. The dashboard UI updates the chat list and message thread.
+
+## Data Flow for Outgoing Messages
+
+1. The user sends a message via the dashboard.
+2. The UI calls `POST /api/send`.
+3. The server validates the session, checks the WhatsApp client is ready, and calls `sendWhatsAppMessage`.
+4. `message_create` fires, and the message is persisted like any other message.
