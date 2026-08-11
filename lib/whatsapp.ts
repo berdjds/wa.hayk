@@ -41,46 +41,6 @@ async function ensureUploadDir() {
   }
 }
 
-async function wait(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-async function getChatsWithRetry(client: Client, retries = 3, intervalMs = 5000): Promise<any[]> {
-  for (let i = 0; i < retries; i++) {
-    try {
-      return await client.getChats();
-    } catch (err: any) {
-      console.error(`[WhatsApp] getChats attempt ${i + 1} failed:`, err?.message || err);
-      if (i < retries - 1) await wait(intervalMs);
-    }
-  }
-  return [];
-}
-
-async function syncExistingChatsAndMessages(client: Client) {
-  try {
-    console.log("[WhatsApp] starting chat sync in 60s...");
-    await wait(60000);
-    const chats = await getChatsWithRetry(client, 5, 15000);
-    console.log(`[WhatsApp] found ${chats.length} chats to sync`);
-    for (const chat of chats) {
-      try {
-        const remoteJid = chat.id._serialized;
-        console.log(`[WhatsApp] syncing chat ${remoteJid}`);
-        const messages = await chat.fetchMessages({ limit: 50 });
-        for (const msg of messages) {
-          await persistMessage(msg, msg.fromMe);
-        }
-      } catch (err) {
-        console.error(`[WhatsApp] sync chat error:`, err);
-      }
-    }
-    console.log("[WhatsApp] chat sync complete");
-  } catch (err) {
-    console.error("[WhatsApp] syncExistingChatsAndMessages error:", err);
-  }
-}
-
 async function upsertChat(remoteJid: string, name?: string | null, profilePicUrl?: string | null) {
   const existing = await prisma.chat.findUnique({
     where: { remoteJid },
@@ -263,11 +223,10 @@ export async function initializeWhatsApp() {
       create: { sessionId: "default", connected: true, info: state.info },
     });
     state.io?.emit("whatsapp_state", getWhatsAppState());
-    console.log("[WhatsApp] client ready, starting background sync...");
-    // Sync existing chats/messages in the background without blocking ready state.
-    syncExistingChatsAndMessages(client).catch((err) =>
-      console.error("[WhatsApp] background sync error:", err)
-    );
+    console.log("[WhatsApp] client ready. Listening for new messages.");
+    // Note: historical chat loading via client.getChats() is unreliable in headless/Docker
+    // environments with this version of whatsapp-web.js, so we rely on real-time message_create
+    // events. Existing messages that arrived before the session connected will not sync.
   });
 
   client.on("disconnected", async (reason: any) => {
