@@ -59,9 +59,9 @@ async function getChatsWithRetry(client: Client, retries = 3, intervalMs = 5000)
 
 async function syncExistingChatsAndMessages(client: Client) {
   try {
-    console.log("[WhatsApp] starting chat sync in 15s...");
-    await wait(15000);
-    const chats = await getChatsWithRetry(client, 5, 10000);
+    console.log("[WhatsApp] starting chat sync in 60s...");
+    await wait(60000);
+    const chats = await getChatsWithRetry(client, 5, 15000);
     console.log(`[WhatsApp] found ${chats.length} chats to sync`);
     for (const chat of chats) {
       try {
