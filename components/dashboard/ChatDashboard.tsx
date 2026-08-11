@@ -2,13 +2,15 @@
 
 import { useEffect, useRef, useState } from "react";
 import axios from "axios";
-import { Send, Paperclip, Phone, RefreshCw, LogOut } from "lucide-react";
+import { Send, Paperclip, Phone, RefreshCw, LogOut, MessageSquarePlus } from "lucide-react";
 import { signOut } from "next-auth/react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useSocket } from "@/hooks/useSocket";
 import { useToast } from "@/components/ui/toast";
 
@@ -47,6 +49,9 @@ export default function ChatDashboard({ isAdmin }: { isAdmin: boolean }) {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [newChatOpen, setNewChatOpen] = useState(false);
+  const [newNumber, setNewNumber] = useState("");
+  const [newMessage, setNewMessage] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
@@ -57,6 +62,28 @@ export default function ChatDashboard({ isAdmin }: { isAdmin: boolean }) {
       setChats(res.data);
     } catch {
       toast("Failed to load chats", "error");
+    }
+  }
+
+  async function handleStartNewChat(e?: React.FormEvent) {
+    e?.preventDefault();
+    if (!newNumber.trim() || !newMessage.trim()) return;
+    const cleaned = newNumber.replace(/\D/g, "");
+    if (!cleaned) return;
+    const remoteJid = newNumber.includes("@") ? newNumber : `${cleaned}@c.us`;
+
+    setLoading(true);
+    try {
+      await axios.post("/api/send", { remoteJid, body: newMessage, type: "text" });
+      toast("Message sent", "success");
+      setNewChatOpen(false);
+      setNewNumber("");
+      setNewMessage("");
+      fetchChats();
+    } catch (err: any) {
+      toast(err?.response?.data?.error || "Failed to send message", "error");
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -188,6 +215,10 @@ export default function ChatDashboard({ isAdmin }: { isAdmin: boolean }) {
               Admin
             </Button>
           )}
+          <Button variant="outline" size="sm" onClick={() => setNewChatOpen(true)}>
+            <MessageSquarePlus className="mr-1 h-4 w-4" />
+            New message
+          </Button>
         </div>
         <div className="flex items-center gap-3">
           <Badge variant={connected ? "default" : "destructive"}>{connected ? "Socket connected" : "Socket offline"}</Badge>
@@ -309,6 +340,44 @@ export default function ChatDashboard({ isAdmin }: { isAdmin: boolean }) {
           )}
         </main>
       </div>
+
+      <Dialog open={newChatOpen} onOpenChange={setNewChatOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Send message to new number</DialogTitle>
+            <DialogDescription>Enter the phone number with country code and the message.</DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleStartNewChat} className="space-y-4">
+            <div>
+              <Label>Phone number</Label>
+              <Input
+                placeholder="37412345678"
+                value={newNumber}
+                onChange={(e) => setNewNumber(e.target.value)}
+                required
+              />
+            </div>
+            <div>
+              <Label>Message</Label>
+              <Textarea
+                placeholder="Type a message..."
+                value={newMessage}
+                onChange={(e) => setNewMessage(e.target.value)}
+                required
+                rows={3}
+              />
+            </div>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setNewChatOpen(false)}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={loading || !newNumber.trim() || !newMessage.trim()}>
+                Send
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -41,6 +41,29 @@ async function ensureUploadDir() {
   }
 }
 
+async function syncExistingChatsAndMessages(client: Client) {
+  try {
+    console.log("[WhatsApp] starting chat sync...");
+    const chats = await client.getChats();
+    console.log(`[WhatsApp] found ${chats.length} chats to sync`);
+    for (const chat of chats) {
+      try {
+        const remoteJid = chat.id._serialized;
+        console.log(`[WhatsApp] syncing chat ${remoteJid}`);
+        const messages = await chat.fetchMessages({ limit: 50 });
+        for (const msg of messages) {
+          await persistMessage(msg, msg.fromMe);
+        }
+      } catch (err) {
+        console.error(`[WhatsApp] sync chat error:`, err);
+      }
+    }
+    console.log("[WhatsApp] chat sync complete");
+  } catch (err) {
+    console.error("[WhatsApp] syncExistingChatsAndMessages error:", err);
+  }
+}
+
 async function upsertChat(remoteJid: string, name?: string | null, profilePicUrl?: string | null) {
   const existing = await prisma.chat.findUnique({
     where: { remoteJid },
@@ -66,8 +89,13 @@ async function persistMessage(msg: any, fromMe: boolean) {
   try {
     const chat = await msg.getChat();
     const remoteJid = chat.id._serialized;
-    const contact = msg.fromMe ? await chat.getContact() : await msg.getContact();
-    const name = contact?.pushname || contact?.name || chat.name || undefined;
+    let name: string | undefined;
+    try {
+      const contact = msg.fromMe ? await chat.getContact() : await msg.getContact();
+      name = contact?.pushname || contact?.name || chat.name || undefined;
+    } catch {
+      name = chat.name || remoteJid.split("@")[0];
+    }
 
     // Try to fetch profile picture for the chat once in a while
     let profilePicUrl: string | null = null;
@@ -218,6 +246,11 @@ export async function initializeWhatsApp() {
       create: { sessionId: "default", connected: true, info: state.info },
     });
     state.io?.emit("whatsapp_state", getWhatsAppState());
+    console.log("[WhatsApp] client ready, starting background sync...");
+    // Sync existing chats/messages in the background without blocking ready state.
+    syncExistingChatsAndMessages(client).catch((err) =>
+      console.error("[WhatsApp] background sync error:", err)
+    );
   });
 
   client.on("disconnected", async (reason: any) => {
@@ -234,6 +267,13 @@ export async function initializeWhatsApp() {
 
   client.on("message_create", async (msg: any) => {
     // Fires for both incoming and outgoing messages
+    console.log("[WhatsApp] message_create fired", msg.id?._serialized, msg.fromMe);
+    await persistMessage(msg, msg.fromMe);
+  });
+
+  client.on("message", async (msg: any) => {
+    // Backup handler for incoming messages
+    console.log("[WhatsApp] message event fired", msg.id?._serialized, msg.fromMe);
     await persistMessage(msg, msg.fromMe);
   });
 
