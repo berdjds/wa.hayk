@@ -45,13 +45,13 @@ async function wait(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function getChatsWithRetry(client: Client, retries = 3): Promise<any[]> {
+async function getChatsWithRetry(client: Client, retries = 3, intervalMs = 5000): Promise<any[]> {
   for (let i = 0; i < retries; i++) {
     try {
       return await client.getChats();
     } catch (err: any) {
       console.error(`[WhatsApp] getChats attempt ${i + 1} failed:`, err?.message || err);
-      if (i < retries - 1) await wait(5000);
+      if (i < retries - 1) await wait(intervalMs);
     }
   }
   return [];
@@ -59,9 +59,9 @@ async function getChatsWithRetry(client: Client, retries = 3): Promise<any[]> {
 
 async function syncExistingChatsAndMessages(client: Client) {
   try {
-    console.log("[WhatsApp] starting chat sync in 5s...");
-    await wait(5000);
-    const chats = await getChatsWithRetry(client);
+    console.log("[WhatsApp] starting chat sync in 15s...");
+    await wait(15000);
+    const chats = await getChatsWithRetry(client, 5, 10000);
     console.log(`[WhatsApp] found ${chats.length} chats to sync`);
     for (const chat of chats) {
       try {
