@@ -19,17 +19,21 @@ export async function POST(req: NextRequest) {
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   if (getWhatsAppState().state !== "ready") {
+    console.log("[API /send] rejected: WhatsApp not ready");
     return NextResponse.json({ error: "WhatsApp client not ready" }, { status: 503 });
   }
 
   const body = await req.json();
+  console.log("[API /send] request body:", body);
   const parsed = sendSchema.safeParse(body);
   if (!parsed.success) {
+    console.log("[API /send] validation failed:", parsed.error.errors);
     return NextResponse.json({ error: parsed.error.errors }, { status: 400 });
   }
 
   try {
-    await sendWhatsAppMessage(parsed.data);
+    const result = await sendWhatsAppMessage(parsed.data);
+    console.log("[API /send] sendWhatsAppMessage result:", result);
 
     await prisma.log.create({
       data: {

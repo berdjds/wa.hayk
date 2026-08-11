@@ -286,6 +286,7 @@ export async function sendWhatsAppMessage({
   mediaMimeType?: string;
   mediaFilename?: string;
 }) {
+  console.log("[WhatsApp] sendWhatsAppMessage called", { remoteJid, type });
   if (!state.client) throw new Error("WhatsApp client not initialized");
   if (state.state !== "ready") throw new Error("WhatsApp client not ready");
 
@@ -298,6 +299,7 @@ export async function sendWhatsAppMessage({
       const numberId = await state.client.getNumberId(chatId.replace("@c.us", ""));
       if (numberId && numberId._serialized) {
         finalChatId = numberId._serialized;
+        console.log("[WhatsApp] normalized number to", finalChatId);
       }
     } catch {
       // fall back to provided id
@@ -315,6 +317,7 @@ export async function sendWhatsAppMessage({
     message = await state.client.sendMessage(finalChatId, body || "");
   }
 
+  console.log("[WhatsApp] sendWhatsAppMessage sent message id:", message?.id?._serialized);
   return message;
 }
 
