@@ -43,6 +43,11 @@ The app already runs Chromium with `--no-sandbox`, which helps in containerized 
 - Check the server logs for `persistMessage error` messages.
 - Ensure the `Message` table exists: `npx prisma db pull` and compare with `prisma/schema.prisma`.
 - Restart the server if the WhatsApp Web page becomes unresponsive.
+- Make sure the WhatsApp mobile app is connected to the internet (it does not need to be open, but it must be online).
+
+## Older messages are not showing
+
+WAControl receives messages in real time while the WhatsApp session is `ready`. It does **not** backfill historical messages that were sent or received before the session became ready. This is the same behavior as opening WhatsApp Web in a browser.
 
 ## Messages are not sent
 

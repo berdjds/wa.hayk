@@ -6,6 +6,7 @@ A web dashboard to read and send WhatsApp messages using WhatsApp Web (QR-code l
 
 - **WhatsApp QR-code login** — scan the QR code with your phone to link the session.
 - **Real-time messaging** — incoming/outgoing messages sync via Socket.io.
+- **Send to new numbers** — start a chat and send messages to unsaved phone numbers from the dashboard.
 - **Text, image, voice, document** — send and view media messages.
 - **Admin panel** — manage WhatsApp connection, users, and logs.
 - **Role-based login** — admin and regular users.
@@ -47,8 +48,10 @@ A web dashboard to read and send WhatsApp messages using WhatsApp Web (QR-code l
 ## Important notes
 
 - **WhatsApp Web is not an official API.** Using it may violate WhatsApp's Terms of Service and can lead to account restrictions. For production, consider the official [WhatsApp Business Platform / Cloud API](https://business.whatsapp.com/products/business-platform).
+- **Real-time messages only.** The dashboard receives messages that arrive while the WhatsApp session is `ready`. Historical messages that were sent or received before the session connected are not backfilled.
+- **Your phone must be online.** The phone does not need to be open or in the foreground, but it must have an active internet connection to keep the WhatsApp Web session alive.
 - The first startup downloads a Chromium browser for Puppeteer. On Linux servers you may need to install additional system dependencies.
-- Keep `.wwebjs_auth/` and `.env` secret — they contain the WhatsApp session and admin credentials.
+- Keep `.wwebjs_auth/`, `.wwebjs_cache/`, `.env`, and the SQLite database secret — they contain the WhatsApp session and admin credentials.
 
 ## Environment variables
 

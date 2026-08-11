@@ -94,7 +94,7 @@ At least one parameter is required.
 
 #### POST /api/send
 
-Sends a WhatsApp message.
+Sends a WhatsApp message. Can be used to start a new chat with an unsaved number.
 
 **Access**: Any authenticated user.
 
@@ -111,7 +111,7 @@ Sends a WhatsApp message.
 }
 ```
 
-For text messages, only `remoteJid`, `body`, and `type` are required.
+For text messages to a new number, only `remoteJid`, `body`, and `type` are required. Use the full JID format (`<number>@c.us`) or just the number with country code and the server will format it.
 
 **Response**:
 

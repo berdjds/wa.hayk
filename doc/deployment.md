@@ -161,11 +161,14 @@ Append this service block to the existing `docker-compose.yml` on the VPS. It fo
 
 ### Notes
 
-- The SQLite database lives in `./wacontrol-data/dev.db` on the host.
+- The SQLite database lives in `./wacontrol-data/dev.db` on the host. Make sure the `DATABASE_URL` environment variable uses the absolute path `file:/app/data/dev.db` inside the container.
 - Uploaded media is stored in `./wacontrol-uploads/`.
 - The WhatsApp session is stored in `./wacontrol-auth/`; protect this directory.
 - The container exposes port `3000` and relies on the existing `web` Docker network and Traefik container.
 - WebSocket traffic for Socket.io uses path `/api/socket`; Traefik passes WebSocket upgrade headers automatically.
+- **Real-time messages only:** messages that arrive while the session is `ready` are saved and displayed. Older messages are not backfilled.
+- **Phone must be online:** the mobile device does not need to be open, but it must have an internet connection for the WhatsApp Web session to receive messages.
+- Use the dashboard **New message** button to send messages to unsaved phone numbers.
 
 ## Scaling Notes
 

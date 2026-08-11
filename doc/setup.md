@@ -72,9 +72,12 @@
 3. Wait for the WhatsApp QR code to appear.
 4. Open WhatsApp on your phone and scan the QR code.
 5. The connection status changes to `ready` when linked.
+6. In the dashboard, click **New message** to send a message to any phone number (with country code, e.g., `971552260263`).
 
 ## Notes
 
 - The first startup downloads a Chromium browser for Puppeteer. On Linux servers, additional system dependencies may be required.
 - The SQLite database file (`dev.db`) is created in the project root.
 - Uploaded media is stored in `public/uploads/`.
+- **Real-time messages only:** messages that arrive while the session is `ready` are saved and displayed. Older messages are not backfilled.
+- **Phone must be online:** the mobile device does not need to be open, but it must have an internet connection for the WhatsApp Web session to receive messages.
