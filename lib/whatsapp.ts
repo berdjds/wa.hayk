@@ -41,10 +41,27 @@ async function ensureUploadDir() {
   }
 }
 
+async function wait(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function getChatsWithRetry(client: Client, retries = 3): Promise<any[]> {
+  for (let i = 0; i < retries; i++) {
+    try {
+      return await client.getChats();
+    } catch (err: any) {
+      console.error(`[WhatsApp] getChats attempt ${i + 1} failed:`, err?.message || err);
+      if (i < retries - 1) await wait(5000);
+    }
+  }
+  return [];
+}
+
 async function syncExistingChatsAndMessages(client: Client) {
   try {
-    console.log("[WhatsApp] starting chat sync...");
-    const chats = await client.getChats();
+    console.log("[WhatsApp] starting chat sync in 5s...");
+    await wait(5000);
+    const chats = await getChatsWithRetry(client);
     console.log(`[WhatsApp] found ${chats.length} chats to sync`);
     for (const chat of chats) {
       try {
@@ -268,12 +285,6 @@ export async function initializeWhatsApp() {
   client.on("message_create", async (msg: any) => {
     // Fires for both incoming and outgoing messages
     console.log("[WhatsApp] message_create fired", msg.id?._serialized, msg.fromMe);
-    await persistMessage(msg, msg.fromMe);
-  });
-
-  client.on("message", async (msg: any) => {
-    // Backup handler for incoming messages
-    console.log("[WhatsApp] message event fired", msg.id?._serialized, msg.fromMe);
     await persistMessage(msg, msg.fromMe);
   });
 
