@@ -63,6 +63,7 @@ async function upsertChat(remoteJid: string, name?: string | null, profilePicUrl
 }
 
 async function persistMessage(msg: any, fromMe: boolean) {
+  console.log("[WhatsApp] persistMessage start", msg.id?._serialized, msg.type);
   try {
     const chat = await msg.getChat();
     const remoteJid = chat.id._serialized;
@@ -135,6 +136,7 @@ async function persistMessage(msg: any, fromMe: boolean) {
     });
 
     state.io?.emit("chat_update", chatRecord);
+    console.log("[WhatsApp] persistMessage saved", messageRecord.id, remoteJid);
   } catch (err) {
     console.error("[WhatsApp] persistMessage error:", err);
   }
@@ -244,6 +246,12 @@ export async function initializeWhatsApp() {
   client.on("message_create", async (msg: any) => {
     // Fires for both incoming and outgoing messages
     console.log("[WhatsApp] message_create fired", msg.id?._serialized, msg.fromMe);
+    await persistMessage(msg, msg.fromMe);
+  });
+
+  client.on("message", async (msg: any) => {
+    // Incoming messages backup
+    console.log("[WhatsApp] message event fired", msg.id?._serialized, msg.fromMe);
     await persistMessage(msg, msg.fromMe);
   });
 
