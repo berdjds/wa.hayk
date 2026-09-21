@@ -28,7 +28,6 @@ import {
   REVIEW_ACTIONS,
   ROLE_ADMIN,
   ROLE_ADVISOR,
-  ROLE_VALIDATOR,
   canGrantFloorException,
   normalizeDayServices,
   versionLabel,
@@ -43,6 +42,7 @@ import { canonicalize, snapshotHash } from "@/lib/travel/snapshots";
 import { generatePackageCode } from "@/lib/travel/codes";
 import { getActivePolicy, getCompanyBranding, getFxMap, getTravelSettings } from "@/lib/travel/settings";
 import { queueWorkflowEvent } from "@/lib/travel/notifications";
+import { sendQuoteDocument } from "@/lib/travel/whatsapp-docs";
 import type { QuotationPdfBranding, QuotationPdfItineraryDay } from "@/lib/travel/pdf/types";
 
 // ---------------------------------------------------------------------------
@@ -860,6 +860,7 @@ export async function submit(actor: WorkflowActor, requestId: string) {
   // invalidates prior snapshots (see snapshots.ts).
   const hash = snapshotHash({ engineVersion: input.engineVersion, inputs: input });
   const resultJson = JSON.stringify(result);
+  let internalDocumentId = "";
   // Freeze client-facing display data with the snapshot: historical documents
   // must not change when the agency/name/dates are edited later.
   const displayJson = JSON.stringify({
@@ -893,7 +894,7 @@ export async function submit(actor: WorkflowActor, requestId: string) {
   });
 
   try {
-    await tx(async (tx) => {
+    internalDocumentId = await tx(async (tx) => {
       await tx.calculationSnapshot.upsert({
         where: { versionId: version.id },
         update: { inputsJson, resultJson, displayJson, engineVersion: input.engineVersion, hash, createdById: actor.id },
@@ -942,6 +943,33 @@ export async function submit(actor: WorkflowActor, requestId: string) {
         }),
         recipients,
       });
+
+      // The validator's internal costing sheet is generated at submit time
+      // (v0.10.0) so validation never waits on a manual issue step. On
+      // resubmission the existing row is rebound to the new snapshot and
+      // re-rendered, keeping one INTERNAL document per version.
+      const internalKey = `internal-${version.id}`;
+      const existingInternal = await tx.quoteDocument.findUnique({ where: { idempotencyKey: internalKey } });
+      if (existingInternal) {
+        await tx.quoteDocument.update({
+          where: { id: existingInternal.id },
+          data: { snapshotHash: hash, filePath: "PENDING", sha256: "", createdById: actor.id },
+        });
+        return existingInternal.id;
+      }
+      const internalDoc = await tx.quoteDocument.create({
+        data: {
+          versionId: version.id,
+          snapshotHash: hash,
+          kind: "INTERNAL",
+          templateVersion: DOCUMENT_TEMPLATE_VERSION,
+          filePath: "PENDING",
+          sha256: "",
+          idempotencyKey: internalKey,
+          createdById: actor.id,
+        },
+      });
+      return internalDoc.id;
     });
   } catch (err) {
     // Practically unreachable: scenario refs are fresh cuids per version, so
@@ -958,7 +986,37 @@ export async function submit(actor: WorkflowActor, requestId: string) {
     actor.id,
     `${resubmission ? "Resubmitted" : "Submitted"} ${request.packageCode} ${versionLabel(version.versionNo)} (hash ${hash.slice(0, 12)}…)`,
   );
+
+  // Outside the transaction: rendering is slow and must never roll back the
+  // submission. Delivery is best-effort (validator's phone + configured
+  // group); WhatsApp being offline must not fail a submit.
+  await renderDocumentPdf(internalDocumentId);
+  await autoSendDocument(internalDocumentId, [assignment.validatorId], actor.id);
+
   return { versionId: version.id, hash, result, quoteCurrency: input.fx.quoteCurrency ?? "USD" };
+}
+
+/**
+ * Best-effort WhatsApp delivery of a rendered document to the given users
+ * plus the configured validator group. Swallows all errors — document
+ * delivery must never fail the workflow action that produced the document.
+ */
+async function autoSendDocument(documentId: string, userIds: (string | null | undefined)[], actorId: string) {
+  try {
+    const settings = await getTravelSettings();
+    const recipients = userIds.filter((id): id is string => !!id);
+    const groupJids = settings.validatorGroupJid ? [settings.validatorGroupJid] : [];
+    if (recipients.length === 0 && groupJids.length === 0) return;
+    // Skip the audit noise when there is nothing to send (render failed).
+    const doc = await prisma.quoteDocument.findUnique({ where: { id: documentId }, select: { filePath: true } });
+    if (!doc || doc.filePath === "PENDING" || doc.filePath.startsWith("FAILED:")) return;
+    const results = await sendQuoteDocument(documentId, { userIds: recipients, groupJids }, actorId);
+    for (const r of results.filter((r) => !r.ok)) {
+      console.warn(`[Travel] WhatsApp document delivery to ${r.to} failed: ${r.error}`);
+    }
+  } catch (err) {
+    console.error("[Travel] auto-send of document failed:", err);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -982,9 +1040,8 @@ export async function review(
   if (!assignment || assignment.validatorId !== actor.id) {
     throw new WorkflowError("NOT_ASSIGNED_VALIDATOR", "only the currently assigned validator may review", 403);
   }
-  if (version.submittedById && version.submittedById === actor.id) {
-    throw new WorkflowError("SELF_APPROVAL", "the validator who submitted a version cannot review it", 403);
-  }
+  // Self-validation is allowed: small teams where the owner prices and
+  // validates their own request are a supported mode (v0.10.0).
 
   if (!version.snapshot) {
     throw new WorkflowError("SNAPSHOT_MISSING", "version has no calculation snapshot", 409);
@@ -1316,6 +1373,11 @@ export async function issue(
   // write lock or reverse ISSUED on failure.
   await renderDocumentPdf(documentId);
 
+  // Best-effort WhatsApp delivery of the client PDF to owner + validator +
+  // configured group; failures are logged, never thrown.
+  const assignment = await activeAssignment(request.id);
+  await autoSendDocument(documentId, [request.ownerId, assignment?.validatorId], actor.id);
+
   const document = await prisma.quoteDocument.findUnique({ where: { id: documentId } });
   return { document: document!, idempotent: false };
 }
@@ -1413,9 +1475,8 @@ async function assertAssignableValidator(targetId: string): Promise<User> {
   if (!target || !target.active) {
     throw new WorkflowError("VALIDATOR_INVALID", `user ${targetId} does not exist or is inactive`, 400);
   }
-  if (target.role !== ROLE_VALIDATOR && target.role !== ROLE_ADMIN) {
-    throw new WorkflowError("VALIDATOR_INVALID", `user ${target.email} has role ${target.role}, not a validator`, 400);
-  }
+  // Any active user may be assigned as validator (v0.10.0) — assignment is
+  // what grants review rights, not the VALIDATOR role.
   return target;
 }
 
@@ -1492,9 +1553,6 @@ export async function assignValidator(
   const request = await loadRequest(requestId);
   if (actor.role !== ROLE_ADMIN) {
     assertOwnerOrAdmin(actor, request.ownerId);
-    if (input.validatorId === actor.id) {
-      throw new WorkflowError("SELF_ASSIGNMENT", "the owner cannot assign themselves as validator", 403);
-    }
   }
   return setValidator(actor, requestId, input, "VALIDATOR_ASSIGNED");
 }

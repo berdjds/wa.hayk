@@ -1,7 +1,8 @@
 /**
- * Route-level RBAC: a session with the plain USER role must get 401 from
- * /api/travel routes. getServerSession is mocked; no database is touched
- * (the guard rejects before any query).
+ * Route-level RBAC: a session with the plain USER role and no validation
+ * assignment must get 401 from /api/travel routes. getServerSession is
+ * mocked; the guard runs one (empty) assignment lookup against the throwaway
+ * DB before rejecting.
  */
 
 import { beforeAll, describe, expect, it, vi } from "vitest";

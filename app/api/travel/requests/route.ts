@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { ROLE_ADMIN, ROLE_ADVISOR } from "@/lib/travel/contracts";
+import { ROLE_ADMIN, ROLE_ADVISOR, ROLE_VALIDATOR } from "@/lib/travel/contracts";
 import { createRequest, createRequestSchema } from "@/lib/travel/workflow";
 import { getTravelActor, travelError, unauthorized } from "../guard";
 
 // GET /api/travel/search?q=&status=&ownerId=&from=&to= — advisors see only
-// their own requests; ADMIN/VALIDATOR see all.
+// their own requests; ADMIN/VALIDATOR see all; any other role (a user
+// holding a validation assignment, v0.10.0) sees own + assigned requests.
 export async function GET(req: NextRequest) {
   const actor = await getTravelActor();
   if (!actor) return unauthorized();
@@ -19,7 +20,11 @@ export async function GET(req: NextRequest) {
 
   const where: any = {};
   if (actor.role === ROLE_ADVISOR) where.ownerId = actor.id;
-  else if (ownerId) where.ownerId = ownerId;
+  else if (actor.role !== ROLE_ADMIN && actor.role !== ROLE_VALIDATOR) {
+    where.AND = [
+      { OR: [{ ownerId: actor.id }, { assignments: { some: { validatorId: actor.id, active: true } } }] },
+    ];
+  } else if (ownerId) where.ownerId = ownerId;
   if (status) where.status = status;
   if (from || to) {
     where.startDate = {};

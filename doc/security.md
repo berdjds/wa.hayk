@@ -47,6 +47,17 @@ Always serve the application over HTTPS in production. Set `NEXTAUTH_URL` to the
 
 Any user with `ADMIN` role can manage users and the WhatsApp session. Ensure admin accounts are protected with strong passwords and ideally multi-factor authentication if extended.
 
+### Travel module: validation and documents
+
+Since v0.10.0, any active user can be assigned as a travel-request validator, and a validator
+may approve their own submission (self-validation is a deliberate small-team mode — the former
+SELF_APPROVAL / SELF_ASSIGNMENT blocks were removed by design, not by accident). The control
+that remains is the assignment itself: only the currently assigned validator can review, and
+users without a travel role only see requests they own or actively validate. INTERNAL quotation
+documents (which contain margins) stay restricted: downloads require ADMIN/VALIDATOR role, and
+WhatsApp delivery of INTERNAL documents is limited to ADMIN/VALIDATOR users or the assigned
+validator.
+
 ## Security Checklist Before Production
 
 - [ ] Upgrade all dependencies and resolve `npm audit` findings.

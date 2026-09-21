@@ -23,6 +23,11 @@ const updateSettingsSchema = z.object({
     .string()
     .regex(/^#[0-9a-fA-F]{6}$/, "expected a #rrggbb hex color")
     .nullish(),
+  // WhatsApp group receiving quotation documents (....@g.us).
+  validatorGroupJid: z
+    .string()
+    .regex(/^\d+(-\d+)?@g\.us$/, "expected a WhatsApp group id like 120363...@g.us")
+    .nullish(),
 });
 
 export async function GET() {

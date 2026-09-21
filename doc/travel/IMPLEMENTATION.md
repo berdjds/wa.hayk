@@ -28,8 +28,10 @@ A versioned B2B travel package costing and quotation module inside WAControl:
 - `lib/travel/resolve.ts` — DB → engine DTO resolution (VERIFIED rates only, overrides with
   reason/actor, stop-sale/quote-on-request enforcement, FX as of travel start, active policy).
 - `lib/travel/workflow.ts` — DRAFT → PENDING_VALIDATION → APPROVED → ISSUED (+CHANGES_REQUESTED,
-  REJECTED, ACCEPTED/DECLINED/EXPIRED, CANCELLED); assigned-validator-only decisions, no
-  self-approval, hash-bound approvals, transactional issue with idempotency, revisions.
+  REJECTED, ACCEPTED/DECLINED/EXPIRED, CANCELLED); assigned-validator-only decisions
+  (self-validation allowed since v0.10.0), hash-bound approvals, transactional issue with
+  idempotency, revisions; INTERNAL document generated at submit with best-effort WhatsApp
+  delivery (v0.10.0).
 - `lib/travel/notifications.ts` + `lib/email.ts` — transactional outbox (WorkflowEvent +
   per-recipient/channel NotificationDelivery, dedup keys), async worker (wired in `server.ts`),
   email via SMTP (nodemailer) and WhatsApp via existing `sendWhatsAppMessage`; missing
@@ -70,7 +72,8 @@ A versioned B2B travel package costing and quotation module inside WAControl:
    grows naturally; generated once, immutable.
 5. **Roles.** `ADMIN` doubles as validator-eligible manager; only ADMIN may grant below-floor
    exceptions, manage settings/rates/agencies, and reassign validators. `USER` has no travel
-   access (401 at API, redirect at pages).
+   access by default (401 at API, redirect at pages) — unless they hold an active validation
+   assignment (see decision 24, v0.10.0).
 6. **Approval blocks on engine blockers.** A version with BLOCKER issues (missing rates, FX,
    occupancy, capacity, stop-sale, below floor without exception) cannot be approved;
    warnings (e.g. unused beds) do not block.
@@ -197,6 +200,30 @@ A versioned B2B travel package costing and quotation module inside WAControl:
     overnight needed" hint instead of the amber no-stay warning, because nights span
     [startDate, endDate). (h) `money()` displays long engine decimals rounded to 2dp —
     display-only formatting, stored values are never recomputed client-side.
+24. **Flexible validator model (v0.10.0), superseding the no-self-approval rule.** Any active
+    user is assignable as validator — `assertAssignableValidator` no longer checks the role,
+    and the owner may assign themselves (`SELF_ASSIGNMENT` and `SELF_APPROVAL` errors are
+    gone). Assignment, not the VALIDATOR role, is what grants review rights: `review()` still
+    requires the current active assignment, reassign still revokes the former validator, and
+    APPROVE is still blocked on engine BLOCKER issues. Users without a travel role enter the
+    module when they hold an active assignment (`canAccessTravel` in `lib/travel/access.ts`,
+    used by both the API guard and the page gates); their request list and request details are
+    scoped to own + assigned requests (existence of anything else is not disclosed), while
+    per-action RBAC still applies. The validator picker reads the new
+    `GET /api/travel/users/assignable` (any travel actor) instead of ADMIN-only `/api/users`.
+    Admin → Users manages all four roles and the WhatsApp `phone` field.
+25. **WhatsApp document delivery (v0.10.0).** `submit()` now creates the INTERNAL quotation
+    document in the same transaction (idempotency key `internal-<versionId>`; resubmission
+    rebinds the row to the new snapshot and re-renders), renders it post-transaction, and
+    best-effort WhatsApps it to the assigned validator's phone plus the configured
+    `TravelSettings.validatorGroupJid` (a `…@g.us` group, editable in Travel → Settings).
+    `issue()` does the same for the CLIENT document to owner + validator + group. Manual
+    delivery: `POST /api/travel/documents/[id]/send` (owner / assigned validator / ADMIN)
+    takes `{ userIds, groupJids }` and reports per-recipient success; INTERNAL recipients are
+    restricted to ADMIN/VALIDATOR roles or the assigned validator (margins inside). All
+    delivery goes through `lib/travel/whatsapp-docs.ts`, never throws into the workflow, and
+    writes `QUOTE_DOCUMENT_SENT` audit entries. Advisors never see INTERNAL documents, not
+    even as list metadata.
 
 ## Known limitations
 

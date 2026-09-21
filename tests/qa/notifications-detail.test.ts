@@ -158,7 +158,7 @@ describe("failure isolation (item 20)", () => {
     // Workflow state is untouched by the delivery failure.
     const v = await prisma.quoteVersion.findUnique({ where: { id: version.id } });
     expect(v?.status).toBe("ISSUED");
-    expect(await prisma.quoteDocument.count({ where: { versionId: version.id } })).toBe(1);
+    expect(await prisma.quoteDocument.count({ where: { versionId: version.id, kind: "CLIENT" } })).toBe(1);
 
     // Re-issuing after the failure is idempotent — no duplicate document/event.
     const again = await workflow.issue(actorOf(fx.advisor), version.id, {});

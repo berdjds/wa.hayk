@@ -25,8 +25,10 @@ Verification: `npx tsc --noEmit`, `npm test` (vitest), `npm run build`.
 2. **Agencies**: create each client agency with its uppercase short code (required before any
    request can be created for that client; package codes embed it). Managed from
    Travel → Agencies (ADMIN) — list, create, edit, deactivate/reactivate.
-3. **Users**: give advisors/validators their roles; set `phone` (international format, no `+`)
-   for WhatsApp notifications and ensure email addresses are real. Missing destinations are
+3. **Users**: Admin → Users now offers all four roles (ADMIN / USER / ADVISOR / VALIDATOR) and
+   a phone field (international format, with or without `+`) used for WhatsApp notifications
+   and document delivery. Any active user — regardless of role — can be assigned as a
+   validator on a request; assignment is what grants review rights. Missing destinations are
    flagged in Travel → Notifications, not silently skipped.
 4. **SMTP**: set `SMTP_HOST/PORT/USER/PASS/FROM` for the email channel; otherwise email
    deliveries show FAILED and can be retried after configuration.
@@ -40,7 +42,10 @@ Verification: `npx tsc --noEmit`, `npm test` (vitest), `npm run build`.
    phone, email, website, address and brand color used on the client quotation PDF cover and
    footer. Branding is frozen into each quotation at submit time, so editing it later never
    restyles already-issued documents.
-8. Docker: mount a volume for `data/documents/` alongside the existing data volume.
+8. **Validator WhatsApp group** (optional): Travel → Settings → "Validator WhatsApp group" takes
+   a group id (`…@g.us`, visible in the dashboard chat list). The quotation PDFs are delivered
+   to that group automatically on submit (internal costing sheet) and issue (client PDF).
+9. Docker: mount a volume for `data/documents/` alongside the existing data volume.
 
 ## Operator workflow
 
@@ -67,16 +72,23 @@ Verification: `npx tsc --noEmit`, `npm test` (vitest), `npm run build`.
    nights — previewed before saving). Service lines are edited once, in the "Service lines" card
    at the bottom of the Scenarios tab (day-linked catalog services appear as read-only rows —
    manage them on the Itinerary tab); alternative scenarios are never summed together.
-3. Assign a validator (or ask an admin), then Submit. A confirmation dialog lists the exact sell
+3. Assign a validator (or ask an admin), then Submit. Any active user can be assigned —
+   including yourself (self-validation is a supported mode for small teams) — and the picker
+   lists all of them. A confirmation dialog lists the exact sell
    amounts and any blockers per scenario before the snapshot is bound — blockers do not stop the
-   submit, but the validator cannot approve until they are resolved. The advisor cannot validate
-   own work.
+   submit, but the validator cannot approve until they are resolved. Submit also renders the
+   INTERNAL costing sheet and WhatsApps it to the assigned validator (and the configured
+   validator group) when WhatsApp is connected; delivery failures never block the submit.
 4. Validator: Travel → Review queue → open the package → Approve / Request changes / Reject
-   (reason required). Approvals bind to the exact snapshot; any later edit needs a new
-   version and a new review.
-5. Advisor: after APPROVED, Issue → generates the client PDF (immutable, hash-recorded).
-   Record the outcome (Accepted with the chosen scenario / Declined / Expired). Generated
-   documents live at the bottom of the Review tab (no separate Documents tab).
+   (reason required). Validators without a travel role land here from their assignment and see
+   only the requests they validate. Approvals bind to the exact snapshot; any later edit needs
+   a new version and a new review.
+5. Advisor: after APPROVED, Issue → generates the client PDF (immutable, hash-recorded) and
+   WhatsApps it to owner + validator + group. Record the outcome (Accepted with the chosen
+   scenario / Declined / Expired). Generated documents live at the bottom of the Review tab
+   (no separate Documents tab); each rendered document has a "Send via WhatsApp" button for
+   manual delivery to picked users (with a phone on file) or WhatsApp groups. INTERNAL
+   documents can only go to validators/admins — margins are inside.
 6. Both sides receive email + WhatsApp notifications at each step; delivery problems are
    visible under Travel → Notifications (admin can retry or reprocess the queue).
 

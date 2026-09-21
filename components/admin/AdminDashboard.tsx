@@ -20,6 +20,7 @@ interface User {
   name: string;
   role: string;
   active: boolean;
+  phone: string | null;
   createdAt: string;
 }
 
@@ -40,10 +41,17 @@ export default function AdminDashboard() {
   const [loading, setLoading] = useState(false);
   const [buildInfo, setBuildInfo] = useState<{ version?: string; startedAt?: string } | null>(null);
 
-  const [newUser, setNewUser] = useState({ email: "", name: "", password: "", role: "USER" as "ADMIN" | "USER" });
+  const [newUser, setNewUser] = useState({
+    email: "",
+    name: "",
+    password: "",
+    role: "USER" as "ADMIN" | "USER" | "ADVISOR" | "VALIDATOR",
+    phone: "",
+  });
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [editRole, setEditRole] = useState("USER");
   const [editActive, setEditActive] = useState(true);
+  const [editPhone, setEditPhone] = useState("");
   const [dialogOpen, setDialogOpen] = useState(false);
 
   async function fetchUsers() {
@@ -76,9 +84,9 @@ export default function AdminDashboard() {
   async function handleCreateUser(e: React.FormEvent) {
     e.preventDefault();
     try {
-      await axios.post("/api/users", newUser);
+      await axios.post("/api/users", { ...newUser, phone: newUser.phone.trim() === "" ? null : newUser.phone.trim() });
       toast("User created", "success");
-      setNewUser({ email: "", name: "", password: "", role: "USER" });
+      setNewUser({ email: "", name: "", password: "", role: "USER", phone: "" });
       fetchUsers();
       fetchLogs();
     } catch (err: any) {
@@ -94,6 +102,7 @@ export default function AdminDashboard() {
         id: editingUser.id,
         role: editRole,
         active: editActive,
+        phone: editPhone.trim() === "" ? null : editPhone.trim(),
       });
       toast("User updated", "success");
       setEditingUser(null);
@@ -206,17 +215,24 @@ export default function AdminDashboard() {
               <CardDescription>Create and manage dashboard users.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
-              <form onSubmit={handleCreateUser} className="grid gap-3 sm:grid-cols-5">
+              <form onSubmit={handleCreateUser} className="grid gap-3 sm:grid-cols-6">
                 <Input placeholder="Name" value={newUser.name} onChange={(e) => setNewUser({ ...newUser, name: e.target.value })} required />
                 <Input placeholder="Email" value={newUser.email} onChange={(e) => setNewUser({ ...newUser, email: e.target.value })} required type="email" />
                 <Input placeholder="Password" value={newUser.password} onChange={(e) => setNewUser({ ...newUser, password: e.target.value })} required type="password" />
-                <Select value={newUser.role} onValueChange={(v) => setNewUser({ ...newUser, role: v as "ADMIN" | "USER" })}>
+                <Input
+                  placeholder="Phone (WhatsApp, optional)"
+                  value={newUser.phone}
+                  onChange={(e) => setNewUser({ ...newUser, phone: e.target.value })}
+                />
+                <Select value={newUser.role} onValueChange={(v) => setNewUser({ ...newUser, role: v as typeof newUser.role })}>
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="USER">User</SelectItem>
                     <SelectItem value="ADMIN">Admin</SelectItem>
+                    <SelectItem value="ADVISOR">Advisor</SelectItem>
+                    <SelectItem value="VALIDATOR">Validator</SelectItem>
                   </SelectContent>
                 </Select>
                 <Button type="submit">Create user</Button>
@@ -229,6 +245,7 @@ export default function AdminDashboard() {
                       <th className="pb-2 font-medium">Name</th>
                       <th className="pb-2 font-medium">Email</th>
                       <th className="pb-2 font-medium">Role</th>
+                      <th className="pb-2 font-medium">Phone</th>
                       <th className="pb-2 font-medium">Status</th>
                       <th className="pb-2 font-medium">Actions</th>
                     </tr>
@@ -239,12 +256,13 @@ export default function AdminDashboard() {
                         <td className="py-2">{user.name}</td>
                         <td className="py-2">{user.email}</td>
                         <td className="py-2">{user.role}</td>
+                        <td className="py-2">{user.phone ? `+${user.phone}` : "—"}</td>
                         <td className="py-2">{user.active ? "Active" : "Inactive"}</td>
                         <td className="py-2">
                           <div className="flex gap-2">
                             <Dialog open={dialogOpen && editingUser?.id === user.id} onOpenChange={(open) => { if (!open) setEditingUser(null); setDialogOpen(open); }}>
                               <DialogTrigger asChild>
-                                <Button size="sm" variant="outline" onClick={() => { setEditingUser(user); setEditRole(user.role); setEditActive(user.active); setDialogOpen(true); }}>
+                                <Button size="sm" variant="outline" onClick={() => { setEditingUser(user); setEditRole(user.role); setEditActive(user.active); setEditPhone(user.phone ?? ""); setDialogOpen(true); }}>
                                   Edit
                                 </Button>
                               </DialogTrigger>
@@ -263,8 +281,18 @@ export default function AdminDashboard() {
                                       <SelectContent>
                                         <SelectItem value="USER">User</SelectItem>
                                         <SelectItem value="ADMIN">Admin</SelectItem>
+                                        <SelectItem value="ADVISOR">Advisor</SelectItem>
+                                        <SelectItem value="VALIDATOR">Validator</SelectItem>
                                       </SelectContent>
                                     </Select>
+                                  </div>
+                                  <div>
+                                    <Label>Phone (WhatsApp)</Label>
+                                    <Input
+                                      value={editPhone}
+                                      onChange={(e) => setEditPhone(e.target.value)}
+                                      placeholder="37499123456 (digits, optional +)"
+                                    />
                                   </div>
                                   <div className="flex items-center gap-2">
                                     <input id="active" type="checkbox" checked={editActive} onChange={(e) => setEditActive(e.target.checked)} />

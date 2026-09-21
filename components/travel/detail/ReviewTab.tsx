@@ -40,9 +40,9 @@ export default function ReviewTab({ ctx }: { ctx: DetailContext }) {
   const isAssignedValidator = detail.currentValidatorId === ctx.userId;
   const canSubmit =
     (ctx.isOwner || ctx.isAdmin) && ctx.isLatestVersion && ["DRAFT", "CHANGES_REQUESTED"].includes(version.status);
-  // No self-approval: the submitter cannot review their own version.
-  const canReview =
-    version.status === "PENDING_VALIDATION" && isAssignedValidator && version.submittedById !== ctx.userId;
+  // Self-validation is allowed: the assigned validator reviews, even when
+  // they also submitted the version (v0.10.0).
+  const canReview = version.status === "PENDING_VALIDATION" && isAssignedValidator;
   const canIssue = (ctx.isOwner || ctx.isAdmin) && version.status === "APPROVED";
   const canOutcome = (ctx.isOwner || ctx.isAdmin) && version.status === "ISSUED";
   const canAssign = (ctx.isOwner || ctx.isAdmin) && ["DRAFT", "CHANGES_REQUESTED"].includes(detail.status);
@@ -470,8 +470,9 @@ export default function ReviewTab({ ctx }: { ctx: DetailContext }) {
 // ---------------------------------------------------------------------------
 
 /**
- * Validator picker. The assignments API takes a validatorId; only ADMINs can
- * list users (/api/users), so other roles get a manual id entry instead.
+ * Validator picker. Any active user can be assigned (v0.10.0); the list comes
+ * from /api/travel/users/assignable (open to travel actors). If the list
+ * fails to load, fall back to manual id entry.
  */
 function AssignValidatorDialog({
   open,
@@ -501,14 +502,8 @@ function AssignValidatorDialog({
     setValidatorId("");
     setDueAt("");
     axios
-      .get("/api/users")
-      .then((res) =>
-        setUsers(
-          (res.data as TravelUser[]).filter(
-            (u) => (u.role === "VALIDATOR" || u.role === "ADMIN") && u.id !== selfId,
-          ),
-        ),
-      )
+      .get("/api/travel/users/assignable")
+      .then((res) => setUsers(res.data as TravelUser[]))
       .catch(() => setUsers(null));
   }, [open, selfId]);
 
@@ -534,7 +529,7 @@ function AssignValidatorDialog({
       <DialogContent>
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
-          <DialogDescription>Only VALIDATOR or ADMIN users can be assigned.</DialogDescription>
+          <DialogDescription>Any active user can be assigned as validator.</DialogDescription>
         </DialogHeader>
         <div className="space-y-3">
           {users ? (
@@ -560,7 +555,7 @@ function AssignValidatorDialog({
               <p className="mt-1 text-xs text-muted-foreground">
                 {isAdmin
                   ? "Could not load the user list."
-                  : "Only admins can list users — paste the validator's user id, or ask an admin to assign."}
+                  : "Could not load the user list — paste the validator's user id, or ask an admin to assign."}
               </p>
             </div>
           )}

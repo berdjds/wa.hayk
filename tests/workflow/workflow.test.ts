@@ -121,6 +121,16 @@ describe("happy path: draft → submit → approve → issue → accept", () => 
     expect(v?.submittedById).toBe(fx.advisor.id);
     expect(v?.snapshot?.hash).toBe(submitted.hash);
 
+    // Submit also generates the validator's INTERNAL costing sheet (v0.10.0),
+    // rendered outside the transaction.
+    const internalDoc = await prisma.quoteDocument.findUnique({
+      where: { idempotencyKey: `internal-${version.id}` },
+    });
+    expect(internalDoc?.kind).toBe("INTERNAL");
+    expect(internalDoc?.snapshotHash).toBe(submitted.hash);
+    expect(internalDoc?.filePath.endsWith(".pdf")).toBe(true);
+    expect(internalDoc?.sha256).toMatch(/^[0-9a-f]{64}$/);
+
     const submitEvent = await prisma.workflowEvent.findFirst({
       where: { requestId: request.id, type: "SUBMITTED" },
       include: { deliveries: true },
@@ -161,15 +171,49 @@ describe("happy path: draft → submit → approve → issue → accept", () => 
 });
 
 describe("review rules", () => {
-  it("blocks self-approval", async () => {
+  it("lets the assigned validator review their own submission (self-validation, v0.10.0)", async () => {
     // Admin owns AND validates this request.
     const { request, version } = await workflow.createRequest(actorOf(fx.admin), createRequestInput(fx.agency.id));
     await saveContent(prisma, actorOf(fx.admin), request.id, version.id, scenarioContent(fx.hotel.id, fx.hotel.name));
+    // Self-assignment is allowed: the owner can assign themselves as validator.
     await workflow.assignValidator(actorOf(fx.admin), request.id, { validatorId: fx.admin.id });
     const { hash } = await workflow.submit(actorOf(fx.admin), request.id);
+    const decided = await workflow.review(actorOf(fx.admin), version.id, { action: "APPROVE", snapshotHash: hash });
+    expect(decided.status).toBe("APPROVED");
+  });
+
+  it("lets an advisor self-assign and self-validate", async () => {
+    const { request, version } = await draftWithContent();
+    await workflow.assignValidator(actorOf(fx.advisor), request.id, { validatorId: fx.advisor.id });
+    const { hash } = await workflow.submit(actorOf(fx.advisor), request.id);
+    const decided = await workflow.review(actorOf(fx.advisor), version.id, { action: "APPROVE", snapshotHash: hash });
+    expect(decided.status).toBe("APPROVED");
+  });
+
+  it("assigns any active user (no VALIDATOR role required) and they can review", async () => {
+    const { request, version } = await draftWithContent();
+    // fx.plainUser has role USER — assignable since v0.10.0.
+    await workflow.assignValidator(actorOf(fx.advisor), request.id, { validatorId: fx.plainUser.id });
+    const { hash } = await workflow.submit(actorOf(fx.advisor), request.id);
+    const decided = await workflow.review(actorOf(fx.plainUser), version.id, {
+      action: "APPROVE",
+      snapshotHash: hash,
+    });
+    expect(decided.status).toBe("APPROVED");
+    const req = await prisma.travelRequest.findUnique({ where: { id: request.id } });
+    expect(req?.currentValidatorId).toBe(fx.plainUser.id);
+  });
+
+  it("rejects assigning an unknown or inactive user", async () => {
+    const { request } = await draftWithContent();
     await expect(
-      workflow.review(actorOf(fx.admin), version.id, { action: "APPROVE", snapshotHash: hash }),
-    ).rejects.toMatchObject({ code: "SELF_APPROVAL", httpStatus: 403 });
+      workflow.assignValidator(actorOf(fx.advisor), request.id, { validatorId: "no-such-user" }),
+    ).rejects.toMatchObject({ code: "VALIDATOR_INVALID", httpStatus: 400 });
+    await prisma.user.update({ where: { id: fx.validator2.id }, data: { active: false } });
+    await expect(
+      workflow.assignValidator(actorOf(fx.advisor), request.id, { validatorId: fx.validator2.id }),
+    ).rejects.toMatchObject({ code: "VALIDATOR_INVALID", httpStatus: 400 });
+    await prisma.user.update({ where: { id: fx.validator2.id }, data: { active: true } });
   });
 
   it("blocks a validator who is not the active assignee", async () => {
@@ -271,7 +315,7 @@ describe("issue", () => {
     expect(second.idempotent).toBe(true);
     expect(second.document.id).toBe(first.document.id);
     expect(await prisma.workflowEvent.count({ where: { requestId: request.id, type: "ISSUED" } })).toBe(1);
-    expect(await prisma.quoteDocument.count({ where: { versionId: version.id } })).toBe(1);
+    expect(await prisma.quoteDocument.count({ where: { versionId: version.id, kind: "CLIENT" } })).toBe(1);
   });
 
   it("refuses to issue without approval", async () => {

@@ -178,9 +178,14 @@ Creates a new user.
   "email": "user@example.com",
   "name": "User Name",
   "password": "password",
-  "role": "USER"
+  "role": "USER",
+  "phone": "37499123456"
 }
 ```
+
+`role` is one of `ADMIN` / `USER` / `ADVISOR` / `VALIDATOR` (defaults to `USER`). `phone` is
+optional — 7–15 digits, optional leading `+` (stored without it); used for WhatsApp
+notifications and document delivery.
 
 #### PATCH /api/users
 
@@ -197,11 +202,13 @@ Updates a user.
   "name": "New Name",
   "role": "ADMIN",
   "active": true,
-  "password": "newpassword"
+  "password": "newpassword",
+  "phone": null
 }
 ```
 
-All fields except `id` are optional.
+All fields except `id` are optional; `role` accepts `ADMIN` / `USER` / `ADVISOR` / `VALIDATOR`
+and `phone: null` clears the WhatsApp number.
 
 #### DELETE /api/users
 
@@ -293,7 +300,8 @@ Currently, the server only emits events. Client actions should use the HTTP API.
 ## Travel Module API (`/api/travel/*`)
 
 B2B travel package costing and quotation module. All routes require an authenticated session
-with role `ADMIN`, `ADVISOR` or `VALIDATOR` (401 otherwise). Request bodies are zod-validated
+with role `ADMIN`, `ADVISOR` or `VALIDATOR` — or, since v0.10.0, any user holding an active
+validation assignment (401 otherwise; scoped to own + assigned requests). Request bodies are zod-validated
 (400 `{ error: [...] }`); business-rule failures return `{ error, code }` with an appropriate
 status (409 for stale snapshot/revision conflicts). Money values are decimal strings; dates are
 `YYYY-MM-DD` local calendar dates. See `doc/travel/IMPLEMENTATION.md`.
@@ -303,8 +311,9 @@ status (409 for stale snapshot/revision conflicts). Money values are decimal str
 | `/api/travel/requests` | GET, POST | travel roles | Search (q/status/owner/dates) and create requests; POST generates the immutable package code `CLIENTSHORT-YYYY-MM-DD-NNNN` |
 | `/api/travel/requests/[id]` | GET, PATCH | travel roles | Detail (versions, scenarios, snapshot summary, assignments, decisions, documents); PATCH edits drafts with `expectedRevision` optimistic lock |
 | `/api/travel/requests/[id]/submit` | POST | owner/ADMIN | DRAFT/CHANGES_REQUESTED → PENDING_VALIDATION; freezes calculation snapshot |
-| `/api/travel/requests/[id]/assignments` | GET, POST | travel roles | Validator assignment history / assign validator (no self-assignment) |
+| `/api/travel/requests/[id]/assignments` | GET, POST | travel roles | Validator assignment history / assign validator (any active user is assignable, self-assignment allowed — v0.10.0) |
 | `/api/travel/requests/[id]/reassign` | POST | ADMIN | Reassign validator; former validator loses decision rights |
+| `/api/travel/users/assignable` | GET | travel roles | Active users (`id`, `name`, `email`, `role`, `phone`) for the validator picker |
 | `/api/travel/requests/[id]/versions` | POST | owner/ADMIN | Create a new draft revision (v02, ...) cloning latest content |
 | `/api/travel/versions/[id]/calculate` | POST | travel roles | Engine preview (no snapshot persisted); optional policy override |
 | `/api/travel/versions/[id]/content` | PUT | owner/ADMIN | Replace scenarios/stays/service lines/itinerary (draft statuses only). `itineraryDays[].services` items are `{serviceProductId?, label, vehicleTypeId?}` objects (legacy plain strings accepted and normalized); `serviceLines[]` accept and pass through `serviceProductId`/`date`/`vehicleTypeId` for catalog-linked lines |
@@ -319,10 +328,11 @@ status (409 for stale snapshot/revision conflicts). Money values are decimal str
 | `/api/travel/catalog/vehicles` | GET | travel roles | Active fleet vehicle types `[{id, name, seats}]` (Sedan / Minivan / Sprinter / Big bus) for vehicle pickers |
 | `/api/travel/catalog/suppliers` | GET | travel roles | Supplier directory for catalog products |
 | `/api/travel/templates`, `/templates/[id]/instantiate` | GET, POST | travel roles | Package templates (ARM/GEO/COM codes); instantiate into a new request |
-| `/api/travel/settings` | GET, PUT | GET: travel roles; PUT: ADMIN | Company timezone, reminders, escalation, policy activation, and company branding (`companyName`, `companyPhone`, `companyEmail`, `companyAddress`, `companyWebsite`, `brandColor` as `#rrggbb` or null) for the quotation PDF |
+| `/api/travel/settings` | GET, PUT | GET: travel roles; PUT: ADMIN | Company timezone, reminders, escalation, policy activation, `validatorGroupJid` (WhatsApp group for document delivery), and company branding (`companyName`, `companyPhone`, `companyEmail`, `companyAddress`, `companyWebsite`, `brandColor` as `#rrggbb` or null) for the quotation PDF |
 | `/api/travel/policies`, `/api/travel/fx` | GET, POST | ADMIN | Pricing policy versions and effective-dated FX rates |
 | `/api/travel/imports`, `/imports/[id]`, `/imports/[id]/verify` | GET, POST | ADMIN | Workbook import staging batches and row verification |
 | `/api/travel/documents/[id]` | GET | travel roles (INTERNAL: ADMIN/VALIDATOR) | Authorized PDF download |
+| `/api/travel/documents/[id]/send` | POST | owner / assigned validator / ADMIN | WhatsApp delivery of the rendered PDF: `{ userIds?, groupJids? }`, per-recipient results; INTERNAL recipients restricted to ADMIN/VALIDATOR or the assigned validator |
 | `/api/travel/notifications`, `/notifications/retry`, `/notifications/process` | GET, POST | own / ADMIN | Delivery status, retry failed, manual queue processing |
 | `/api/travel/batch` | POST | travel roles | Batch template pricing over PAX bands (default 2/4/6) |
 

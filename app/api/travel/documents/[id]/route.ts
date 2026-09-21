@@ -6,7 +6,9 @@ import { getTravelActor, travelError, unauthorized } from "../../guard";
 
 // Streams a quotation PDF. CLIENT documents: request owner, the currently
 // assigned validator or ADMIN (others get 404 — existence is not disclosed);
-// INTERNAL: ADMIN/VALIDATOR only. The filesystem path is never exposed.
+// INTERNAL: ADMIN/VALIDATOR roles, plus the assigned validator of any role
+// (the assignment itself grants internal visibility, v0.10.0). The filesystem
+// path is never exposed.
 export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
   const actor = await getTravelActor();
   if (!actor) return unauthorized();
@@ -19,7 +21,15 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
     if (!doc) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
     if (doc.kind === "INTERNAL") {
-      if (actor.role !== ROLE_ADMIN && actor.role !== ROLE_VALIDATOR) {
+      let allowed = actor.role === ROLE_ADMIN || actor.role === ROLE_VALIDATOR;
+      if (!allowed) {
+        const assignment = await prisma.validationAssignment.findFirst({
+          where: { requestId: doc.version.requestId, active: true },
+          select: { validatorId: true },
+        });
+        allowed = assignment?.validatorId === actor.id;
+      }
+      if (!allowed) {
         return NextResponse.json({ error: "Forbidden" }, { status: 403 });
       }
     } else if (actor.role !== ROLE_ADMIN) {

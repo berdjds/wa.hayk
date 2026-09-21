@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { ROLE_ADVISOR } from "@/lib/travel/contracts";
+import { ROLE_ADMIN, ROLE_ADVISOR, ROLE_VALIDATOR } from "@/lib/travel/contracts";
 import { publicDocumentView, redactScenarioResultJson } from "@/lib/travel/redact";
 import { updateDraft, updateDraftSchema } from "@/lib/travel/workflow";
 import { getTravelActor, travelError, unauthorized } from "../../guard";
@@ -61,6 +61,14 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
     if (actor.role === ROLE_ADVISOR && request.ownerId !== actor.id) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
+    // Users without a travel role (assigned validators, v0.10.0) may only
+    // open requests they own or actively validate.
+    if (![ROLE_ADMIN, ROLE_VALIDATOR, ROLE_ADVISOR].includes(actor.role as any)) {
+      const assigned = request.assignments.some((a) => a.active && a.validatorId === actor.id);
+      if (request.ownerId !== actor.id && !assigned) {
+        return NextResponse.json({ error: "Not found" }, { status: 404 });
+      }
+    }
     const advisorView = actor.role === ROLE_ADVISOR;
 
     const sanitized = {
@@ -93,7 +101,11 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
             ...sc,
             resultJson: advisorView ? redactScenarioResultJson(sc.resultJson) : sc.resultJson,
           })),
-          documents: v.documents.map(publicDocumentView),
+          documents: v.documents
+            // INTERNAL documents carry margins — advisors never see them,
+            // not even as list metadata.
+            .filter((d) => !advisorView || d.kind !== "INTERNAL")
+            .map(publicDocumentView),
         };
       }),
     };

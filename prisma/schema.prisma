@@ -561,5 +561,8 @@ model TravelSettings {
   companyAddress          String?
   companyWebsite          String?
   brandColor              String?
+  // WhatsApp group (....@g.us) that receives quotation documents on
+  // submit/issue alongside the assigned validator.
+  validatorGroupJid       String?
   updatedAt               DateTime @updatedAt
 }

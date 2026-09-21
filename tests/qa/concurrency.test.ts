@@ -122,13 +122,13 @@ describe("parallel double-issue (item 13)", () => {
     expect(lost).toHaveLength(1);
     expect(lost[0].reason).toMatchObject({ code: "INVALID_STATE", httpStatus: 409 });
 
-    expect(await prisma.quoteDocument.count({ where: { versionId: version.id } })).toBe(1);
+    expect(await prisma.quoteDocument.count({ where: { versionId: version.id, kind: "CLIENT" } })).toBe(1);
     expect(await prisma.workflowEvent.count({ where: { requestId: request.id, type: "ISSUED" } })).toBe(1);
 
     const winnerKey = (ok[0] as PromiseFulfilledResult<any>).value.document.idempotencyKey;
     const replay = await workflow.issue(actorOf(fx.advisor), version.id, { idempotencyKey: winnerKey });
     expect(replay.idempotent).toBe(true);
-    expect(await prisma.quoteDocument.count({ where: { versionId: version.id } })).toBe(1);
+    expect(await prisma.quoteDocument.count({ where: { versionId: version.id, kind: "CLIENT" } })).toBe(1);
   });
 });
 

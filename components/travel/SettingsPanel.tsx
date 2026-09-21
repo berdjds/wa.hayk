@@ -20,7 +20,7 @@ export default function SettingsPanel({ role, userId }: SettingsPanelProps) {
   const { toast } = useToast();
   const [settings, setSettings] = useState<TravelSettingsView | null>(null);
   const [activePolicy, setActivePolicy] = useState<PolicyView | null>(null);
-  const [form, setForm] = useState({ companyTz: "", overdueReminderHours: "", requireSettingsForIssue: true });
+  const [form, setForm] = useState({ companyTz: "", overdueReminderHours: "", requireSettingsForIssue: true, validatorGroupJid: "" });
   const [branding, setBranding] = useState({
     companyName: "",
     companyPhone: "",
@@ -43,6 +43,7 @@ export default function SettingsPanel({ role, userId }: SettingsPanelProps) {
           overdueReminderHours:
             res.data.settings.overdueReminderHours == null ? "" : String(res.data.settings.overdueReminderHours),
           requireSettingsForIssue: res.data.settings.requireSettingsForIssue,
+          validatorGroupJid: res.data.settings.validatorGroupJid ?? "",
         });
         setBranding({
           companyName: res.data.settings.companyName ?? "",
@@ -66,6 +67,7 @@ export default function SettingsPanel({ role, userId }: SettingsPanelProps) {
         companyTz: form.companyTz,
         overdueReminderHours: form.overdueReminderHours === "" ? null : Number.parseInt(form.overdueReminderHours, 10),
         requireSettingsForIssue: form.requireSettingsForIssue,
+        validatorGroupJid: form.validatorGroupJid.trim() === "" ? null : form.validatorGroupJid.trim(),
       });
       toast("Settings saved", "success");
       load();
@@ -134,6 +136,18 @@ export default function SettingsPanel({ role, userId }: SettingsPanelProps) {
                   />
                   Require active policy + FX before issuing
                 </label>
+                <div>
+                  <Label>Validator WhatsApp group</Label>
+                  <Input
+                    value={form.validatorGroupJid}
+                    onChange={(e) => setForm({ ...form, validatorGroupJid: e.target.value })}
+                    placeholder="120363…@g.us"
+                  />
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Group id (ends in @g.us) that receives quotation PDFs on submit/issue. Find it in the chat
+                    list of the dashboard. Optional.
+                  </p>
+                </div>
                 <Button type="submit" disabled={saving}>
                   {saving ? "Saving..." : "Save settings"}
                 </Button>

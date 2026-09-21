@@ -6,20 +6,30 @@ import { writeAuditLog } from "@/lib/audit";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
 
+// WhatsApp notification destination: digits with an optional leading +
+// (stored without the +, matching the schema comment on User.phone).
+const phoneSchema = z
+  .string()
+  .regex(/^\+?\d{7,15}$/, "expected 7-15 digits, optional leading +")
+  .transform((v) => v.replace(/^\+/, ""))
+  .nullish();
+
 const createSchema = z.object({
   email: z.string().email(),
   name: z.string().min(1),
   password: z.string().min(4),
-  role: z.enum(["ADMIN", "USER"]).default("USER"),
+  role: z.enum(["ADMIN", "USER", "ADVISOR", "VALIDATOR"]).default("USER"),
+  phone: phoneSchema,
 });
 
 const updateSchema = z.object({
   id: z.string().min(1),
   email: z.string().email().optional(),
   name: z.string().min(1).optional(),
-  role: z.enum(["ADMIN", "USER"]).optional(),
+  role: z.enum(["ADMIN", "USER", "ADVISOR", "VALIDATOR"]).optional(),
   active: z.boolean().optional(),
   password: z.string().min(4).optional(),
+  phone: phoneSchema,
 });
 
 const deleteSchema = z.object({
@@ -34,7 +44,7 @@ export async function GET() {
 
   const users = await prisma.user.findMany({
     orderBy: { createdAt: "desc" },
-    select: { id: true, email: true, name: true, role: true, active: true, createdAt: true, updatedAt: true },
+    select: { id: true, email: true, name: true, role: true, active: true, phone: true, createdAt: true, updatedAt: true },
   });
 
   return NextResponse.json(users);
@@ -60,8 +70,9 @@ export async function POST(req: NextRequest) {
         name: parsed.data.name,
         password: hashed,
         role: parsed.data.role,
+        phone: parsed.data.phone ?? null,
       },
-      select: { id: true, email: true, name: true, role: true, active: true, createdAt: true },
+      select: { id: true, email: true, name: true, role: true, active: true, phone: true, createdAt: true },
     });
 
     await writeAuditLog("USER_CREATED", session.user.id, `Created ${user.email}`);
@@ -92,7 +103,7 @@ export async function PATCH(req: NextRequest) {
     const user = await prisma.user.update({
       where: { id },
       data,
-      select: { id: true, email: true, name: true, role: true, active: true, createdAt: true },
+      select: { id: true, email: true, name: true, role: true, active: true, phone: true, createdAt: true },
     });
 
     await writeAuditLog("USER_UPDATED", session.user.id, `Updated ${user.email}`);

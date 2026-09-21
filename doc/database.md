@@ -117,7 +117,8 @@ NEEDS_REVIEW → VERIFIED → ARCHIVED), FXRateVersion, PricingPolicyVersion, Ca
 (immutable inputs/results + sha256 hash), ValidationAssignment, ReviewDecision, WorkflowEvent,
 NotificationDelivery (outbox, unique dedupKey), QuoteDocument (hash-recorded PDFs on disk),
 ImportBatch/ImportRow (workbook staging), BatchRun, PackageTemplate/TemplateVersion,
-TravelSettings (singleton). `User` gained a nullable `phone` (WhatsApp notification
+TravelSettings (singleton; also gained `validatorGroupJid`, the WhatsApp group for quotation
+document delivery, in v0.10.0). `User` gained a nullable `phone` (WhatsApp notification
 destination) and role values ADVISOR/VALIDATOR. Money and FX values are decimal strings; JSON
 payloads are String columns. See `prisma/schema.prisma` comments and `lib/travel/contracts.ts`.
 

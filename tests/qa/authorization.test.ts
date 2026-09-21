@@ -3,7 +3,9 @@
  * hoisted mutable; routes run against the seeded throwaway DB, so these test
  * the server — not hidden buttons.
  *
- * - USER role: 401 on requests/settings/rates (and every other travel route).
+ * - USER role: 401 on requests/settings/rates (and every other travel route)
+ *   unless they hold an active validation assignment (v0.10.0 — see the last
+ *   describe block).
  * - ADVISOR: 403 on PUT settings and PATCH rates (ADMIN-only); may POST requests.
  * - VALIDATOR: 403 creating requests; 403 issuing (not owner/admin).
  * - Non-current validator: 403 NOT_ASSIGNED_VALIDATOR on review.
@@ -38,10 +40,13 @@ let fx: Fixtures;
 let advisor2: { id: string; role: string; name: string | null; email: string };
 
 let requestsRoute: typeof import("@/app/api/travel/requests/route");
+let requestByIdRoute: typeof import("@/app/api/travel/requests/[id]/route");
+let assignableRoute: typeof import("@/app/api/travel/users/assignable/route");
 let settingsRoute: typeof import("@/app/api/travel/settings/route");
 let ratesRoute: typeof import("@/app/api/travel/catalog/rates/route");
 let rateByIdRoute: typeof import("@/app/api/travel/catalog/rates/[id]/route");
 let documentsRoute: typeof import("@/app/api/travel/documents/[id]/route");
+let documentSendRoute: typeof import("@/app/api/travel/documents/[id]/send/route");
 let issueRoute: typeof import("@/app/api/travel/versions/[id]/issue/route");
 let reviewRoute: typeof import("@/app/api/travel/versions/[id]/review/route");
 
@@ -68,10 +73,13 @@ beforeAll(async () => {
   });
 
   requestsRoute = await import("@/app/api/travel/requests/route");
+  requestByIdRoute = await import("@/app/api/travel/requests/[id]/route");
+  assignableRoute = await import("@/app/api/travel/users/assignable/route");
   settingsRoute = await import("@/app/api/travel/settings/route");
   ratesRoute = await import("@/app/api/travel/catalog/rates/route");
   rateByIdRoute = await import("@/app/api/travel/catalog/rates/[id]/route");
   documentsRoute = await import("@/app/api/travel/documents/[id]/route");
+  documentSendRoute = await import("@/app/api/travel/documents/[id]/send/route");
   issueRoute = await import("@/app/api/travel/versions/[id]/issue/route");
   reviewRoute = await import("@/app/api/travel/versions/[id]/review/route");
 });
@@ -217,5 +225,132 @@ describe("advisor list scoping", () => {
     const ownerIds = new Set(all.map((r: any) => r.owner.id));
     expect(ownerIds.has(fx.advisor.id)).toBe(true);
     expect(ownerIds.has(advisor2.id)).toBe(true);
+  });
+});
+
+// These tests run last: fx.plainUser gains an active assignment here, and the
+// "USER role is rejected everywhere" block above depends on them having none.
+describe("assigned USER-role validator (v0.10.0)", () => {
+  it("any active user is assignable via /api/travel/users/assignable", async () => {
+    session(fx.advisor);
+    const res = await assignableRoute.GET();
+    expect(res.status).toBe(200);
+    const users = await res.json();
+    expect(users.some((u: any) => u.id === fx.plainUser.id)).toBe(true);
+    // Anonymous callers get 401.
+    session(null);
+    expect((await assignableRoute.GET()).status).toBe(401);
+  });
+
+  it("module access opens with an assignment; lists and details are scoped", async () => {
+    const { request, version } = await workflow.createRequest(actorOf(fx.advisor), createRequestInput(fx.agency.id));
+    await saveContent(prisma, actorOf(fx.advisor), request.id, version.id, scenarioContent(fx.hotel.id, fx.hotel.name));
+    await workflow.assignValidator(actorOf(fx.advisor), request.id, { validatorId: fx.plainUser.id });
+    const { hash } = await workflow.submit(actorOf(fx.advisor), request.id);
+
+    session(fx.plainUser);
+    const list = await (await requestsRoute.GET(req("http://t/api/travel/requests"))).json();
+    expect(list.map((r: any) => r.id)).toEqual([request.id]);
+
+    // Detail opens for the assigned request...
+    const own = await requestByIdRoute.GET(req(`http://t/api/travel/requests/${request.id}`), { params: { id: request.id } });
+    expect(own.status).toBe(200);
+
+    // ...and the assignment also unlocks the INTERNAL document download
+    // (submit rendered one; a USER role alone would be forbidden).
+    const internalDoc = await prisma.quoteDocument.findUnique({
+      where: { idempotencyKey: `internal-${version.id}` },
+    });
+    expect(internalDoc).toBeTruthy();
+    const dl = await documentsRoute.GET(req(`http://t/api/travel/documents/${internalDoc!.id}`), {
+      params: { id: internalDoc!.id },
+    });
+    expect(dl.status).toBe(200);
+
+    // ...but existence of unrelated requests is not disclosed.
+    const other = await workflow.createRequest(actorOf(advisor2 as any), createRequestInput(fx.agency.id));
+    const denied = await requestByIdRoute.GET(req(`http://t/api/travel/requests/${other.request.id}`), {
+      params: { id: other.request.id },
+    });
+    expect(denied.status).toBe(404);
+
+    // Review through the route works with role USER.
+    const ok = await reviewRoute.POST(
+      req(`http://t/api/travel/versions/${version.id}/review`, {
+        method: "POST",
+        body: { action: "APPROVE", snapshotHash: hash },
+      }),
+      { params: { id: version.id } },
+    );
+    expect(ok.status).toBe(200);
+  });
+
+  it("a USER with no assignment still gets 401", async () => {
+    const stranger = await prisma.user.create({
+      data: { email: "stranger@test.io", name: "Stranger", password: "x", role: "USER" },
+    });
+    session(stranger);
+    expect((await requestsRoute.GET(req("http://t/api/travel/requests"))).status).toBe(401);
+  });
+});
+
+describe("WhatsApp document delivery (v0.10.0)", () => {
+  it("sends per recipient; INTERNAL is restricted to validators/admins", async () => {
+    const dir = mkdtempSync(path.join(tmpdir(), "qa-send-"));
+    const file = path.join(dir, "doc.pdf");
+    writeFileSync(file, "%PDF-1.4 qa");
+
+    const { request, version } = await workflow.createRequest(actorOf(fx.advisor), createRequestInput(fx.agency.id));
+    const mkDoc = (kind: string, key: string) =>
+      prisma.quoteDocument.create({
+        data: {
+          versionId: version.id,
+          snapshotHash: "0".repeat(64),
+          kind,
+          templateVersion: "1",
+          filePath: file,
+          sha256: "abc",
+          idempotencyKey: key,
+        },
+      });
+    const internal = await mkDoc("INTERNAL", "send-internal");
+    const client = await mkDoc("CLIENT", "send-client");
+    const recipient = await prisma.user.create({
+      data: { email: "recip@test.io", name: "Recip", password: "x", role: "USER", phone: "37400000099" },
+    });
+
+    session(fx.advisor); // the request owner may trigger delivery
+    const noRecipients = await documentSendRoute.POST(
+      req(`http://t/api/travel/documents/${client.id}/send`, { method: "POST", body: {} }),
+      { params: { id: client.id } },
+    );
+    expect(noRecipients.status).toBe(400);
+
+    // INTERNAL to a plain user: per-recipient refusal (margins inside).
+    const internalRes = await documentSendRoute.POST(
+      req(`http://t/api/travel/documents/${internal.id}/send`, { method: "POST", body: { userIds: [recipient.id] } }),
+      { params: { id: internal.id } },
+    );
+    expect(internalRes.status).toBe(200);
+    const internalResults = (await internalRes.json()).results;
+    expect(internalResults[0].ok).toBe(false);
+    expect(internalResults[0].error).toContain("restricted");
+
+    // CLIENT to the same user succeeds (mocked WhatsApp sender).
+    const clientRes = await documentSendRoute.POST(
+      req(`http://t/api/travel/documents/${client.id}/send`, { method: "POST", body: { userIds: [recipient.id] } }),
+      { params: { id: client.id } },
+    );
+    const clientResults = (await clientRes.json()).results;
+    expect(clientResults[0].ok).toBe(true);
+
+    // A travel user with no relation to the request gets 404 (no disclosure).
+    session(fx.validator2);
+    const denied = await documentSendRoute.POST(
+      req(`http://t/api/travel/documents/${client.id}/send`, { method: "POST", body: { userIds: [recipient.id] } }),
+      { params: { id: client.id } },
+    );
+    expect(denied.status).toBe(404);
+    expect(request.id).toBeTruthy();
   });
 });

@@ -10,6 +10,7 @@ export interface TravelUser {
   email: string;
   name: string | null;
   role?: string;
+  phone?: string | null;
 }
 
 export interface Agency {
@@ -303,6 +304,7 @@ export interface TravelSettingsView {
   companyAddress: string | null;
   companyWebsite: string | null;
   brandColor: string | null;
+  validatorGroupJid: string | null;
   updatedAt: string;
 }
 
