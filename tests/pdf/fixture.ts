@@ -18,7 +18,35 @@ import {
   makeService,
   makeStay,
 } from "../engine/helpers";
-import type { QuotationPdfInput } from "@/lib/travel/pdf/types";
+import type { QuotationPdfInput, QuotationPdfItineraryDay } from "@/lib/travel/pdf/types";
+
+/** Day-by-day itinerary as frozen into displayJson at submit time. */
+export const FIXTURE_ITINERARY_DAYS: QuotationPdfItineraryDay[] = [
+  {
+    dayOffset: 0,
+    date: "2026-10-01",
+    narrative: "Arrival in Yerevan, transfer to the hotel and welcome dinner.",
+    overnightCity: "Yerevan / Երևան",
+    services: [
+      { serviceProductId: null, label: "Airport transfer" },
+      { serviceProductId: "svc-welcome-dinner", label: "Welcome dinner" },
+    ],
+  },
+  {
+    dayOffset: 1,
+    date: "2026-10-02",
+    narrative: "Full-day Yerevan city tour with a guide.",
+    overnightCity: "Yerevan / Երևան",
+    services: [{ serviceProductId: "svc-city-tour", label: "Yerevan city tour" }],
+  },
+  {
+    dayOffset: 2,
+    date: "2026-10-03",
+    narrative: null,
+    overnightCity: null,
+    services: [],
+  },
+];
 
 export const FIXTURE_SELL_A = "1679000.00";
 export const FIXTURE_SELL_B = "1842500.00";

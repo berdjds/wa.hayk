@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useState } from "react";
 import axios from "axios";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -8,8 +8,16 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { useToast } from "@/components/ui/toast";
-import { COST_CATEGORIES, RATE_STATUSES } from "@/lib/travel/contracts";
+import { COST_CATEGORIES, PRICING_BASES, RATE_STATUSES } from "@/lib/travel/contracts";
 import TravelShell from "./TravelShell";
 import { StateBadge, apiError, formatDateTime, money, parseJson } from "./utils";
 import type {
@@ -21,6 +29,7 @@ import type {
   PolicyView,
   RateView,
   ServiceProductView,
+  SupplierOption,
 } from "./types";
 
 interface CatalogAdminProps {
@@ -64,33 +73,830 @@ export default function CatalogAdmin({ role, userId }: CatalogAdminProps) {
 }
 
 // ---------------------------------------------------------------------------
+// Shared catalog CRUD helpers
+// ---------------------------------------------------------------------------
 
-function rateSummary(r: RateView): string {
-  const range = `${r.validFrom ?? "…"}→${r.validTo ?? "…"}`;
-  const amount = r.amount == null ? "TBC" : money(r.amount, r.currency);
-  return `${r.occupancy ?? "-"}${r.board ? `/${r.board}` : ""} ${amount} (${range})`;
+const WEEKDAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+const OCCUPANCIES = ["SGL", "DBL", "TPL", "EXTRA_BED", "UNIT"] as const;
+const DURATION_VARIANTS = ["half_day", "full_day", "transfer"] as const;
+/** Radix Select rejects empty-string values, so "no value" uses a sentinel. */
+const NONE = "__none__";
+
+function weekdaysSummary(raw: string | null | undefined): string {
+  const days = parseJson<number[]>(raw, []);
+  return days.length ? days.map((n) => WEEKDAY_LABELS[n - 1] ?? String(n)).join(", ") : "—";
 }
+
+function useSuppliers(): SupplierOption[] {
+  const [suppliers, setSuppliers] = useState<SupplierOption[]>([]);
+  useEffect(() => {
+    axios
+      .get("/api/travel/catalog/suppliers")
+      .then((res) => setSuppliers(res.data))
+      .catch(() => {});
+  }, []);
+  return suppliers;
+}
+
+function WeekdayPicker({ value, onChange }: { value: number[]; onChange: (v: number[]) => void }) {
+  return (
+    <div className="flex flex-wrap gap-3">
+      {WEEKDAY_LABELS.map((label, i) => {
+        const n = i + 1;
+        const checked = value.includes(n);
+        return (
+          <label key={n} className="flex items-center gap-1 text-xs">
+            <input
+              type="checkbox"
+              checked={checked}
+              onChange={(e) =>
+                onChange(
+                  e.target.checked ? [...value, n].sort((a, b) => a - b) : value.filter((x) => x !== n),
+                )
+              }
+            />
+            {label}
+          </label>
+        );
+      })}
+    </div>
+  );
+}
+
+function SupplierSelect({
+  value,
+  onChange,
+  suppliers,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  suppliers: SupplierOption[];
+}) {
+  return (
+    <Select value={value || NONE} onValueChange={(v) => onChange(v === NONE ? "" : v)}>
+      <SelectTrigger>
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value={NONE}>No supplier</SelectItem>
+        {suppliers.map((s) => (
+          <SelectItem key={s.id} value={s.id}>
+            {s.name}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+}
+
+/** Optional integer text field → number | null. */
+function intOrNull(v: string): number | null {
+  const t = v.trim();
+  return t === "" ? null : Number(t);
+}
+
+// ---------------------------------------------------------------------------
+// Rate create/edit dialog (shared by hotel and service rate editors)
+// ---------------------------------------------------------------------------
+
+interface RateFormState {
+  occupancy: string;
+  board: string;
+  amount: string; // "" or "TBC" → null server-side
+  currency: string;
+  validFrom: string;
+  validTo: string;
+  weekdays: number[];
+  minStay: string;
+  priority: string;
+  notes: string;
+}
+
+const EMPTY_RATE_FORM: RateFormState = {
+  occupancy: "",
+  board: "",
+  amount: "",
+  currency: "AMD",
+  validFrom: "",
+  validTo: "",
+  weekdays: [],
+  minStay: "",
+  priority: "0",
+  notes: "",
+};
+
+function rateToForm(r: RateView): RateFormState {
+  return {
+    occupancy: r.occupancy ?? "",
+    board: r.board ?? "",
+    amount: r.amount ?? "",
+    currency: r.currency,
+    validFrom: r.validFrom ?? "",
+    validTo: r.validTo ?? "",
+    weekdays: parseJson<number[]>(r.weekdays, []),
+    minStay: r.minStay != null ? String(r.minStay) : "",
+    priority: String(r.priority),
+    notes: r.notes ?? "",
+  };
+}
+
+function RateDialog({
+  productType,
+  productId,
+  rate,
+  open,
+  onOpenChange,
+  onSaved,
+}: {
+  productType: "HOTEL" | "SERVICE";
+  productId: string;
+  rate: RateView | null; // null = create
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onSaved: () => void;
+}) {
+  const { toast } = useToast();
+  const [form, setForm] = useState<RateFormState>(EMPTY_RATE_FORM);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (open) setForm(rate ? rateToForm(rate) : EMPTY_RATE_FORM);
+  }, [open, rate]);
+
+  async function save(e: React.FormEvent) {
+    e.preventDefault();
+    setSaving(true);
+    const base = {
+      amount: form.amount.trim(),
+      currency: form.currency.trim().toUpperCase(),
+      validFrom: form.validFrom || null,
+      validTo: form.validTo || null,
+      weekdays: form.weekdays,
+      minStay: intOrNull(form.minStay),
+      priority: form.priority.trim() ? Number(form.priority) : 0,
+      notes: form.notes.trim() || null,
+    };
+    try {
+      if (rate) {
+        // Occupancy/board identify the bracket and are not editable; archive +
+        // recreate to move a rate to a different bracket.
+        await axios.patch(`/api/travel/catalog/rates/${rate.id}`, base);
+        toast("Rate updated", "success");
+      } else {
+        await axios.post("/api/travel/catalog/rates", {
+          productType,
+          ...(productType === "HOTEL" ? { hotelProductId: productId } : { serviceProductId: productId }),
+          occupancy: productType === "HOTEL" ? form.occupancy || null : null,
+          board: form.board.trim() || null,
+          ...base,
+        });
+        toast("Rate created (needs review)", "success");
+      }
+      onOpenChange(false);
+      onSaved();
+    } catch (err) {
+      toast(apiError(err, "Failed to save rate"), "error");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>{rate ? "Edit rate" : "Add rate"}</DialogTitle>
+          <DialogDescription>
+            {rate
+              ? "Amount, currency, validity and notes are editable; edits on verified rates are audit-logged."
+              : "New rates start as NEEDS REVIEW until verified on the Rates tab. Leave amount empty for TBC."}
+          </DialogDescription>
+        </DialogHeader>
+        <form onSubmit={save} className="space-y-4">
+          <div className="grid gap-4 sm:grid-cols-2">
+            {productType === "HOTEL" && (
+              <div>
+                <Label>Occupancy</Label>
+                {rate ? (
+                  <Input value={form.occupancy || "—"} disabled />
+                ) : (
+                  <Select value={form.occupancy || NONE} onValueChange={(v) => setForm({ ...form, occupancy: v === NONE ? "" : v })}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={NONE}>Any / n/a</SelectItem>
+                      {OCCUPANCIES.map((o) => (
+                        <SelectItem key={o} value={o}>
+                          {o.replace(/_/g, " ")}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+              </div>
+            )}
+            <div>
+              <Label>Board</Label>
+              {rate ? (
+                <Input value={form.board || "—"} disabled />
+              ) : (
+                <Input
+                  placeholder="BB / HB / FB (optional)"
+                  value={form.board}
+                  onChange={(e) => setForm({ ...form, board: e.target.value })}
+                />
+              )}
+            </div>
+            <div>
+              <Label>Amount (decimal string, empty = TBC)</Label>
+              <Input
+                placeholder="e.g. 45000 or 45000.00"
+                value={form.amount}
+                onChange={(e) => setForm({ ...form, amount: e.target.value })}
+              />
+            </div>
+            <div>
+              <Label>Currency</Label>
+              <Input
+                maxLength={3}
+                value={form.currency}
+                onChange={(e) => setForm({ ...form, currency: e.target.value.toUpperCase() })}
+                required
+              />
+            </div>
+            <div>
+              <Label>Valid from (optional)</Label>
+              <Input type="date" value={form.validFrom} onChange={(e) => setForm({ ...form, validFrom: e.target.value })} />
+            </div>
+            <div>
+              <Label>Valid to (exclusive, optional)</Label>
+              <Input type="date" value={form.validTo} onChange={(e) => setForm({ ...form, validTo: e.target.value })} />
+            </div>
+            <div>
+              <Label>Min stay (nights, optional)</Label>
+              <Input type="number" min={1} value={form.minStay} onChange={(e) => setForm({ ...form, minStay: e.target.value })} />
+            </div>
+            <div>
+              <Label>Priority (higher wins on overlap)</Label>
+              <Input type="number" value={form.priority} onChange={(e) => setForm({ ...form, priority: e.target.value })} />
+            </div>
+          </div>
+          <div>
+            <Label>Weekdays (leave all unchecked for every day)</Label>
+            <WeekdayPicker value={form.weekdays} onChange={(v) => setForm({ ...form, weekdays: v })} />
+          </div>
+          <div>
+            <Label>Notes (optional)</Label>
+            <Input value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={saving}>
+              {saving ? "Saving..." : rate ? "Save changes" : "Create rate"}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/** Rate rows of one product, styled like the workbook price brackets. */
+function RateTable({
+  rates,
+  productType,
+  onEdit,
+}: {
+  rates: RateView[];
+  productType: "HOTEL" | "SERVICE";
+  onEdit: (r: RateView) => void;
+}) {
+  if (rates.length === 0) {
+    return <p className="py-2 text-xs text-muted-foreground">No rates yet.</p>;
+  }
+  return (
+    <table className="w-full text-xs">
+      <thead className="border-b text-left text-muted-foreground">
+        <tr>
+          {productType === "HOTEL" && <th className="py-1 pr-3 font-medium">Occupancy</th>}
+          <th className="py-1 pr-3 font-medium">Board</th>
+          <th className="py-1 pr-3 font-medium">Amount</th>
+          <th className="py-1 pr-3 font-medium">Validity</th>
+          <th className="py-1 pr-3 font-medium">Weekdays</th>
+          <th className="py-1 pr-3 font-medium">Min stay</th>
+          <th className="py-1 pr-3 font-medium">Status</th>
+          <th className="py-1 font-medium"></th>
+        </tr>
+      </thead>
+      <tbody className="divide-y">
+        {rates.map((r) => (
+          <tr key={r.id}>
+            {productType === "HOTEL" && <td className="py-1.5 pr-3 font-medium">{r.occupancy ?? "—"}</td>}
+            <td className="py-1.5 pr-3">{r.board ?? "—"}</td>
+            <td className="py-1.5 pr-3 whitespace-nowrap">{r.amount == null ? "TBC" : money(r.amount, r.currency)}</td>
+            <td className="py-1.5 pr-3 whitespace-nowrap">
+              {r.validFrom ?? "…"} → {r.validTo ?? "…"}
+            </td>
+            <td className="py-1.5 pr-3">{weekdaysSummary(r.weekdays)}</td>
+            <td className="py-1.5 pr-3">{r.minStay ?? "—"}</td>
+            <td className="py-1.5 pr-3">
+              <StateBadge value={r.status} className="px-1.5 py-0 text-[10px]" />
+            </td>
+            <td className="py-1.5">
+              <Button size="sm" variant="outline" onClick={() => onEdit(r)}>
+                Edit
+              </Button>
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Service product create/edit dialog
+// ---------------------------------------------------------------------------
+
+interface ServiceFormState {
+  name: string;
+  category: string;
+  basis: string;
+  capacity: string;
+  language: string;
+  durationVariant: string;
+  weekdays: number[];
+  supplierId: string;
+  active: boolean;
+}
+
+const EMPTY_SERVICE_FORM: ServiceFormState = {
+  name: "",
+  category: "EXTRA_SERVICES",
+  basis: "PER_PERSON",
+  capacity: "",
+  language: "",
+  durationVariant: "",
+  weekdays: [],
+  supplierId: "",
+  active: true,
+};
+
+function serviceToForm(s: ServiceProductView): ServiceFormState {
+  return {
+    name: s.name,
+    category: s.category,
+    basis: s.basis,
+    capacity: s.capacity != null ? String(s.capacity) : "",
+    language: s.language ?? "",
+    durationVariant: s.durationVariant ?? "",
+    weekdays: parseJson<number[]>(s.weekdays, []),
+    supplierId: s.supplier?.id ?? "",
+    active: s.active,
+  };
+}
+
+function ServiceDialog({
+  service,
+  open,
+  onOpenChange,
+  onSaved,
+  suppliers,
+}: {
+  service: ServiceProductView | null; // null = create
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onSaved: () => void;
+  suppliers: SupplierOption[];
+}) {
+  const { toast } = useToast();
+  const [form, setForm] = useState<ServiceFormState>(EMPTY_SERVICE_FORM);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (open) setForm(service ? serviceToForm(service) : EMPTY_SERVICE_FORM);
+  }, [open, service]);
+
+  async function save(e: React.FormEvent) {
+    e.preventDefault();
+    setSaving(true);
+    const payload = {
+      name: form.name.trim(),
+      category: form.category,
+      basis: form.basis,
+      capacity: intOrNull(form.capacity),
+      language: form.language.trim() || null,
+      durationVariant: form.durationVariant || null,
+      weekdays: form.weekdays,
+      supplierId: form.supplierId || null,
+      active: form.active,
+    };
+    try {
+      if (service) {
+        await axios.patch(`/api/travel/catalog/services/${service.id}`, payload);
+        toast("Service updated", "success");
+      } else {
+        await axios.post("/api/travel/catalog/services", payload);
+        toast("Service created", "success");
+      }
+      onOpenChange(false);
+      onSaved();
+    } catch (err) {
+      toast(apiError(err, "Failed to save service"), "error");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>{service ? "Edit service" : "Add service"}</DialogTitle>
+          <DialogDescription>Category and basis drive how the costing engine prices this line.</DialogDescription>
+        </DialogHeader>
+        <form onSubmit={save} className="space-y-4">
+          <div>
+            <Label>Name</Label>
+            <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required />
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div>
+              <Label>Category</Label>
+              <Select value={form.category} onValueChange={(v) => setForm({ ...form, category: v })}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {COST_CATEGORIES.map((c) => (
+                    <SelectItem key={c} value={c}>
+                      {c.replace(/_/g, " ")}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Pricing basis</Label>
+              <Select value={form.basis} onValueChange={(v) => setForm({ ...form, basis: v })}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {PRICING_BASES.map((b) => (
+                    <SelectItem key={b} value={b}>
+                      {b.replace(/_/g, " ")}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Capacity (optional)</Label>
+              <Input type="number" min={1} value={form.capacity} onChange={(e) => setForm({ ...form, capacity: e.target.value })} />
+            </div>
+            <div>
+              <Label>Language (optional)</Label>
+              <Input value={form.language} onChange={(e) => setForm({ ...form, language: e.target.value })} />
+            </div>
+            <div>
+              <Label>Duration variant (optional)</Label>
+              <Select
+                value={form.durationVariant || NONE}
+                onValueChange={(v) => setForm({ ...form, durationVariant: v === NONE ? "" : v })}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={NONE}>None</SelectItem>
+                  {DURATION_VARIANTS.map((d) => (
+                    <SelectItem key={d} value={d}>
+                      {d.replace(/_/g, " ")}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Supplier (optional)</Label>
+              <SupplierSelect value={form.supplierId} onChange={(v) => setForm({ ...form, supplierId: v })} suppliers={suppliers} />
+            </div>
+          </div>
+          <div>
+            <Label>Weekdays (shared departures only; all unchecked = every day)</Label>
+            <WeekdayPicker value={form.weekdays} onChange={(v) => setForm({ ...form, weekdays: v })} />
+          </div>
+          <label className="flex items-center gap-2 text-sm">
+            <input type="checkbox" checked={form.active} onChange={(e) => setForm({ ...form, active: e.target.checked })} />
+            Active
+          </label>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={saving}>
+              {saving ? "Saving..." : service ? "Save changes" : "Create service"}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Hotel product create/edit dialog
+// ---------------------------------------------------------------------------
+
+interface HotelFormState {
+  name: string;
+  city: string;
+  country: string;
+  stars: string;
+  kind: string;
+  roomType: string;
+  capacityAdults: string;
+  capacityChildren: string;
+  capacityTotal: string;
+  beds: string;
+  extraBedAllowed: boolean;
+  cotAllowed: boolean;
+  boardOptions: string; // comma-separated in the UI, JSON array on the model
+  supplierId: string;
+  active: boolean;
+}
+
+const EMPTY_HOTEL_FORM: HotelFormState = {
+  name: "",
+  city: "",
+  country: "AM",
+  stars: "",
+  kind: "ROOM",
+  roomType: "",
+  capacityAdults: "2",
+  capacityChildren: "0",
+  capacityTotal: "2",
+  beds: "",
+  extraBedAllowed: false,
+  cotAllowed: false,
+  boardOptions: "",
+  supplierId: "",
+  active: true,
+};
+
+function hotelToForm(h: HotelProductView): HotelFormState {
+  return {
+    name: h.name,
+    city: h.city ?? "",
+    country: h.country,
+    stars: h.stars != null ? String(h.stars) : "",
+    kind: h.kind,
+    roomType: h.roomType ?? "",
+    capacityAdults: String(h.capacityAdults),
+    capacityChildren: String(h.capacityChildren),
+    capacityTotal: String(h.capacityTotal),
+    beds: h.beds ?? "",
+    extraBedAllowed: h.extraBedAllowed,
+    cotAllowed: h.cotAllowed,
+    boardOptions: parseJson<string[]>(h.boardOptions, []).join(", "),
+    supplierId: h.supplier?.id ?? "",
+    active: h.active,
+  };
+}
+
+function HotelDialog({
+  hotel,
+  open,
+  onOpenChange,
+  onSaved,
+  suppliers,
+}: {
+  hotel: HotelProductView | null; // null = create
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onSaved: () => void;
+  suppliers: SupplierOption[];
+}) {
+  const { toast } = useToast();
+  const [form, setForm] = useState<HotelFormState>(EMPTY_HOTEL_FORM);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (open) setForm(hotel ? hotelToForm(hotel) : EMPTY_HOTEL_FORM);
+  }, [open, hotel]);
+
+  async function save(e: React.FormEvent) {
+    e.preventDefault();
+    setSaving(true);
+    const payload = {
+      name: form.name.trim(),
+      city: form.city.trim() || null,
+      country: form.country.trim().toUpperCase() || "AM",
+      stars: intOrNull(form.stars),
+      kind: form.kind,
+      roomType: form.roomType.trim() || null,
+      capacityAdults: intOrNull(form.capacityAdults) ?? 2,
+      capacityChildren: intOrNull(form.capacityChildren) ?? 0,
+      capacityTotal: intOrNull(form.capacityTotal) ?? 2,
+      beds: form.beds.trim() || null,
+      extraBedAllowed: form.extraBedAllowed,
+      cotAllowed: form.cotAllowed,
+      boardOptions: form.boardOptions
+        .split(",")
+        .map((b) => b.trim().toUpperCase())
+        .filter(Boolean),
+      supplierId: form.supplierId || null,
+      active: form.active,
+    };
+    try {
+      if (hotel) {
+        await axios.patch(`/api/travel/catalog/hotels/${hotel.id}`, payload);
+        toast("Hotel updated", "success");
+      } else {
+        await axios.post("/api/travel/catalog/hotels", payload);
+        toast("Hotel created", "success");
+      }
+      onOpenChange(false);
+      onSaved();
+    } catch (err) {
+      toast(apiError(err, "Failed to save hotel"), "error");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>{hotel ? "Edit hotel" : "Add hotel"}</DialogTitle>
+          <DialogDescription>Physical room/unit product. Rates per occupancy are managed on the row's Rates panel.</DialogDescription>
+        </DialogHeader>
+        <form onSubmit={save} className="space-y-4">
+          <div>
+            <Label>Name</Label>
+            <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required />
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div>
+              <Label>City (optional)</Label>
+              <Input value={form.city} onChange={(e) => setForm({ ...form, city: e.target.value })} />
+            </div>
+            <div>
+              <Label>Country</Label>
+              <Input
+                maxLength={3}
+                value={form.country}
+                onChange={(e) => setForm({ ...form, country: e.target.value.toUpperCase() })}
+                required
+              />
+            </div>
+            <div>
+              <Label>Stars (optional)</Label>
+              <Input type="number" min={1} max={5} value={form.stars} onChange={(e) => setForm({ ...form, stars: e.target.value })} />
+            </div>
+            <div>
+              <Label>Kind</Label>
+              <Select value={form.kind} onValueChange={(v) => setForm({ ...form, kind: v })}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ROOM">Room</SelectItem>
+                  <SelectItem value="COTTAGE_UNIT">Cottage / whole unit</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Room type (optional)</Label>
+              <Input
+                placeholder="e.g. Standard / Cottage 2BR"
+                value={form.roomType}
+                onChange={(e) => setForm({ ...form, roomType: e.target.value })}
+              />
+            </div>
+            <div>
+              <Label>Beds (optional)</Label>
+              <Input placeholder="e.g. 1 DBL + 1 SGL" value={form.beds} onChange={(e) => setForm({ ...form, beds: e.target.value })} />
+            </div>
+            <div>
+              <Label>Capacity adults</Label>
+              <Input
+                type="number"
+                min={0}
+                value={form.capacityAdults}
+                onChange={(e) => setForm({ ...form, capacityAdults: e.target.value })}
+                required
+              />
+            </div>
+            <div>
+              <Label>Capacity children</Label>
+              <Input
+                type="number"
+                min={0}
+                value={form.capacityChildren}
+                onChange={(e) => setForm({ ...form, capacityChildren: e.target.value })}
+                required
+              />
+            </div>
+            <div>
+              <Label>Capacity total</Label>
+              <Input
+                type="number"
+                min={1}
+                value={form.capacityTotal}
+                onChange={(e) => setForm({ ...form, capacityTotal: e.target.value })}
+                required
+              />
+            </div>
+            <div>
+              <Label>Supplier (optional)</Label>
+              <SupplierSelect value={form.supplierId} onChange={(v) => setForm({ ...form, supplierId: v })} suppliers={suppliers} />
+            </div>
+          </div>
+          <div>
+            <Label>Board options (comma-separated, e.g. BB, HB, FB)</Label>
+            <Input value={form.boardOptions} onChange={(e) => setForm({ ...form, boardOptions: e.target.value })} />
+          </div>
+          <div className="flex flex-wrap gap-6">
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={form.extraBedAllowed}
+                onChange={(e) => setForm({ ...form, extraBedAllowed: e.target.checked })}
+              />
+              Extra bed allowed
+            </label>
+            <label className="flex items-center gap-2 text-sm">
+              <input type="checkbox" checked={form.cotAllowed} onChange={(e) => setForm({ ...form, cotAllowed: e.target.checked })} />
+              Cot allowed
+            </label>
+            <label className="flex items-center gap-2 text-sm">
+              <input type="checkbox" checked={form.active} onChange={(e) => setForm({ ...form, active: e.target.checked })} />
+              Active
+            </label>
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={saving}>
+              {saving ? "Saving..." : hotel ? "Save changes" : "Create hotel"}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Tabs
+// ---------------------------------------------------------------------------
 
 function HotelsTab() {
   const { toast } = useToast();
   const [hotels, setHotels] = useState<HotelProductView[]>([]);
   const [q, setQ] = useState("");
+  const suppliers = useSuppliers();
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [hotelDialog, setHotelDialog] = useState<{ open: boolean; hotel: HotelProductView | null }>({
+    open: false,
+    hotel: null,
+  });
+  const [rateDialog, setRateDialog] = useState<{ open: boolean; hotelId: string; rate: RateView | null }>({
+    open: false,
+    hotelId: "",
+    rate: null,
+  });
+
+  // Admins manage active flags here, so the list must include inactive rows.
+  const load = useCallback(() => {
+    axios
+      .get(`/api/travel/catalog/hotels?q=${encodeURIComponent(q)}&includeInactive=true`)
+      .then((res) => setHotels(res.data))
+      .catch((err) => toast(apiError(err, "Failed to load hotels"), "error"));
+  }, [q, toast]);
 
   useEffect(() => {
-    const t = setTimeout(() => {
-      axios
-        .get(`/api/travel/catalog/hotels?q=${encodeURIComponent(q)}`)
-        .then((res) => setHotels(res.data))
-        .catch((err) => toast(apiError(err, "Failed to load hotels"), "error"));
-    }, 300);
+    const t = setTimeout(load, 300);
     return () => clearTimeout(t);
-  }, [q, toast]);
+  }, [load]);
 
   return (
     <Card>
-      <CardHeader>
-        <CardTitle>Hotel products</CardTitle>
-        <CardDescription>Read-only catalog; verify rates on the Rates tab.</CardDescription>
+      <CardHeader className="flex flex-row items-start justify-between gap-4 space-y-0">
+        <div>
+          <CardTitle>Hotel products</CardTitle>
+          <CardDescription>
+            Hotels and whole-unit cottages with price brackets per occupancy. Rates are verified on the Rates tab.
+          </CardDescription>
+        </div>
+        <Button onClick={() => setHotelDialog({ open: true, hotel: null })}>Add hotel</Button>
       </CardHeader>
       <CardContent className="space-y-4">
         <Input placeholder="Search hotels..." value={q} onChange={(e) => setQ(e.target.value)} className="max-w-xs" />
@@ -104,44 +910,93 @@ function HotelsTab() {
                 <th className="pb-2 font-medium">Capacity</th>
                 <th className="pb-2 font-medium">Boards</th>
                 <th className="pb-2 font-medium">Supplier</th>
-                <th className="pb-2 font-medium">Rates</th>
+                <th className="pb-2 font-medium">Status</th>
+                <th className="pb-2 font-medium">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y">
               {hotels.map((h) => (
-                <tr key={h.id}>
-                  <td className="py-2">
-                    {h.name}
-                    {h.stars ? <span className="text-muted-foreground"> ({h.stars}★)</span> : null}
-                  </td>
-                  <td className="py-2">{h.city ?? "—"}</td>
-                  <td className="py-2">{h.kind}</td>
-                  <td className="py-2">
-                    {h.capacityAdults}A/{h.capacityChildren}C (max {h.capacityTotal})
-                    {h.extraBedAllowed ? " +EB" : ""}
-                  </td>
-                  <td className="py-2">{parseJson<string[]>(h.boardOptions, []).join(", ") || "—"}</td>
-                  <td className="py-2">{h.supplier?.name ?? "—"}</td>
-                  <td className="py-2">
-                    {h.rates.length === 0 ? (
-                      <span className="text-muted-foreground">none</span>
-                    ) : (
-                      <ul className="space-y-0.5 text-xs">
-                        {h.rates.map((r) => (
-                          <li key={r.id} className="flex items-center gap-1">
-                            <StateBadge value={r.status} className="px-1.5 py-0 text-[10px]" />
-                            {rateSummary(r)}
-                          </li>
-                        ))}
-                      </ul>
-                    )}
+                <Fragment key={h.id}>
+                  <tr className={h.active ? "" : "text-muted-foreground"}>
+                    <td className="py-2">
+                      {h.name}
+                      {h.stars ? <span className="text-muted-foreground"> ({h.stars}★)</span> : null}
+                    </td>
+                    <td className="py-2">{h.city ?? "—"}</td>
+                    <td className="py-2">{h.kind}</td>
+                    <td className="py-2">
+                      {h.capacityAdults}A/{h.capacityChildren}C (max {h.capacityTotal})
+                      {h.extraBedAllowed ? " +EB" : ""}
+                    </td>
+                    <td className="py-2">{parseJson<string[]>(h.boardOptions, []).join(", ") || "—"}</td>
+                    <td className="py-2">{h.supplier?.name ?? "—"}</td>
+                    <td className="py-2 text-xs">{h.active ? "Active" : "Inactive"}</td>
+                    <td className="py-2">
+                      <div className="flex gap-1">
+                        <Button size="sm" variant="outline" onClick={() => setHotelDialog({ open: true, hotel: h })}>
+                          Edit
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => setExpandedId(expandedId === h.id ? null : h.id)}
+                        >
+                          {expandedId === h.id ? "Hide rates" : `Rates (${h.rates.length})`}
+                        </Button>
+                      </div>
+                    </td>
+                  </tr>
+                  {expandedId === h.id && (
+                    <tr>
+                      <td colSpan={8} className="bg-muted/30 px-4 py-3">
+                        <div className="mb-2 flex items-center justify-between">
+                          <p className="text-xs font-medium text-muted-foreground">
+                            Price brackets — {h.name}
+                            {h.city ? ` (${h.city})` : ""}
+                          </p>
+                          <Button
+                            size="sm"
+                            onClick={() => setRateDialog({ open: true, hotelId: h.id, rate: null })}
+                          >
+                            Add rate
+                          </Button>
+                        </div>
+                        <RateTable
+                          rates={h.rates}
+                          productType="HOTEL"
+                          onEdit={(r) => setRateDialog({ open: true, hotelId: h.id, rate: r })}
+                        />
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
+              ))}
+              {hotels.length === 0 && (
+                <tr>
+                  <td colSpan={8} className="py-6 text-center text-muted-foreground">
+                    No hotels found.
                   </td>
                 </tr>
-              ))}
+              )}
             </tbody>
           </table>
         </div>
       </CardContent>
+      <HotelDialog
+        hotel={hotelDialog.hotel}
+        open={hotelDialog.open}
+        onOpenChange={(open) => setHotelDialog((d) => ({ ...d, open }))}
+        onSaved={load}
+        suppliers={suppliers}
+      />
+      <RateDialog
+        productType="HOTEL"
+        productId={rateDialog.hotelId}
+        rate={rateDialog.rate}
+        open={rateDialog.open}
+        onOpenChange={(open) => setRateDialog((d) => ({ ...d, open }))}
+        onSaved={load}
+      />
     </Card>
   );
 }
@@ -151,25 +1006,42 @@ function ServicesTab() {
   const [services, setServices] = useState<ServiceProductView[]>([]);
   const [q, setQ] = useState("");
   const [category, setCategory] = useState("ALL");
+  const suppliers = useSuppliers();
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [serviceDialog, setServiceDialog] = useState<{ open: boolean; service: ServiceProductView | null }>({
+    open: false,
+    service: null,
+  });
+  const [rateDialog, setRateDialog] = useState<{ open: boolean; serviceId: string; rate: RateView | null }>({
+    open: false,
+    serviceId: "",
+    rate: null,
+  });
+
+  const load = useCallback(() => {
+    const params = new URLSearchParams();
+    if (q.trim()) params.set("q", q.trim());
+    if (category !== "ALL") params.set("category", category);
+    params.set("includeInactive", "true");
+    axios
+      .get(`/api/travel/catalog/services?${params.toString()}`)
+      .then((res) => setServices(res.data))
+      .catch((err) => toast(apiError(err, "Failed to load services"), "error"));
+  }, [q, category, toast]);
 
   useEffect(() => {
-    const t = setTimeout(() => {
-      const params = new URLSearchParams();
-      if (q.trim()) params.set("q", q.trim());
-      if (category !== "ALL") params.set("category", category);
-      axios
-        .get(`/api/travel/catalog/services?${params.toString()}`)
-        .then((res) => setServices(res.data))
-        .catch((err) => toast(apiError(err, "Failed to load services"), "error"));
-    }, 300);
+    const t = setTimeout(load, 300);
     return () => clearTimeout(t);
-  }, [q, category, toast]);
+  }, [load]);
 
   return (
     <Card>
-      <CardHeader>
-        <CardTitle>Service products</CardTitle>
-        <CardDescription>Read-only catalog.</CardDescription>
+      <CardHeader className="flex flex-row items-start justify-between gap-4 space-y-0">
+        <div>
+          <CardTitle>Service products</CardTitle>
+          <CardDescription>Tours, tickets, meals, guides and other priced services with their rate versions.</CardDescription>
+        </div>
+        <Button onClick={() => setServiceDialog({ open: true, service: null })}>Add service</Button>
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="flex gap-2">
@@ -195,37 +1067,85 @@ function ServicesTab() {
                 <th className="pb-2 font-medium">Name</th>
                 <th className="pb-2 font-medium">Category</th>
                 <th className="pb-2 font-medium">Basis</th>
+                <th className="pb-2 font-medium">Weekdays</th>
                 <th className="pb-2 font-medium">Supplier</th>
-                <th className="pb-2 font-medium">Rates</th>
+                <th className="pb-2 font-medium">Status</th>
+                <th className="pb-2 font-medium">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y">
               {services.map((s) => (
-                <tr key={s.id}>
-                  <td className="py-2">{s.name}</td>
-                  <td className="py-2">{s.category.replace(/_/g, " ")}</td>
-                  <td className="py-2">{s.basis.replace(/_/g, " ")}</td>
-                  <td className="py-2">{s.supplier?.name ?? "—"}</td>
-                  <td className="py-2">
-                    {s.rates.length === 0 ? (
-                      <span className="text-muted-foreground">none</span>
-                    ) : (
-                      <ul className="space-y-0.5 text-xs">
-                        {s.rates.map((r) => (
-                          <li key={r.id} className="flex items-center gap-1">
-                            <StateBadge value={r.status} className="px-1.5 py-0 text-[10px]" />
-                            {rateSummary(r)}
-                          </li>
-                        ))}
-                      </ul>
-                    )}
+                <Fragment key={s.id}>
+                  <tr className={s.active ? "" : "text-muted-foreground"}>
+                    <td className="py-2">{s.name}</td>
+                    <td className="py-2">{s.category.replace(/_/g, " ")}</td>
+                    <td className="py-2">{s.basis.replace(/_/g, " ")}</td>
+                    <td className="py-2 text-xs">{weekdaysSummary(s.weekdays)}</td>
+                    <td className="py-2">{s.supplier?.name ?? "—"}</td>
+                    <td className="py-2 text-xs">{s.active ? "Active" : "Inactive"}</td>
+                    <td className="py-2">
+                      <div className="flex gap-1">
+                        <Button size="sm" variant="outline" onClick={() => setServiceDialog({ open: true, service: s })}>
+                          Edit
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => setExpandedId(expandedId === s.id ? null : s.id)}
+                        >
+                          {expandedId === s.id ? "Hide rates" : `Rates (${s.rates.length})`}
+                        </Button>
+                      </div>
+                    </td>
+                  </tr>
+                  {expandedId === s.id && (
+                    <tr>
+                      <td colSpan={7} className="bg-muted/30 px-4 py-3">
+                        <div className="mb-2 flex items-center justify-between">
+                          <p className="text-xs font-medium text-muted-foreground">Rates — {s.name}</p>
+                          <Button
+                            size="sm"
+                            onClick={() => setRateDialog({ open: true, serviceId: s.id, rate: null })}
+                          >
+                            Add rate
+                          </Button>
+                        </div>
+                        <RateTable
+                          rates={s.rates}
+                          productType="SERVICE"
+                          onEdit={(r) => setRateDialog({ open: true, serviceId: s.id, rate: r })}
+                        />
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
+              ))}
+              {services.length === 0 && (
+                <tr>
+                  <td colSpan={7} className="py-6 text-center text-muted-foreground">
+                    No services found.
                   </td>
                 </tr>
-              ))}
+              )}
             </tbody>
           </table>
         </div>
       </CardContent>
+      <ServiceDialog
+        service={serviceDialog.service}
+        open={serviceDialog.open}
+        onOpenChange={(open) => setServiceDialog((d) => ({ ...d, open }))}
+        onSaved={load}
+        suppliers={suppliers}
+      />
+      <RateDialog
+        productType="SERVICE"
+        productId={rateDialog.serviceId}
+        rate={rateDialog.rate}
+        open={rateDialog.open}
+        onOpenChange={(open) => setRateDialog((d) => ({ ...d, open }))}
+        onSaved={load}
+      />
     </Card>
   );
 }

@@ -1,14 +1,18 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import axios from "axios";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/components/ui/toast";
-import { addDays } from "@/lib/travel/engine/dates";
-import { apiError, parseJson } from "../utils";
+import { addDays, daysBetween } from "@/lib/travel/engine/dates";
+import { normalizeDayServices, type DayServiceItem } from "@/lib/travel/contracts";
+import { apiError } from "../utils";
+import type { ServiceProductView } from "../types";
 import type { DetailContext } from "./RequestDetail";
 
 interface DayDraft {
@@ -16,7 +20,20 @@ interface DayDraft {
   date: string;
   narrative: string;
   overnightCity: string;
-  services: string; // comma separated
+  services: DayServiceItem[];
+}
+
+/** date → overnight city from the first scenario's stays ([checkIn, checkOut)). */
+function deriveCityByDate(ctx: DetailContext): Record<string, string> {
+  const map: Record<string, string> = {};
+  const stays = ctx.version.scenarios[0]?.stays ?? [];
+  for (const stay of stays) {
+    if (!stay.city) continue;
+    for (let date = stay.checkIn; date < stay.checkOut; date = addDays(date, 1)) {
+      map[date] = stay.city;
+    }
+  }
+  return map;
 }
 
 export default function ItineraryTab({ ctx }: { ctx: DetailContext }) {
@@ -25,43 +42,126 @@ export default function ItineraryTab({ ctx }: { ctx: DetailContext }) {
   const [days, setDays] = useState<DayDraft[]>([]);
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [products, setProducts] = useState<ServiceProductView[] | null>(null);
+  const [pickerDay, setPickerDay] = useState<number | null>(null);
+  const [customLabel, setCustomLabel] = useState("");
+  // Cities this component auto-filled, keyed by dayOffset — the sync never
+  // overwrites a value the user typed over a derived one.
+  const derivedCities = useRef<Record<number, string>>({});
+
+  const hasStays = version.scenarios.some((sc) => sc.stays.length > 0);
 
   useEffect(() => {
-    setDays(
-      version.itineraryDays.map((d) => ({
-        dayOffset: d.dayOffset,
-        date: d.date,
-        narrative: d.narrative ?? "",
-        overnightCity: d.overnightCity ?? "",
-        services: parseJson<string[]>(d.services, []).join(", "),
-      })),
-    );
+    const loaded: DayDraft[] = version.itineraryDays.map((d) => ({
+      dayOffset: d.dayOffset,
+      date: d.date,
+      narrative: d.narrative ?? "",
+      overnightCity: d.overnightCity ?? "",
+      services: normalizeDayServices(d.services),
+    }));
+    // Pre-fill overnight cities from stays (blank fields only — typed values
+    // are never touched). Deterministic from the stays, so not marked dirty.
+    derivedCities.current = {};
+    let next = loaded;
+    if (version.scenarios.some((sc) => sc.stays.length > 0)) {
+      const cityByDate = deriveCityByDate(ctx);
+      next = loaded.map((d, i) => {
+        const derived = cityByDate[d.date] ?? "";
+        if (derived && d.overnightCity === "") {
+          derivedCities.current[i] = derived;
+          return { ...d, overnightCity: derived };
+        }
+        return d;
+      });
+    }
+    setDays(next);
     setDirty(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [version.id, version.itineraryDays]);
+
+  useEffect(() => {
+    if (!ctx.canEditVersion || products !== null) return;
+    axios
+      .get("/api/travel/catalog/services")
+      .then((res) => setProducts(res.data))
+      .catch((err) => toast(apiError(err, "Failed to load service catalog"), "error"));
+  }, [ctx.canEditVersion, products, toast]);
+
+  function applyCitySync(source: DayDraft[], markDirty: boolean) {
+    const cityByDate = deriveCityByDate(ctx);
+    let changed = false;
+    const next = source.map((d, i) => {
+      const derived = cityByDate[d.date] ?? "";
+      const previous = derivedCities.current[i];
+      // Fill only blanks and values WE derived earlier; typed cities stay.
+      if (derived && (d.overnightCity === "" || d.overnightCity === previous)) {
+        if (d.overnightCity !== derived) changed = true;
+        derivedCities.current[i] = derived;
+        return { ...d, overnightCity: derived };
+      }
+      return d;
+    });
+    if (changed) {
+      setDays(next);
+      if (markDirty) setDirty(true);
+    }
+    return changed;
+  }
 
   function update(idx: number, patch: Partial<DayDraft>) {
     setDays((prev) => prev.map((d, i) => (i === idx ? { ...d, ...patch } : d)));
     setDirty(true);
   }
 
-  function addDay() {
-    const last = days[days.length - 1];
-    const nextOffset = last ? last.dayOffset + 1 : 0;
+  function rederiveDates(list: DayDraft[]): DayDraft[] {
     // Dates are derived from the request start date so offset and date never diverge.
-    setDays([
-      ...days,
-      { dayOffset: nextOffset, date: addDays(ctx.detail.startDate, nextOffset), narrative: "", overnightCity: "", services: "" },
-    ]);
+    return list.map((d, i) => ({ ...d, dayOffset: i, date: addDays(ctx.detail.startDate, i) }));
+  }
+
+  function generateFromTravelDates() {
+    const count = daysBetween(ctx.detail.startDate, ctx.detail.endDate);
+    const generated: DayDraft[] = Array.from({ length: count }, (_, i) => ({
+      dayOffset: i,
+      date: addDays(ctx.detail.startDate, i),
+      narrative: "",
+      overnightCity: "",
+      services: [],
+    }));
+    derivedCities.current = {};
+    setDays(generated);
+    if (hasStays) applyCitySync(generated, false);
+    setDirty(true);
+  }
+
+  function addDay() {
+    setDays(
+      rederiveDates([
+        ...days,
+        { dayOffset: days.length, date: addDays(ctx.detail.startDate, days.length), narrative: "", overnightCity: "", services: [] },
+      ]),
+    );
     setDirty(true);
   }
 
   function removeDay(idx: number) {
-    setDays(
-      days
-        .filter((_, i) => i !== idx)
-        .map((d, i) => ({ ...d, dayOffset: i, date: addDays(ctx.detail.startDate, i) })),
-    );
+    setDays(rederiveDates(days.filter((_, i) => i !== idx)));
     setDirty(true);
+  }
+
+  function addService(idx: number, item: DayServiceItem) {
+    update(idx, { services: [...days[idx].services, item] });
+  }
+
+  function removeService(dayIdx: number, svcIdx: number) {
+    update(dayIdx, { services: days[dayIdx].services.filter((_, i) => i !== svcIdx) });
+  }
+
+  function addCustomService() {
+    const label = customLabel.trim();
+    if (pickerDay === null || !label) return;
+    addService(pickerDay, { serviceProductId: null, label });
+    setCustomLabel("");
+    setPickerDay(null);
   }
 
   async function handleSave() {
@@ -74,10 +174,7 @@ export default function ItineraryTab({ ctx }: { ctx: DetailContext }) {
           date: d.date,
           narrative: d.narrative || null,
           overnightCity: d.overnightCity || null,
-          services: d.services
-            .split(",")
-            .map((s) => s.trim())
-            .filter(Boolean),
+          services: d.services.map((s) => ({ serviceProductId: s.serviceProductId, label: s.label })),
         })),
       });
       toast("Itinerary saved", "success");
@@ -95,6 +192,63 @@ export default function ItineraryTab({ ctx }: { ctx: DetailContext }) {
     }
   }
 
+  const cityByDate = hasStays ? deriveCityByDate(ctx) : {};
+  const productsByCategory = (products ?? []).reduce<Record<string, ServiceProductView[]>>((acc, p) => {
+    (acc[p.category] ??= []).push(p);
+    return acc;
+  }, {});
+
+  const pickerList = (
+    <>
+      {products === null && <p className="text-sm text-muted-foreground">Loading catalog…</p>}
+      {products !== null && products.length === 0 && (
+        <p className="text-sm text-muted-foreground">No active services in the catalog.</p>
+      )}
+      <div className="max-h-72 space-y-3 overflow-y-auto">
+        {Object.entries(productsByCategory).map(([category, items]) => (
+          <div key={category}>
+            <p className="mb-1 text-xs font-medium text-muted-foreground">{category.replace(/_/g, " ")}</p>
+            <div className="space-y-1">
+              {items.map((p) => (
+                <button
+                  key={p.id}
+                  type="button"
+                  className="w-full rounded-md border px-2 py-1 text-left text-sm hover:bg-accent"
+                  onClick={() => {
+                    if (pickerDay !== null) addService(pickerDay, { serviceProductId: p.id, label: p.name });
+                    setPickerDay(null);
+                  }}
+                >
+                  {p.name}
+                  <span className="ml-2 text-xs text-muted-foreground">
+                    {p.basis.replace(/_/g, " ").toLowerCase()}
+                    {p.durationVariant ? ` · ${p.durationVariant.replace(/_/g, " ")}` : ""}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+      <div className="flex gap-2 border-t pt-3">
+        <Input
+          placeholder="Custom label…"
+          value={customLabel}
+          onChange={(e) => setCustomLabel(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              addCustomService();
+            }
+          }}
+        />
+        <Button variant="outline" size="sm" onClick={addCustomService} disabled={!customLabel.trim()}>
+          Add custom
+        </Button>
+      </div>
+    </>
+  );
+
   return (
     <Card>
       <CardHeader>
@@ -107,6 +261,11 @@ export default function ItineraryTab({ ctx }: { ctx: DetailContext }) {
           </div>
           {ctx.canEditVersion && (
             <div className="flex gap-2">
+              {hasStays && (
+                <Button variant="outline" size="sm" onClick={() => applyCitySync(days, true)}>
+                  Sync cities from stays
+                </Button>
+              )}
               <Button variant="outline" size="sm" onClick={addDay}>
                 Add day
               </Button>
@@ -118,7 +277,18 @@ export default function ItineraryTab({ ctx }: { ctx: DetailContext }) {
         </div>
       </CardHeader>
       <CardContent>
-        {days.length === 0 && <p className="text-sm text-muted-foreground">No itinerary days yet.</p>}
+        {days.length === 0 &&
+          (ctx.canEditVersion ? (
+            <div className="flex flex-col items-center gap-3 rounded-md border border-dashed p-8 text-center">
+              <p className="text-sm text-muted-foreground">
+                No itinerary days yet. Generate one day per travel date ({ctx.detail.startDate} →{" "}
+                {ctx.detail.endDate}) or add days manually.
+              </p>
+              <Button onClick={generateFromTravelDates}>Generate days from travel dates</Button>
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">No itinerary days yet.</p>
+          ))}
         <div className="space-y-3">
           {days.map((d, i) =>
             ctx.canEditVersion ? (
@@ -131,16 +301,34 @@ export default function ItineraryTab({ ctx }: { ctx: DetailContext }) {
                   value={d.narrative}
                   onChange={(e) => update(i, { narrative: e.target.value })}
                 />
-                <Input
-                  placeholder="Overnight city"
-                  value={d.overnightCity}
-                  onChange={(e) => update(i, { overnightCity: e.target.value })}
-                />
-                <Input
-                  placeholder="Services (comma separated)"
-                  value={d.services}
-                  onChange={(e) => update(i, { services: e.target.value })}
-                />
+                <div>
+                  <Input
+                    placeholder="Overnight city"
+                    value={d.overnightCity}
+                    onChange={(e) => update(i, { overnightCity: e.target.value })}
+                  />
+                  {hasStays && !cityByDate[d.date] && (
+                    <p className="mt-1 text-xs text-amber-600">No stay covers this date</p>
+                  )}
+                </div>
+                <div className="flex flex-wrap content-start items-start gap-1">
+                  {d.services.map((s, j) => (
+                    <Badge key={j} variant="outline" className="flex items-center gap-1">
+                      {s.label}
+                      <button
+                        type="button"
+                        aria-label={`Remove ${s.label}`}
+                        className="text-muted-foreground hover:text-foreground"
+                        onClick={() => removeService(i, j)}
+                      >
+                        ✕
+                      </button>
+                    </Badge>
+                  ))}
+                  <Button variant="outline" size="sm" className="h-6 px-2 text-xs" onClick={() => setPickerDay(i)}>
+                    + Add service
+                  </Button>
+                </div>
                 <Button variant="ghost" size="sm" onClick={() => removeDay(i)}>
                   ✕
                 </Button>
@@ -153,12 +341,31 @@ export default function ItineraryTab({ ctx }: { ctx: DetailContext }) {
                   {d.overnightCity && <span className="text-muted-foreground">· {d.overnightCity}</span>}
                 </div>
                 {d.narrative && <p className="whitespace-pre-wrap">{d.narrative}</p>}
-                {d.services && <p className="mt-1 text-xs text-muted-foreground">Services: {d.services}</p>}
+                {d.services.length > 0 && (
+                  <div className="mt-1 flex flex-wrap gap-1">
+                    {d.services.map((s, j) => (
+                      <Badge key={j} variant="outline" className="text-xs font-normal text-muted-foreground">
+                        {s.label}
+                      </Badge>
+                    ))}
+                  </div>
+                )}
               </div>
             ),
           )}
         </div>
       </CardContent>
+      <Dialog open={pickerDay !== null} onOpenChange={(open) => !open && setPickerDay(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add service{pickerDay !== null ? ` — Day ${days[pickerDay]?.dayOffset + 1}` : ""}</DialogTitle>
+            <DialogDescription>
+              Pick a catalog service (priced automatically from its rate on this date) or add a custom label.
+            </DialogDescription>
+          </DialogHeader>
+          {pickerList}
+        </DialogContent>
+      </Dialog>
     </Card>
   );
 }

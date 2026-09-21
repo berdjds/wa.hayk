@@ -237,8 +237,12 @@ model ServiceLine {
   overrideReason   String?
   overrideById     String?
   sourceRef        String? // provenance, e.g. "Tour Calculator!C58"
+  serviceProductId String? // catalog link; rates resolve from RateVersion(productType: SERVICE)
+  date             String? // YYYY-MM-DD of the itinerary day that spawned the line; null = not day-linked
 
   version QuoteVersion @relation(fields: [versionId], references: [id], onDelete: Cascade)
+
+  @@index([serviceProductId])
 }
 
 // ---------------------------------------------------------------------------

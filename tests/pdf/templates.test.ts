@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
+import { normalizeDayServices } from "@/lib/travel/contracts";
 import {
   buildClientQuotationHtml,
   buildInternalCostingHtml,
 } from "@/lib/travel/pdf/templates";
 import {
+  FIXTURE_ITINERARY_DAYS,
   FIXTURE_NIGHTLY_RATE,
   FIXTURE_SELL_A,
   FIXTURE_SELL_B,
@@ -97,6 +99,103 @@ describe("client quotation HTML", () => {
 
   it("footer carries the short snapshot hash", () => {
     expect(html).toContain("snapshot abcdef012345");
+  });
+});
+
+describe("client quotation day-by-day itinerary", () => {
+  const html = buildClientQuotationHtml(makeFixture({ itineraryDays: FIXTURE_ITINERARY_DAYS }));
+
+  it("renders a day heading, narrative, overnight city and service labels", () => {
+    expect(html).toContain("Day-by-Day Itinerary");
+    expect(html).toContain("Day 1 — 2026-10-01");
+    expect(html).toContain("Day 2 — 2026-10-02");
+    expect(html).toContain("Day 3 — 2026-10-03");
+    expect(html).toContain("Arrival in Yerevan, transfer to the hotel and welcome dinner.");
+    expect(html).toContain("Overnight: Yerevan / Երևան");
+    expect(html).toContain("<li>Airport transfer</li>");
+    expect(html).toContain("<li>Welcome dinner</li>");
+    expect(html).toContain("<li>Yerevan city tour</li>");
+  });
+
+  it("sits above the per-scenario stay tables", () => {
+    const daySection = html.indexOf("Day-by-Day Itinerary");
+    const stayTable = html.indexOf("Check-in");
+    expect(daySection).toBeGreaterThan(-1);
+    expect(stayTable).toBeGreaterThan(-1);
+    expect(daySection).toBeLessThan(stayTable);
+  });
+
+  it("never leaks the catalog serviceProductId", () => {
+    expect(html).not.toContain("svc-welcome-dinner");
+    expect(html).not.toContain("svc-city-tour");
+    expect(html).not.toContain("serviceProductId");
+  });
+
+  it("skips empty narrative/overnight without stray markup", () => {
+    // Day 3 has neither narrative nor overnightCity.
+    const day3 = html.slice(html.indexOf("Day 3 — 2026-10-03"));
+    expect(day3).not.toContain("Overnight:");
+  });
+
+  it("escapes markup in narratives and service labels", () => {
+    const evil = buildClientQuotationHtml(
+      makeFixture({
+        itineraryDays: [
+          {
+            dayOffset: 0,
+            date: "2026-10-01",
+            narrative: 'Meet at the <b>lobby</b> <script>alert("x")</script>',
+            overnightCity: null,
+            services: [{ serviceProductId: null, label: "<img src=x onerror=alert(1)>" }],
+          },
+        ],
+      }),
+    );
+    expect(evil).toContain("&lt;script&gt;");
+    expect(evil).toContain("&lt;img src=x onerror=alert(1)&gt;");
+    expect(evil).not.toContain('<script>alert("x")</script>');
+  });
+
+  it("absent or empty itineraryDays renders exactly the previous output", () => {
+    const baseline = buildClientQuotationHtml(makeFixture());
+    expect(baseline).not.toContain("Day-by-Day Itinerary");
+    expect(buildClientQuotationHtml(makeFixture({ itineraryDays: [] }))).toBe(baseline);
+    expect(buildClientQuotationHtml(makeFixture({ itineraryDays: undefined }))).toBe(baseline);
+  });
+});
+
+describe("normalizeDayServices", () => {
+  it("maps legacy plain-string items to { serviceProductId: null, label }", () => {
+    expect(normalizeDayServices(JSON.stringify(["City tour", "Museum"]))).toEqual([
+      { serviceProductId: null, label: "City tour" },
+      { serviceProductId: null, label: "Museum" },
+    ]);
+  });
+
+  it("passes structured items through and drops malformed entries", () => {
+    expect(
+      normalizeDayServices(
+        JSON.stringify([
+          { serviceProductId: "svc-1", label: "City tour" },
+          { label: "Free text" },
+          { serviceProductId: "", label: "Empty id" },
+          42,
+          { noLabel: true },
+          "",
+        ]),
+      ),
+    ).toEqual([
+      { serviceProductId: "svc-1", label: "City tour" },
+      { serviceProductId: null, label: "Free text" },
+      { serviceProductId: null, label: "Empty id" },
+    ]);
+  });
+
+  it("returns [] for missing or unparseable JSON", () => {
+    expect(normalizeDayServices(null)).toEqual([]);
+    expect(normalizeDayServices(undefined)).toEqual([]);
+    expect(normalizeDayServices("not json")).toEqual([]);
+    expect(normalizeDayServices('{"not":"an array"}')).toEqual([]);
   });
 });
 

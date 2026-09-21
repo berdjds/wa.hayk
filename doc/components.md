@@ -95,3 +95,8 @@ status. They follow the existing conventions (axios + useToast + Card/Tabs/Dialo
 theme). The client quotation PDF is generated server-side (`lib/travel/pdf/`); the UI only
 links to the authorized download route. Nav buttons to `/travel` were added to both existing
 dashboards.
+
+Notable pieces: `CatalogAdmin.tsx` has create/edit dialogs for hotels and service products plus
+per-product rate editors (new rates start NEEDS_REVIEW); `ItineraryTab.tsx` generates
+duration-driven days from the travel dates, offers a per-day catalog service picker, and syncs
+overnight cities from the scenario's hotel stays.

@@ -30,6 +30,7 @@ import {
   ROLE_ADVISOR,
   ROLE_VALIDATOR,
   canGrantFloorException,
+  normalizeDayServices,
   versionLabel,
   type EngineOutput,
   type NotificationPayload,
@@ -42,6 +43,7 @@ import { canonicalize, snapshotHash } from "@/lib/travel/snapshots";
 import { generatePackageCode } from "@/lib/travel/codes";
 import { getActivePolicy, getFxMap, getTravelSettings } from "@/lib/travel/settings";
 import { queueWorkflowEvent } from "@/lib/travel/notifications";
+import type { QuotationPdfItineraryDay } from "@/lib/travel/pdf/types";
 
 // ---------------------------------------------------------------------------
 // Errors and actor
@@ -206,6 +208,10 @@ export const serviceLineContentSchema = z
     overrideRate: moneyString.nullish(),
     overrideReason: longString.nullish(),
     sourceRef: shortString.nullish(),
+    /** Catalog link, echoed back by editors so day-linked lines survive the delete-many+recreate below. */
+    serviceProductId: z.string().nullish(),
+    /** YYYY-MM-DD of the itinerary day this line is pinned to; null = not day-linked. */
+    date: isoDate.nullish(),
   })
   .superRefine((line, ctx) => {
     // An override rate without a recorded reason is unauditable — refuse it
@@ -219,12 +225,18 @@ export const serviceLineContentSchema = z
     }
   });
 
+/** A day service is normally a structured item; legacy string items (pre-Phase-3 payloads and template JSON) are accepted and normalized. */
+const dayServiceItemSchema = z.preprocess(
+  (value) => (typeof value === "string" ? { label: value } : value),
+  z.object({ serviceProductId: z.string().nullish(), label: shortString }),
+);
+
 export const itineraryDayContentSchema = z.object({
   dayOffset: z.number().int().min(0),
   date: isoDate,
   narrative: longString.nullish(),
   overnightCity: shortString.nullish(),
-  services: z.array(shortString).nullish(),
+  services: z.array(dayServiceItemSchema).nullish(),
 });
 
 export const saveVersionContentSchema = z.object({
@@ -573,6 +585,23 @@ export async function saveVersionContent(
     }
 
     if (parsed.serviceLines) {
+      // Client-supplied catalog links must reference real products (batched;
+      // same guard style as the itinerary-day sync). Line payloads stay
+      // authoritative for category/basis — no product-field copying here.
+      const linkedProductIds = Array.from(
+        new Set(
+          parsed.serviceLines.map((l) => l.serviceProductId).filter((id): id is string => !!id),
+        ),
+      );
+      if (linkedProductIds.length) {
+        const found = await tx.serviceProduct.findMany({ where: { id: { in: linkedProductIds } } });
+        const foundIds = new Set(found.map((p) => p.id));
+        for (const id of linkedProductIds) {
+          if (!foundIds.has(id)) {
+            throw new WorkflowError("SERVICE_PRODUCT_UNKNOWN", `unknown service product ${id}`, 400);
+          }
+        }
+      }
       await tx.serviceLine.deleteMany({ where: { versionId } });
       for (const line of parsed.serviceLines) {
         const scenarioId = line.scenarioKey ? scenarioIdByKey.get(line.scenarioKey) ?? null : null;
@@ -600,10 +629,17 @@ export async function saveVersionContent(
             overrideReason: line.overrideRate != null ? line.overrideReason ?? null : null,
             overrideById: line.overrideRate != null ? actor.id : null,
             sourceRef: line.sourceRef ?? null,
+            serviceProductId: line.serviceProductId ?? null,
+            date: line.date ?? null,
           },
         });
       }
     }
+
+    // True when the itinerary-day → linked ServiceLine sync below creates,
+    // retargets or deletes a line; such changes alter the calculation, so the
+    // snapshot invalidation further down keys on it.
+    let linkedLinesChanged = false;
 
     if (parsed.itineraryDays) {
       await tx.itineraryDay.deleteMany({ where: { versionId } });
@@ -619,11 +655,86 @@ export async function saveVersionContent(
           },
         });
       }
+
+      // Sync day-linked service lines: each catalog service pinned to a day
+      // exists as exactly one shared ServiceLine per (product, date) pair.
+      // Manual lines (no serviceProductId) and scenario-bound lines are never
+      // touched here — they belong to the Scenarios tab editor.
+      const desired = new Map<string, { productId: string; date: string }>();
+      for (const day of parsed.itineraryDays) {
+        for (const svc of day.services ?? []) {
+          if (svc.serviceProductId) {
+            desired.set(`${svc.serviceProductId}${day.date}`, { productId: svc.serviceProductId, date: day.date });
+          }
+        }
+      }
+      // One batched lookup for all referenced products; unknown or inactive
+      // products are a client error, not a silent skip.
+      const desiredPairs = Array.from(desired.values());
+      const productIds = Array.from(new Set(desiredPairs.map((d) => d.productId)));
+      const products = productIds.length
+        ? await tx.serviceProduct.findMany({ where: { id: { in: productIds } } })
+        : [];
+      const productById = new Map(products.map((p) => [p.id, p]));
+      for (const { productId } of desiredPairs) {
+        const product = productById.get(productId);
+        if (!product) {
+          throw new WorkflowError("SERVICE_PRODUCT_UNKNOWN", `unknown service product ${productId}`, 400);
+        }
+        if (!product.active) {
+          throw new WorkflowError("SERVICE_PRODUCT_INACTIVE", `service product "${product.name}" is inactive`, 400);
+        }
+      }
+
+      const linked = await tx.serviceLine.findMany({
+        where: { versionId, serviceProductId: { not: null }, scenarioId: null },
+      });
+      const unmatched = [...linked];
+      for (const { productId, date } of desiredPairs) {
+        const exactIdx = unmatched.findIndex((l) => l.serviceProductId === productId && l.date === date);
+        if (exactIdx >= 0) {
+          unmatched.splice(exactIdx, 1);
+          continue;
+        }
+        // Same product on a different day: retarget the existing line so any
+        // manual edits on it (quantity, typed rate, override) survive the move.
+        const moveIdx = unmatched.findIndex((l) => l.serviceProductId === productId);
+        if (moveIdx >= 0) {
+          const line = unmatched.splice(moveIdx, 1)[0];
+          await tx.serviceLine.update({ where: { id: line.id }, data: { date } });
+          linkedLinesChanged = true;
+          continue;
+        }
+        const product = productById.get(productId)!;
+        await tx.serviceLine.create({
+          data: {
+            versionId,
+            scenarioId: null, // day-linked lines are shared across scenarios
+            category: product.category,
+            label: product.name,
+            basis: product.basis,
+            currency: "AMD",
+            // null rate on purpose: resolve.ts prices linked lines from the
+            // catalog band covering `date`.
+            unitRate: null,
+            quantity: "1",
+            capacity: product.capacity ?? null,
+            serviceProductId: productId,
+            date,
+          },
+        });
+        linkedLinesChanged = true;
+      }
+      for (const stale of unmatched) {
+        await tx.serviceLine.delete({ where: { id: stale.id } });
+        linkedLinesChanged = true;
+      }
     }
 
     // Scenario/service changes alter the calculation; a stored snapshot (from
-    // a CHANGES_REQUESTED round) must not survive them.
-    if (parsed.scenarios || parsed.serviceLines) {
+    // a CHANGES_REQUESTED round) must not survive them. Day-only edits keep
+    // the snapshot unless they moved linked lines.
+    if (parsed.scenarios || parsed.serviceLines || linkedLinesChanged) {
       await tx.calculationSnapshot.deleteMany({ where: { versionId } });
     }
     // Optimistic lock: the client edits what it last read. A stale
@@ -677,6 +788,13 @@ export async function submit(actor: WorkflowActor, requestId: string) {
   const input = await buildEngineInputForVersion(version.id);
   const result = calculate(input);
 
+  // Loaded here (before the transaction) so the day-by-day itinerary freezes
+  // into displayJson alongside the other client-facing display data.
+  const itineraryDays = await prisma.itineraryDay.findMany({
+    where: { versionId: version.id },
+    orderBy: { dayOffset: "asc" },
+  });
+
   const inputsJson = canonicalize(input);
   // The engine version is part of the hashed identity so a rule change
   // invalidates prior snapshots (see snapshots.ts).
@@ -702,6 +820,15 @@ export async function submit(actor: WorkflowActor, requestId: string) {
     flightDetails: request.flightDetails,
     travelers: request.travelers,
     destinations: request.destinations,
+    // Services are stored normalized (DayServiceItem[]) so issued documents
+    // are stable even if the normalization rules ever change.
+    itineraryDays: itineraryDays.map((day) => ({
+      dayOffset: day.dayOffset,
+      date: day.date,
+      narrative: day.narrative,
+      overnightCity: day.overnightCity,
+      services: normalizeDayServices(day.services),
+    })),
   });
 
   try {
@@ -924,6 +1051,21 @@ async function renderDocumentPdf(documentId: string): Promise<{ ok: boolean; err
       contactEmail: request.agency.contactEmail,
       contactPhone: request.agency.contactPhone,
     };
+    // Itinerary days joined displayJson after the first frozen snapshots
+    // existed; pre-freeze snapshots fall back to live rows (same pattern as
+    // the other display fields above).
+    const itineraryDays: QuotationPdfItineraryDay[] =
+      frozen?.itineraryDays ??
+      (await prisma.itineraryDay.findMany({
+        where: { versionId: version.id },
+        orderBy: { dayOffset: "asc" },
+      })).map((day) => ({
+        dayOffset: day.dayOffset,
+        date: day.date,
+        narrative: day.narrative,
+        overnightCity: day.overnightCity,
+        services: normalizeDayServices(day.services),
+      }));
     // The renderer consumes parsed snapshot JSON verbatim — it never
     // recomputes prices (see lib/travel/pdf/types.ts).
     const buf = await renderQuotationPdf({
@@ -949,6 +1091,7 @@ async function renderDocumentPdf(documentId: string): Promise<{ ok: boolean; err
       terms: version.terms,
       snapshot: JSON.parse(snapshotRow.resultJson),
       inputs: JSON.parse(snapshotRow.inputsJson),
+      itineraryDays,
     });
     const settings = await getTravelSettings();
     await mkdir(settings.documentsDir, { recursive: true });
@@ -1387,6 +1530,10 @@ export async function createRevision(actor: WorkflowActor, requestId: string) {
           overrideReason: line.overrideReason,
           overrideById: line.overrideById,
           sourceRef: line.sourceRef,
+          // Catalog links survive revisions so day-driven pricing keeps
+          // resolving in the new draft.
+          serviceProductId: line.serviceProductId,
+          date: line.date,
         },
       });
     }

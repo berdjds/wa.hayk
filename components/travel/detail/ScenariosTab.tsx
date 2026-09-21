@@ -72,6 +72,10 @@ interface ServiceLineDraft {
   overrideRate: string;
   overrideReason: string;
   sourceRef: string;
+  /** Catalog link echoed through the editor so day-linked lines survive saves. */
+  serviceProductId: string | null;
+  /** YYYY-MM-DD of the itinerary day this line is pinned to; null = not day-linked. */
+  date: string | null;
 }
 
 const ROOM_TYPES = ["SGL", "DBL", "TPL", "UNIT"];
@@ -158,6 +162,8 @@ export default function ScenariosTab({ ctx }: { ctx: DetailContext }) {
         overrideRate: l.overrideRate ?? "",
         overrideReason: l.overrideReason ?? "",
         sourceRef: l.sourceRef ?? "",
+        serviceProductId: l.serviceProductId,
+        date: l.date,
       })),
     );
     setDirty(false);
@@ -379,6 +385,8 @@ export default function ScenariosTab({ ctx }: { ctx: DetailContext }) {
           overrideRate: "",
           overrideReason: "",
           sourceRef: "",
+          serviceProductId: null,
+          date: null,
         },
       ]),
     );
@@ -420,6 +428,8 @@ export default function ScenariosTab({ ctx }: { ctx: DetailContext }) {
           overrideRate: l.overrideRate === "" ? null : l.overrideRate,
           overrideReason: l.overrideReason === "" ? null : l.overrideReason,
           sourceRef: l.sourceRef || null,
+          serviceProductId: l.serviceProductId,
+          date: l.date,
         })),
       });
       toast("Scenario content saved", "success");
@@ -952,6 +962,14 @@ function ServiceLineTable({
                   {l.participants != null ? ` · ${l.participants} pax` : ""}
                   {l.includedElsewhere ? " · included elsewhere" : ""}
                   {l.isStaffCost ? " · staff" : ""}
+                  {l.serviceProductId && (
+                    <>
+                      {" "}
+                      <Badge variant="outline" title={l.date ? `Itinerary day ${l.date}` : "Itinerary-linked"}>
+                        itinerary{l.date ? ` · ${l.date}` : ""}
+                      </Badge>
+                    </>
+                  )}
                   {l.overrideRate && (
                     <>
                       {" "}
@@ -981,7 +999,13 @@ function ServiceLineTable({
                 </Badge>
               )}
             </span>
-            <Input value={l.label} onChange={(e) => onChange(i, { label: e.target.value })} />
+            <Input value={l.label} onChange={(e) => onChange(i, { label: e.target.value })} disabled={!!l.serviceProductId} />
+            {l.serviceProductId && (
+              <p className="mt-1 text-xs text-muted-foreground">
+                From itinerary{l.date ? ` · ${l.date}` : ""} — manage on the Itinerary tab; catalog-priced when no rate
+                is typed here.
+              </p>
+            )}
           </div>
           <div>
             <span className="text-xs text-muted-foreground">Category</span>

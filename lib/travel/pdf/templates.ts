@@ -230,6 +230,30 @@ function itineraryHtml(sc: ScenarioEngineInput): string {
     </table>`;
 }
 
+/**
+ * Version-level day-by-day itinerary, rendered above the per-scenario stay
+ * tables. Days arrive frozen and pre-normalized (see QuotationPdfInput), so
+ * this only formats — legacy string items never reach the renderer.
+ */
+function dayByDayHtml(input: QuotationPdfInput): string {
+  const days = input.itineraryDays;
+  if (!days || days.length === 0) return "";
+  const blocks = days
+    .map((day) => {
+      const services =
+        day.services.length > 0
+          ? `<ul>${day.services.map((s) => `<li>${escapeHtml(s.label)}</li>`).join("")}</ul>`
+          : "";
+      return `
+        <h3>Day ${day.dayOffset + 1} — ${escapeHtml(day.date)}</h3>
+        ${day.narrative ? `<p class="keep-wrap">${escapeHtml(day.narrative)}</p>` : ""}
+        ${day.overnightCity ? `<p class="muted">Overnight: ${escapeHtml(day.overnightCity)}</p>` : ""}
+        ${services}`;
+    })
+    .join("");
+  return `<h2>Day-by-Day Itinerary</h2>${blocks}`;
+}
+
 /** Client-facing price box: selling totals only, never any cost detail. */
 function clientPriceHtml(res: ScenarioResult, travelers: TravelerSetup, quoteCurrency: string): string {
   const perPerson =
@@ -338,6 +362,7 @@ export function buildClientQuotationHtml(input: QuotationPdfInput): string {
     ${watermarkHtml(input.draft)}
     ${headerHtml(input, "Quotation")}
     ${travelSummaryHtml(input)}
+    ${dayByDayHtml(input)}
     ${scenarios}
     ${inclusionsHtml(input)}
     ${exclusionsHtml(input)}

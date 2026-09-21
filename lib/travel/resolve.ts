@@ -51,7 +51,8 @@ export type ResolutionErrorCode =
   | "ALLOCATIONS_INVALID"
   | "OVERRIDE_INVALID"
   | "STOP_SALE"
-  | "QUOTE_ON_REQUEST";
+  | "QUOTE_ON_REQUEST"
+  | "AMBIGUOUS_RATE";
 
 export interface ResolutionIssue {
   code: ResolutionErrorCode;
@@ -310,8 +311,71 @@ function resolveStayRates(
   return rates;
 }
 
-function resolveServiceLine(line: ServiceLine, issues: ResolutionIssue[]): ServiceLineInput {
+/**
+ * Picks the catalog rate band for a service line on `referenceDate`, mirroring
+ * the stay-rate rules: validity is [validFrom, validTo) with open ends covering
+ * everything, the highest priority wins, an equal-priority tie is AMBIGUOUS_RATE
+ * and quote-on-request is a hard blocker. A TBC winner (amount null) returns
+ * null so the engine's MISSING_RATE blocker fires — TBC must never be coerced
+ * to 0. Returns null also when no band covers the date.
+ */
+function resolveServiceRate(
+  line: ServiceLine,
+  rateRows: RateVersion[],
+  referenceDate: string,
+  issues: ResolutionIssue[],
+): { unitRate: string; currency: string; sourceRef: string } | null {
+  // ISO calendar strings compare lexicographically — safe for [from, to).
+  const covering = rateRows.filter(
+    (row) => (row.validFrom ?? "") <= referenceDate && referenceDate < (row.validTo ?? "￿"),
+  );
+  if (covering.length === 0) return null;
+  const top = Math.max(...covering.map((row) => row.priority));
+  const winners = covering.filter((row) => row.priority === top);
+  if (winners.length > 1) {
+    issues.push({
+      code: "AMBIGUOUS_RATE",
+      message: `service line ${line.id} "${line.label}": ${winners.length} service rates with equal priority ${top} cover ${referenceDate}`,
+    });
+    return null;
+  }
+  const winner = winners[0];
+  if (winner.quoteOnRequest) {
+    issues.push({
+      code: "QUOTE_ON_REQUEST",
+      message: `service line ${line.id} "${line.label}": rate ${winner.id} is quote-on-request and cannot price automatically`,
+    });
+    return null;
+  }
+  if (winner.amount === null) return null; // TBC — engine's MISSING_RATE fires
+  return {
+    unitRate: winner.amount,
+    currency: winner.currency,
+    sourceRef: `RateVersion ${winner.id} (${winner.evidenceRef ?? "no evidence"})`,
+  };
+}
+
+function resolveServiceLine(
+  line: ServiceLine,
+  serviceRateRows: RateVersion[],
+  referenceDate: string,
+  issues: ResolutionIssue[],
+): ServiceLineInput {
   let unitRate = line.unitRate;
+  let currency = line.currency;
+  let sourceRef = line.sourceRef ?? undefined;
+  const hasOverride = line.overrideRate != null;
+  // A catalog-linked line without a hand-typed rate resolves from the rate
+  // band valid on its day (or the tour start when not day-linked). A manual
+  // override always wins, so catalog resolution is skipped when one is set.
+  if (line.serviceProductId && unitRate === null && !hasOverride) {
+    const resolved = resolveServiceRate(line, serviceRateRows, referenceDate, issues);
+    if (resolved) {
+      unitRate = resolved.unitRate;
+      currency = resolved.currency;
+      sourceRef = sourceRef ?? resolved.sourceRef;
+    }
+  }
   let override: ServiceLineInput["override"];
   if (line.overrideRate != null) {
     // Same rule as stay overrides: an override without evidence is an error.
@@ -334,7 +398,7 @@ function resolveServiceLine(line: ServiceLine, issues: ResolutionIssue[]): Servi
     label: line.label,
     category: line.category as ServiceLineInput["category"],
     basis: line.basis as ServiceLineInput["basis"],
-    currency: line.currency,
+    currency,
     unitRate,
     quantity: line.quantity,
     participants: line.participants ?? undefined,
@@ -342,7 +406,7 @@ function resolveServiceLine(line: ServiceLine, issues: ResolutionIssue[]): Servi
     includedElsewhere: line.includedElsewhere,
     isStaffCost: line.isStaffCost,
     override,
-    sourceRef: line.sourceRef ?? undefined,
+    sourceRef,
   };
 }
 
@@ -431,6 +495,26 @@ export async function buildEngineInputForVersion(
     ratesByHotel.set(row.hotelProductId!, list);
   }
 
+  // Same batched load for catalog-linked service lines: VERIFIED SERVICE
+  // rates for every serviceProductId referenced by this version's lines.
+  const serviceProductIds = Array.from(
+    new Set(
+      version.serviceLines.map((l) => l.serviceProductId).filter((id): id is string => !!id),
+    ),
+  );
+  const serviceRateRows = serviceProductIds.length
+    ? await prisma.rateVersion.findMany({
+        where: { serviceProductId: { in: serviceProductIds }, productType: "SERVICE", status: "VERIFIED" },
+        orderBy: [{ priority: "desc" }, { validFrom: "asc" }, { id: "asc" }],
+      })
+    : [];
+  const serviceRatesByProduct = new Map<string, RateVersion[]>();
+  for (const row of serviceRateRows) {
+    const list = serviceRatesByProduct.get(row.serviceProductId!) ?? [];
+    list.push(row);
+    serviceRatesByProduct.set(row.serviceProductId!, list);
+  }
+
   const sharedLines = version.serviceLines.filter((l) => l.scenarioId === null);
 
   const scenarios = version.scenarios.map((sc) => {
@@ -457,7 +541,16 @@ export async function buildEngineInputForVersion(
       tourEnd: version.request.endDate,
       travelers,
       stays,
-      services: lines.map((l) => resolveServiceLine(l, issues)),
+      services: lines.map((l) =>
+        resolveServiceLine(
+          l,
+          l.serviceProductId ? serviceRatesByProduct.get(l.serviceProductId) ?? [] : [],
+          // Day-linked lines price on their own date; unlinked lines fall back
+          // to the tour start, the same snapshot date that fixes the FX map.
+          l.date ?? version.request.startDate,
+          issues,
+        ),
+      ),
       // vehicleChecks: intentionally omitted — no version-level vehicle
       // assignment exists in the schema yet (see module docstring).
     };

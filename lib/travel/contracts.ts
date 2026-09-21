@@ -426,6 +426,47 @@ export const IMPORT_ROW_STATUSES = [
 export type ImportRowStatus = (typeof IMPORT_ROW_STATUSES)[number];
 
 // ---------------------------------------------------------------------------
+// Itinerary day services
+// ---------------------------------------------------------------------------
+
+/**
+ * One service entry on an itinerary day. `serviceProductId` links the entry to
+ * the catalog (a day-linked ServiceLine is kept in sync server-side); null =
+ * free-text entry.
+ */
+export interface DayServiceItem {
+  serviceProductId: string | null;
+  label: string;
+}
+
+/**
+ * Parses the ItineraryDay.services JSON column. Legacy rows stored plain
+ * string arrays; those normalize to `{ serviceProductId: null, label }`.
+ * Unparseable or malformed entries are dropped — this column is display data,
+ * never a pricing input.
+ */
+export function normalizeDayServices(json: string | null | undefined): DayServiceItem[] {
+  if (!json) return [];
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(json);
+  } catch {
+    return [];
+  }
+  if (!Array.isArray(parsed)) return [];
+  const out: DayServiceItem[] = [];
+  for (const item of parsed) {
+    if (typeof item === "string") {
+      if (item.trim()) out.push({ serviceProductId: null, label: item });
+    } else if (item && typeof item === "object" && typeof (item as { label?: unknown }).label === "string") {
+      const pid = (item as { serviceProductId?: unknown }).serviceProductId;
+      out.push({ serviceProductId: typeof pid === "string" && pid ? pid : null, label: (item as { label: string }).label });
+    }
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------------------
 // Helpers (pure)
 // ---------------------------------------------------------------------------
 

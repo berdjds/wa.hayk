@@ -3,13 +3,31 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { writeAuditLog } from "@/lib/audit";
 import { getTravelActor, travelError, unauthorized } from "../../../guard";
+import {
+  currencyField,
+  dateField,
+  moneyField,
+  toAmount,
+  toWeekdaysJson,
+  validityOrdered,
+  weekdaysField,
+} from "../../schemas";
 
 // Rates are archived, never deleted: they are the evidence trail for
 // historical snapshots. Allowed transitions: NEEDS_REVIEW → VERIFIED →
-// ARCHIVED (and VERIFIED → ARCHIVED).
+// ARCHIVED (and VERIFIED → ARCHIVED). Amount/currency/validity edits are
+// corrections and do not change the status; an amount edit on a VERIFIED
+// rate is logged distinctly as RATE_AMOUNT_EDITED.
 const patchRateSchema = z.object({
   status: z.enum(["NEEDS_REVIEW", "VERIFIED", "ARCHIVED"]).optional(),
-  notes: z.string().nullish(),
+  amount: moneyField,
+  currency: currencyField.optional(),
+  validFrom: dateField,
+  validTo: dateField,
+  priority: z.number().int().optional(),
+  minStay: z.number().int().positive().nullish(),
+  weekdays: weekdaysField,
+  notes: z.string().trim().nullish(),
 });
 
 const ALLOWED_TRANSITIONS: Record<string, string[]> = {
@@ -44,14 +62,49 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       }
     }
 
+    const nextAmount = toAmount(parsed.data.amount);
+    const nextValidFrom = parsed.data.validFrom !== undefined ? parsed.data.validFrom : rate.validFrom;
+    const nextValidTo = parsed.data.validTo !== undefined ? parsed.data.validTo : rate.validTo;
+    if (!validityOrdered(nextValidFrom, nextValidTo)) {
+      return NextResponse.json({ error: "validFrom must be before validTo" }, { status: 400 });
+    }
+
+    const nextWeekdays = toWeekdaysJson(parsed.data.weekdays);
+    const amountEdited = nextAmount !== undefined && nextAmount !== rate.amount;
+
     const updated = await prisma.rateVersion.update({
       where: { id: params.id },
       data: {
         ...(parsed.data.status ? { status: parsed.data.status } : {}),
-        ...(parsed.data.notes !== undefined ? { notes: parsed.data.notes } : {}),
+        ...(nextAmount !== undefined ? { amount: nextAmount } : {}),
+        ...(parsed.data.currency ? { currency: parsed.data.currency } : {}),
+        ...(parsed.data.validFrom !== undefined ? { validFrom: parsed.data.validFrom } : {}),
+        ...(parsed.data.validTo !== undefined ? { validTo: parsed.data.validTo } : {}),
+        ...(parsed.data.priority !== undefined ? { priority: parsed.data.priority } : {}),
+        ...(parsed.data.minStay !== undefined ? { minStay: parsed.data.minStay } : {}),
+        ...(nextWeekdays !== undefined ? { weekdays: nextWeekdays } : {}),
+        ...(parsed.data.notes !== undefined ? { notes: parsed.data.notes || null } : {}),
       },
     });
-    await writeAuditLog("RATE_UPDATED", actor.id, `Rate ${params.id}: ${rate.status} → ${updated.status}`);
+
+    if (parsed.data.status && parsed.data.status !== rate.status) {
+      await writeAuditLog("RATE_UPDATED", actor.id, `Rate ${params.id}: ${rate.status} → ${updated.status}`);
+    }
+    if (amountEdited && rate.status === "VERIFIED") {
+      // Correcting a verified rate is allowed, but it must stand out in the
+      // audit trail because verified rates feed historical snapshots.
+      await writeAuditLog(
+        "RATE_AMOUNT_EDITED",
+        actor.id,
+        `Rate ${params.id}: amount ${rate.amount ?? "TBC"} → ${updated.amount ?? "TBC"} ${updated.currency} (was VERIFIED)`,
+      );
+    } else if (amountEdited) {
+      await writeAuditLog(
+        "RATE_UPDATED",
+        actor.id,
+        `Rate ${params.id}: amount ${rate.amount ?? "TBC"} → ${updated.amount ?? "TBC"} ${updated.currency}`,
+      );
+    }
     return NextResponse.json(updated);
   } catch (err) {
     return travelError(err, "[API /travel/catalog/rates/[id]]");

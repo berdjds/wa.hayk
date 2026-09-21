@@ -67,7 +67,7 @@ export interface ItineraryDayDetail {
   date: string;
   narrative: string | null;
   overnightCity: string | null;
-  services: string | null; // JSON string[]
+  services: string | null; // JSON DayServiceItem[] (legacy rows may hold string[])
 }
 
 export interface ServiceLineDetail {
@@ -88,6 +88,8 @@ export interface ServiceLineDetail {
   overrideReason: string | null;
   overrideById: string | null;
   sourceRef: string | null;
+  serviceProductId: string | null; // catalog link; rate resolves from SERVICE RateVersions
+  date: string | null; // YYYY-MM-DD of the itinerary day that spawned the line
 }
 
 export interface SnapshotSummary {
@@ -218,11 +220,17 @@ export interface ServiceProductView {
   category: string;
   basis: string;
   capacity: number | null;
+  weekdays: string | null; // JSON number[] (ISO weekdays 1..7)
   language: string | null;
   durationVariant: string | null;
   active: boolean;
   supplier: { id: string; name: string } | null;
   rates: RateView[];
+}
+
+export interface SupplierOption {
+  id: string;
+  name: string;
 }
 
 export interface RateView {
@@ -237,6 +245,7 @@ export interface RateView {
   board: string | null;
   validFrom: string | null;
   validTo: string | null;
+  weekdays: string | null; // JSON number[] (ISO weekdays 1..7)
   minStay: number | null;
   quoteOnRequest: boolean;
   priority: number;

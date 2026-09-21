@@ -7,6 +7,7 @@
  * currency code appended.
  */
 import type {
+  DayServiceItem,
   EngineInput,
   EngineOutput,
   TravelerSetup,
@@ -33,6 +34,17 @@ export interface QuotationPdfRequest {
   destinations?: string[];
 }
 
+export interface QuotationPdfItineraryDay {
+  /** 0-based offset from the request start date. */
+  dayOffset: number;
+  /** Local calendar date "YYYY-MM-DD". */
+  date: string;
+  narrative: string | null;
+  overnightCity: string | null;
+  /** Normalized day services (legacy plain-string items are pre-normalized). */
+  services: DayServiceItem[];
+}
+
 export interface QuotationPdfInput {
   /** SHA-256 hex of the immutable snapshot; the footer shows the first 12 chars. */
   snapshotHash: string;
@@ -53,4 +65,9 @@ export interface QuotationPdfInput {
   snapshot: EngineOutput;
   /** Parsed inputsJson: scenario labels, stays, services (labels/basis), travelers. */
   inputs: EngineInput;
+  /**
+   * Frozen day-by-day itinerary (from displayJson). Absent/empty → the client
+   * document renders exactly as before (stay-segment tables only).
+   */
+  itineraryDays?: QuotationPdfItineraryDay[];
 }

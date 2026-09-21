@@ -120,3 +120,9 @@ ImportBatch/ImportRow (workbook staging), BatchRun, PackageTemplate/TemplateVers
 TravelSettings (singleton). `User` gained a nullable `phone` (WhatsApp notification
 destination) and role values ADVISOR/VALIDATOR. Money and FX values are decimal strings; JSON
 payloads are String columns. See `prisma/schema.prisma` comments and `lib/travel/contracts.ts`.
+
+Phase 3/4 additions: `ServiceLine` gained nullable `serviceProductId` (catalog link) and `date`
+(YYYY-MM-DD) columns — a linked line is shared (`scenarioId = null`), keeps `unitRate = null`,
+and is priced from SERVICE RateVersions covering its date. `ItineraryDay.services` items are
+now `{ serviceProductId: string | null; label: string }` objects; legacy plain-string arrays
+are normalized on read by `normalizeDayServices()`.

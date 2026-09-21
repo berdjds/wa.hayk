@@ -105,6 +105,19 @@ A versioned B2B travel package costing and quotation module inside WAControl:
     (double-submit/double-review losers get 409); `createRequest` retries SQLite lock-race
     failures (P1008/P2028) — code generation stays atomic per attempt, so retries leave only
     harmless sequence gaps.
+17. **Structured day services with legacy normalization.** `ItineraryDay.services` holds
+    `DayServiceItem[]` (`{ serviceProductId: string | null; label: string }`);
+    `normalizeDayServices()` maps legacy plain-string items to `{ serviceProductId: null, label }`
+    and drops malformed entries (display data, never a pricing input). Day services carrying a
+    `serviceProductId` are mirrored as **day-linked ServiceLines** inside `saveVersionContent`:
+    the sync diff keys on `(serviceProductId, date)`, lines are shared (`scenarioId = null`),
+    and `unitRate` stays null so resolve.ts prices them from SERVICE RateVersions — the band
+    must cover `line.date ?? startDate`, VERIFIED rates only, with TBC / quoteOnRequest /
+    ambiguity rules mirroring hotel resolution. Scenario-tab saves echo the lines back, so the
+    round-trip preserves links. `overnightCity` is derived from the first scenario's stays and
+    manual edits are preserved ("Sync cities from stays" reapplies derivation on demand).
+    The frozen day list (normalized) also goes into `displayJson` at submit, so issued client
+    PDFs render the day-by-day itinerary exactly as approved.
 
 ## Known limitations
 
@@ -122,3 +135,7 @@ A versioned B2B travel package costing and quotation module inside WAControl:
   workbook's broken Mass Calculation totals (intentionally).
 - WhatsApp notifications require the linked session to be `ready`; failures are visible and
   retryable, and never block or reverse workflow transitions.
+- Day-linked service lines are **shared across scenarios** (`scenarioId = null`), not priced
+  per scenario — a scenario-specific catalog service still needs a manual scenario-bound line.
+- Itinerary `overnightCity` derivation reads the **first scenario's** stays only; multi-scenario
+  packages with different routings need manual city edits on the remaining days.

@@ -56,7 +56,8 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       date: addDays(request.startDate, d.dayOffset ?? i),
       narrative: d.narrative ?? null,
       overnightCity: d.overnightCity ?? null,
-      services: d.services ?? null,
+      // Template refs are plain labels — never catalog ids (see header note).
+      services: d.services?.map((label) => ({ label })) ?? null,
     }));
     // Freshly created request: revision is 0 (createRequest never bumps it).
     await saveVersionContent(actor, version.id, { expectedRevision: 0, itineraryDays });
