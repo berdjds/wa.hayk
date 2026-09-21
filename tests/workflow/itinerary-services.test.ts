@@ -41,12 +41,15 @@ beforeAll(async () => {
   fx = await seedFixtures(prisma);
 });
 
-async function makeProduct(name: string, opts: { active?: boolean; capacity?: number } = {}) {
+async function makeProduct(
+  name: string,
+  opts: { active?: boolean; capacity?: number; category?: string; basis?: string } = {},
+) {
   return prisma.serviceProduct.create({
     data: {
       name,
-      category: "GUIDES",
-      basis: "GUIDE_DAY",
+      category: opts.category ?? "GUIDES",
+      basis: opts.basis ?? "GUIDE_DAY",
       capacity: opts.capacity ?? null,
       language: "en",
       durationVariant: "full_day",
@@ -305,30 +308,31 @@ describe("itinerary save → linked service line sync", () => {
   });
 });
 
-describe("scenario saves round-trip linked lines", () => {
-  /** Echoes the version's current service lines the way the Scenarios tab does. `any[]` because the schema narrows category/basis to enum literals. */
-  function echoLines(lines: ServiceLine[], patch: Record<string, unknown> = {}): any[] {
-    return lines.map((l) => ({
-      scenarioKey: l.scenarioId,
-      category: l.category,
-      label: l.label,
-      basis: l.basis,
-      currency: l.currency,
-      unitRate: l.unitRate,
-      quantity: l.quantity,
-      participants: l.participants,
-      capacity: l.capacity,
-      includedElsewhere: l.includedElsewhere,
-      isStaffCost: l.isStaffCost,
-      overrideRate: l.overrideRate,
-      overrideReason: l.overrideReason,
-      sourceRef: l.sourceRef,
-      serviceProductId: l.serviceProductId,
-      date: l.date,
-      ...patch,
-    }));
-  }
+/** Echoes the version's current service lines the way the Scenarios tab does. `any[]` because the schema narrows category/basis to enum literals. */
+function echoLines(lines: ServiceLine[], patch: Record<string, unknown> = {}): any[] {
+  return lines.map((l) => ({
+    scenarioKey: l.scenarioId,
+    category: l.category,
+    label: l.label,
+    basis: l.basis,
+    currency: l.currency,
+    unitRate: l.unitRate,
+    quantity: l.quantity,
+    participants: l.participants,
+    capacity: l.capacity,
+    includedElsewhere: l.includedElsewhere,
+    isStaffCost: l.isStaffCost,
+    overrideRate: l.overrideRate,
+    overrideReason: l.overrideReason,
+    sourceRef: l.sourceRef,
+    serviceProductId: l.serviceProductId,
+    date: l.date,
+    vehicleTypeId: l.vehicleTypeId,
+    ...patch,
+  }));
+}
 
+describe("scenario saves round-trip linked lines", () => {
   it("a scenario-only save (no itineraryDays) preserves the linked line's catalog link and date", async () => {
     const product = await makeProduct("Round-trip guide");
     const { request, version } = await draftRequest();
@@ -414,6 +418,185 @@ describe("scenario saves round-trip linked lines", () => {
         ],
       }),
     ).rejects.toMatchObject({ code: "SERVICE_PRODUCT_UNKNOWN", httpStatus: 400 });
+  });
+});
+
+describe("vehicle-scoped day services", () => {
+  let sedanId: string;
+  let minivanId: string;
+
+  beforeAll(async () => {
+    sedanId = (await prisma.vehicleType.create({ data: { name: "Sync Sedan", seats: 3 } })).id;
+    minivanId = (await prisma.vehicleType.create({ data: { name: "Sync Minivan", seats: 5 } })).id;
+  });
+
+  const makeTransfer = (name: string) =>
+    makeProduct(name, { category: "TRANSPORTATION", basis: "VEHICLE_TRIP" });
+
+  it("a day item with vehicleTypeId creates a linked line stamped with the vehicle", async () => {
+    const product = await makeTransfer("Airport arrival");
+    const { request, version } = await draftRequest();
+
+    await saveContent(prisma, actorOf(fx.advisor), request.id, version.id, {
+      itineraryDays: [day(0, [{ serviceProductId: product.id, label: product.name, vehicleTypeId: sedanId }])],
+    });
+
+    const lines = await linkedLines(version.id);
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toMatchObject({
+      serviceProductId: product.id,
+      date: "2026-10-01",
+      vehicleTypeId: sedanId,
+      basis: "VEHICLE_TRIP",
+    });
+  });
+
+  it("the same product on the same day with two vehicles yields two lines", async () => {
+    const product = await makeTransfer("Two-vehicle tour");
+    const { request, version } = await draftRequest();
+
+    await saveContent(prisma, actorOf(fx.advisor), request.id, version.id, {
+      itineraryDays: [
+        day(0, [
+          { serviceProductId: product.id, label: product.name, vehicleTypeId: sedanId },
+          { serviceProductId: product.id, label: product.name, vehicleTypeId: minivanId },
+        ]),
+      ],
+    });
+
+    const lines = await linkedLines(version.id);
+    expect(lines).toHaveLength(2);
+    expect(new Set(lines.map((l) => l.vehicleTypeId))).toEqual(new Set([sedanId, minivanId]));
+  });
+
+  it("changing the vehicle on the same day retargets the existing line", async () => {
+    const product = await makeTransfer("Vehicle change tour");
+    const { request, version } = await draftRequest();
+
+    await saveContent(prisma, actorOf(fx.advisor), request.id, version.id, {
+      itineraryDays: [day(0, [{ serviceProductId: product.id, label: product.name, vehicleTypeId: sedanId }])],
+    });
+    const [before] = await linkedLines(version.id);
+    expect(before.vehicleTypeId).toBe(sedanId);
+
+    await saveContent(prisma, actorOf(fx.advisor), request.id, version.id, {
+      itineraryDays: [day(0, [{ serviceProductId: product.id, label: product.name, vehicleTypeId: minivanId }])],
+    });
+
+    const lines = await linkedLines(version.id);
+    expect(lines).toHaveLength(1);
+    // Updated, not recreated — the line id (and any manual edits) survives.
+    expect(lines[0].id).toBe(before.id);
+    expect(lines[0].vehicleTypeId).toBe(minivanId);
+  });
+
+  it("moving one of two vehicles to another day keeps the other's line untouched", async () => {
+    const product = await makeTransfer("Split-vehicle tour");
+    const { request, version } = await draftRequest();
+
+    await saveContent(prisma, actorOf(fx.advisor), request.id, version.id, {
+      itineraryDays: [
+        day(0, [
+          { serviceProductId: product.id, label: product.name, vehicleTypeId: sedanId },
+          { serviceProductId: product.id, label: product.name, vehicleTypeId: minivanId },
+        ]),
+        day(1),
+      ],
+    });
+    const before = await linkedLines(version.id);
+    const minivanLine = before.find((l) => l.vehicleTypeId === minivanId)!;
+    const sedanLine = before.find((l) => l.vehicleTypeId === sedanId)!;
+
+    await saveContent(prisma, actorOf(fx.advisor), request.id, version.id, {
+      itineraryDays: [
+        day(0, [{ serviceProductId: product.id, label: product.name, vehicleTypeId: sedanId }]),
+        day(1, [{ serviceProductId: product.id, label: product.name, vehicleTypeId: minivanId }]),
+      ],
+    });
+
+    const after = await linkedLines(version.id);
+    expect(after).toHaveLength(2);
+    expect(after.find((l) => l.id === sedanLine.id)).toMatchObject({ date: "2026-10-01", vehicleTypeId: sedanId });
+    // The same-vehicle line is preferred for the move — ids don't swap.
+    expect(after.find((l) => l.id === minivanLine.id)).toMatchObject({ date: "2026-10-02", vehicleTypeId: minivanId });
+  });
+
+  it("rejects a bogus vehicleTypeId with 400", async () => {
+    const product = await makeTransfer("Ghost vehicle tour");
+    const { request, version } = await draftRequest();
+
+    await expect(
+      saveContent(prisma, actorOf(fx.advisor), request.id, version.id, {
+        itineraryDays: [
+          day(0, [{ serviceProductId: product.id, label: product.name, vehicleTypeId: "does-not-exist" }]),
+        ],
+      }),
+    ).rejects.toMatchObject({ code: "VEHICLE_TYPE_UNKNOWN", httpStatus: 400 });
+
+    await expect(
+      saveContent(prisma, actorOf(fx.advisor), request.id, version.id, {
+        serviceLines: [
+          {
+            scenarioKey: null,
+            category: "TRANSPORTATION",
+            label: "Ghost vehicle line",
+            basis: "VEHICLE_TRIP",
+            currency: "AMD",
+            unitRate: null,
+            quantity: "1",
+            includedElsewhere: false,
+            isStaffCost: false,
+            vehicleTypeId: "does-not-exist",
+          },
+        ],
+      }),
+    ).rejects.toMatchObject({ code: "VEHICLE_TYPE_UNKNOWN", httpStatus: 400 });
+
+    expect(await linkedLines(version.id)).toHaveLength(0);
+  });
+
+  it("a scenario-save round-trips vehicleTypeId on linked lines", async () => {
+    const product = await makeTransfer("Round-trip transfer");
+    const { request, version } = await draftRequest();
+
+    await saveContent(prisma, actorOf(fx.advisor), request.id, version.id, {
+      itineraryDays: [day(0, [{ serviceProductId: product.id, label: product.name, vehicleTypeId: sedanId }])],
+    });
+
+    const existing = await prisma.serviceLine.findMany({ where: { versionId: version.id } });
+    await saveContent(prisma, actorOf(fx.advisor), request.id, version.id, {
+      ...scenarioContent(fx.hotel.id, fx.hotel.name),
+      serviceLines: echoLines(existing),
+    });
+
+    const lines = await linkedLines(version.id);
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toMatchObject({
+      serviceProductId: product.id,
+      date: "2026-10-01",
+      vehicleTypeId: sedanId,
+    });
+  });
+
+  it("createRevision copies the vehicle selection onto the new version's lines", async () => {
+    const product = await makeTransfer("Revision transfer");
+    const { request, version } = await draftRequest();
+
+    await saveContent(prisma, actorOf(fx.advisor), request.id, version.id, {
+      itineraryDays: [day(0, [{ serviceProductId: product.id, label: product.name, vehicleTypeId: sedanId }])],
+    });
+
+    await prisma.quoteVersion.update({ where: { id: version.id }, data: { status: "REJECTED" } });
+    const v2 = await workflow.createRevision(actorOf(fx.advisor), request.id);
+
+    const lines = await prisma.serviceLine.findMany({ where: { versionId: v2.id } });
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toMatchObject({ serviceProductId: product.id, vehicleTypeId: sedanId });
+
+    const days = await prisma.itineraryDay.findMany({ where: { versionId: v2.id } });
+    expect(normalizeDayServices(days[0].services)).toEqual([
+      { serviceProductId: product.id, label: product.name, vehicleTypeId: sedanId },
+    ]);
   });
 });
 

@@ -58,6 +58,7 @@ interface ServiceRateSpec {
   priority?: number;
   quoteOnRequest?: boolean;
   status?: string;
+  vehicleTypeId?: string | null;
 }
 
 /** A fresh service product with the given VERIFIED rates. */
@@ -70,6 +71,7 @@ async function serviceWithRates(name: string, rates: ServiceRateSpec[]) {
       data: {
         productType: "SERVICE",
         serviceProductId: product.id,
+        vehicleTypeId: r.vehicleTypeId ?? null,
         amount: r.amount,
         currency: r.currency ?? "USD",
         status: r.status ?? "VERIFIED",
@@ -88,12 +90,12 @@ interface LineOpts {
   date?: string;
   unitRate?: string;
   overrideRate?: string;
+  vehicleTypeId?: string;
 }
 
 /**
  * Draft version on the fixture hotel, with one service line created directly
- * (saveVersionContent does not accept serviceProductId/date yet — the editor
- * UI is a separate workstream).
+ * (bypasses saveVersionContent so each case controls the exact line fields).
  */
 async function draftWithServiceLine(serviceProductId: string | null, line: LineOpts = {}) {
   const { request, version } = await workflow.createRequest(
@@ -118,6 +120,7 @@ async function draftWithServiceLine(serviceProductId: string | null, line: LineO
       quantity: "1",
       serviceProductId,
       date: line.date ?? null,
+      vehicleTypeId: line.vehicleTypeId ?? null,
       overrideRate: line.overrideRate ?? null,
       overrideReason: line.overrideRate ? "negotiated group rate" : null,
       overrideById: line.overrideRate ? fx.advisor.id : null,
@@ -285,5 +288,124 @@ describe("service rate resolution", () => {
     const sc = engine.calculate(input).scenarios[0];
     expect(blockerCodes(sc)).toContain("MISSING_RATE");
     expect(sc.valid).toBe(false);
+  });
+});
+
+describe("vehicle-scoped service rates", () => {
+  let sedanId: string;
+  let minivanId: string;
+
+  beforeAll(async () => {
+    const sedan = await prisma.vehicleType.create({ data: { name: "Test Sedan", seats: 3 } });
+    const minivan = await prisma.vehicleType.create({ data: { name: "Test Minivan", seats: 5 } });
+    sedanId = sedan.id;
+    minivanId = minivan.id;
+  });
+
+  it("the vehicle-specific row wins for a line with that vehicle", async () => {
+    const product = await serviceWithRates("Vehicle Match", [
+      { amount: "50" }, // vehicle-agnostic base
+      { amount: "60", vehicleTypeId: sedanId, priority: 1 },
+      { amount: "80", vehicleTypeId: minivanId, priority: 1 },
+    ]);
+    const { version } = await draftWithServiceLine(product.id, {
+      date: "2026-10-02",
+      vehicleTypeId: sedanId,
+    });
+
+    const input = await resolve.buildEngineInputForVersion(version.id);
+    const line = input.scenarios[0].services[0];
+    expect(line.unitRate).toBe("60");
+    expect(line.vehicleTypeId).toBe(sedanId);
+  });
+
+  it("the vehicle row wins even when the base row has higher priority", async () => {
+    // Subset selection is by vehicle first; priority only ranks rows inside
+    // the chosen subset.
+    const product = await serviceWithRates("Vehicle Subset", [
+      { amount: "50", priority: 5 },
+      { amount: "60", vehicleTypeId: sedanId, priority: 1 },
+    ]);
+    const { version } = await draftWithServiceLine(product.id, {
+      date: "2026-10-02",
+      vehicleTypeId: sedanId,
+    });
+
+    const input = await resolve.buildEngineInputForVersion(version.id);
+    expect(input.scenarios[0].services[0].unitRate).toBe("60");
+  });
+
+  it("falls back to the vehicle-agnostic base row when no vehicle row covers the date", async () => {
+    const product = await serviceWithRates("Vehicle Fallback", [
+      { amount: "50" },
+      { amount: "60", vehicleTypeId: sedanId, priority: 1, validFrom: "2027-01-01", validTo: "2027-02-01" },
+    ]);
+    const { version } = await draftWithServiceLine(product.id, {
+      date: "2026-10-02",
+      vehicleTypeId: sedanId,
+    });
+
+    const input = await resolve.buildEngineInputForVersion(version.id);
+    expect(input.scenarios[0].services[0].unitRate).toBe("50");
+  });
+
+  it("a line without a vehicle selection keeps the old behavior", async () => {
+    const plain = await serviceWithRates("No Vehicle Plain", [{ amount: "50" }]);
+    const { version: v1 } = await draftWithServiceLine(plain.id, { date: "2026-10-02" });
+    const input1 = await resolve.buildEngineInputForVersion(v1.id);
+    expect(input1.scenarios[0].services[0].unitRate).toBe("50");
+    expect(input1.scenarios[0].services[0].vehicleTypeId).toBeUndefined();
+
+    // Vehicle rows outrank the base row by priority, so a single vehicle row
+    // wins for vehicle-less lines too (documented, intended).
+    const withVehicle = await serviceWithRates("No Vehicle Row Wins", [
+      { amount: "50" },
+      { amount: "60", vehicleTypeId: sedanId, priority: 1 },
+    ]);
+    const { version: v2 } = await draftWithServiceLine(withVehicle.id, { date: "2026-10-02" });
+    const input2 = await resolve.buildEngineInputForVersion(v2.id);
+    expect(input2.scenarios[0].services[0].unitRate).toBe("60");
+  });
+
+  it("a TBC vehicle row blocks a vehicle-selected line — no silent fallback to the base rate", async () => {
+    const product = await serviceWithRates("Vehicle TBC", [
+      { amount: "50" },
+      { amount: null, vehicleTypeId: sedanId, priority: 1 },
+    ]);
+    const { version } = await draftWithServiceLine(product.id, {
+      date: "2026-10-02",
+      vehicleTypeId: sedanId,
+    });
+
+    const input = await resolve.buildEngineInputForVersion(version.id);
+    expect(input.scenarios[0].services[0].unitRate).toBeNull();
+
+    const sc = engine.calculate(input).scenarios[0];
+    expect(blockerCodes(sc)).toContain("MISSING_RATE");
+    expect(sc.valid).toBe(false);
+  });
+
+  it("equal-priority rows within one vehicle bracket are ambiguous, across vehicles are not", async () => {
+    const product = await serviceWithRates("Vehicle Ambiguity", [
+      { amount: "50" },
+      { amount: "60", vehicleTypeId: sedanId, priority: 1 },
+      { amount: "70", vehicleTypeId: sedanId, priority: 1 },
+      { amount: "80", vehicleTypeId: minivanId, priority: 1 },
+    ]);
+    const { version: amb } = await draftWithServiceLine(product.id, {
+      date: "2026-10-02",
+      vehicleTypeId: sedanId,
+    });
+    await expect(resolve.buildEngineInputForVersion(amb.id)).rejects.toMatchObject({
+      code: "AMBIGUOUS_RATE",
+    });
+
+    // The minivan bracket has a single row — unaffected by the sedan tie.
+    const { version: ok } = await draftWithServiceLine(product.id, {
+      date: "2026-10-02",
+      vehicleTypeId: minivanId,
+    });
+    const input = await resolve.buildEngineInputForVersion(ok.id);
+    expect(input.scenarios[0].services[0].unitRate).toBe("80");
   });
 });

@@ -42,7 +42,10 @@ export async function GET(req: NextRequest) {
       orderBy: { name: "asc" },
       include: {
         supplier: { select: { id: true, name: true } },
-        rates: { where: { status: { not: "ARCHIVED" } } },
+        rates: {
+          where: { status: { not: "ARCHIVED" } },
+          include: { vehicleType: { select: { id: true, name: true } } },
+        },
       },
     });
     return NextResponse.json(services);

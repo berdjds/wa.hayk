@@ -212,6 +212,8 @@ export const serviceLineContentSchema = z
     serviceProductId: z.string().nullish(),
     /** YYYY-MM-DD of the itinerary day this line is pinned to; null = not day-linked. */
     date: isoDate.nullish(),
+    /** Selected fleet vehicle; per-vehicle SERVICE rates resolve for it. null = base rate. */
+    vehicleTypeId: z.string().nullish(),
   })
   .superRefine((line, ctx) => {
     // An override rate without a recorded reason is unauditable — refuse it
@@ -228,7 +230,7 @@ export const serviceLineContentSchema = z
 /** A day service is normally a structured item; legacy string items (pre-Phase-3 payloads and template JSON) are accepted and normalized. */
 const dayServiceItemSchema = z.preprocess(
   (value) => (typeof value === "string" ? { label: value } : value),
-  z.object({ serviceProductId: z.string().nullish(), label: shortString }),
+  z.object({ serviceProductId: z.string().nullish(), label: shortString, vehicleTypeId: z.string().nullish() }),
 );
 
 export const itineraryDayContentSchema = z.object({
@@ -602,6 +604,20 @@ export async function saveVersionContent(
           }
         }
       }
+      const linkedVehicleIds = Array.from(
+        new Set(
+          parsed.serviceLines.map((l) => l.vehicleTypeId).filter((id): id is string => !!id),
+        ),
+      );
+      if (linkedVehicleIds.length) {
+        const found = await tx.vehicleType.findMany({ where: { id: { in: linkedVehicleIds } } });
+        const foundIds = new Set(found.map((v) => v.id));
+        for (const id of linkedVehicleIds) {
+          if (!foundIds.has(id)) {
+            throw new WorkflowError("VEHICLE_TYPE_UNKNOWN", `unknown vehicle type ${id}`, 400);
+          }
+        }
+      }
       await tx.serviceLine.deleteMany({ where: { versionId } });
       for (const line of parsed.serviceLines) {
         const scenarioId = line.scenarioKey ? scenarioIdByKey.get(line.scenarioKey) ?? null : null;
@@ -631,6 +647,7 @@ export async function saveVersionContent(
             sourceRef: line.sourceRef ?? null,
             serviceProductId: line.serviceProductId ?? null,
             date: line.date ?? null,
+            vehicleTypeId: line.vehicleTypeId ?? null,
           },
         });
       }
@@ -657,14 +674,20 @@ export async function saveVersionContent(
       }
 
       // Sync day-linked service lines: each catalog service pinned to a day
-      // exists as exactly one shared ServiceLine per (product, date) pair.
-      // Manual lines (no serviceProductId) and scenario-bound lines are never
+      // exists as exactly one shared ServiceLine per (product, date, vehicle)
+      // triple — the same tour in two different vehicles is two lines. Manual
+      // lines (no serviceProductId) and scenario-bound lines are never
       // touched here — they belong to the Scenarios tab editor.
-      const desired = new Map<string, { productId: string; date: string }>();
+      const desired = new Map<string, { productId: string; date: string; vehicleTypeId: string | null }>();
       for (const day of parsed.itineraryDays) {
         for (const svc of day.services ?? []) {
           if (svc.serviceProductId) {
-            desired.set(`${svc.serviceProductId}${day.date}`, { productId: svc.serviceProductId, date: day.date });
+            const vehicleTypeId = svc.vehicleTypeId ?? null;
+            desired.set(`${svc.serviceProductId}${day.date}${vehicleTypeId ?? ""}`, {
+              productId: svc.serviceProductId,
+              date: day.date,
+              vehicleTypeId,
+            });
           }
         }
       }
@@ -685,23 +708,43 @@ export async function saveVersionContent(
           throw new WorkflowError("SERVICE_PRODUCT_INACTIVE", `service product "${product.name}" is inactive`, 400);
         }
       }
+      // Vehicle selections must reference real fleet rows (same guard style).
+      const vehicleIds = Array.from(
+        new Set(desiredPairs.map((d) => d.vehicleTypeId).filter((id): id is string => !!id)),
+      );
+      if (vehicleIds.length) {
+        const found = await tx.vehicleType.findMany({ where: { id: { in: vehicleIds } } });
+        const foundIds = new Set(found.map((v) => v.id));
+        for (const id of vehicleIds) {
+          if (!foundIds.has(id)) {
+            throw new WorkflowError("VEHICLE_TYPE_UNKNOWN", `unknown vehicle type ${id}`, 400);
+          }
+        }
+      }
 
       const linked = await tx.serviceLine.findMany({
         where: { versionId, serviceProductId: { not: null }, scenarioId: null },
       });
       const unmatched = [...linked];
-      for (const { productId, date } of desiredPairs) {
-        const exactIdx = unmatched.findIndex((l) => l.serviceProductId === productId && l.date === date);
+      for (const { productId, date, vehicleTypeId } of desiredPairs) {
+        const exactIdx = unmatched.findIndex(
+          (l) => l.serviceProductId === productId && l.date === date && (l.vehicleTypeId ?? null) === vehicleTypeId,
+        );
         if (exactIdx >= 0) {
           unmatched.splice(exactIdx, 1);
           continue;
         }
-        // Same product on a different day: retarget the existing line so any
-        // manual edits on it (quantity, typed rate, override) survive the move.
-        const moveIdx = unmatched.findIndex((l) => l.serviceProductId === productId);
+        // Same product on a different day or with a changed vehicle: retarget
+        // the existing line so any manual edits on it (quantity, typed rate,
+        // override) survive the move. Prefer the line already carrying the
+        // same vehicle so two-vehicle days never steal each other's lines.
+        let moveIdx = unmatched.findIndex(
+          (l) => l.serviceProductId === productId && (l.vehicleTypeId ?? null) === vehicleTypeId,
+        );
+        if (moveIdx < 0) moveIdx = unmatched.findIndex((l) => l.serviceProductId === productId);
         if (moveIdx >= 0) {
           const line = unmatched.splice(moveIdx, 1)[0];
-          await tx.serviceLine.update({ where: { id: line.id }, data: { date } });
+          await tx.serviceLine.update({ where: { id: line.id }, data: { date, vehicleTypeId } });
           linkedLinesChanged = true;
           continue;
         }
@@ -715,12 +758,13 @@ export async function saveVersionContent(
             basis: product.basis,
             currency: "AMD",
             // null rate on purpose: resolve.ts prices linked lines from the
-            // catalog band covering `date`.
+            // catalog band covering `date` (per vehicle when one is selected).
             unitRate: null,
             quantity: "1",
             capacity: product.capacity ?? null,
             serviceProductId: productId,
             date,
+            vehicleTypeId,
           },
         });
         linkedLinesChanged = true;
@@ -1542,6 +1586,7 @@ export async function createRevision(actor: WorkflowActor, requestId: string) {
           // resolving in the new draft.
           serviceProductId: line.serviceProductId,
           date: line.date,
+          vehicleTypeId: line.vehicleTypeId,
         },
       });
     }

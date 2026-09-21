@@ -30,6 +30,7 @@ import type {
   RateView,
   ServiceProductView,
   SupplierOption,
+  VehicleTypeView,
 } from "./types";
 
 interface CatalogAdminProps {
@@ -98,6 +99,17 @@ function useSuppliers(): SupplierOption[] {
   return suppliers;
 }
 
+function useVehicles(): VehicleTypeView[] {
+  const [vehicles, setVehicles] = useState<VehicleTypeView[]>([]);
+  useEffect(() => {
+    axios
+      .get("/api/travel/catalog/vehicles")
+      .then((res) => setVehicles(res.data))
+      .catch(() => {});
+  }, []);
+  return vehicles;
+}
+
 function WeekdayPicker({ value, onChange }: { value: number[]; onChange: (v: number[]) => void }) {
   return (
     <div className="flex flex-wrap gap-3">
@@ -162,6 +174,7 @@ function intOrNull(v: string): number | null {
 interface RateFormState {
   occupancy: string;
   board: string;
+  vehicleTypeId: string; // SERVICE rates only; "" = vehicle-agnostic base rate
   amount: string; // "" or "TBC" → null server-side
   currency: string;
   validFrom: string;
@@ -175,6 +188,7 @@ interface RateFormState {
 const EMPTY_RATE_FORM: RateFormState = {
   occupancy: "",
   board: "",
+  vehicleTypeId: "",
   amount: "",
   currency: "AMD",
   validFrom: "",
@@ -189,6 +203,7 @@ function rateToForm(r: RateView): RateFormState {
   return {
     occupancy: r.occupancy ?? "",
     board: r.board ?? "",
+    vehicleTypeId: r.vehicleTypeId ?? "",
     amount: r.amount ?? "",
     currency: r.currency,
     validFrom: r.validFrom ?? "",
@@ -218,6 +233,7 @@ function RateDialog({
   const { toast } = useToast();
   const [form, setForm] = useState<RateFormState>(EMPTY_RATE_FORM);
   const [saving, setSaving] = useState(false);
+  const vehicles = useVehicles();
 
   useEffect(() => {
     if (open) setForm(rate ? rateToForm(rate) : EMPTY_RATE_FORM);
@@ -248,6 +264,7 @@ function RateDialog({
           ...(productType === "HOTEL" ? { hotelProductId: productId } : { serviceProductId: productId }),
           occupancy: productType === "HOTEL" ? form.occupancy || null : null,
           board: form.board.trim() || null,
+          vehicleTypeId: productType === "SERVICE" ? form.vehicleTypeId || null : null,
           ...base,
         });
         toast("Rate created (needs review)", "success");
@@ -308,6 +325,33 @@ function RateDialog({
                 />
               )}
             </div>
+            {productType === "SERVICE" && (
+              <div>
+                <Label>Vehicle (optional — per-vehicle transportation rate)</Label>
+                {rate ? (
+                  // Like occupancy, the vehicle identifies the rate bracket and
+                  // is not editable; archive + recreate to change it.
+                  <Input value={vehicles.find((v) => v.id === form.vehicleTypeId)?.name ?? "—"} disabled />
+                ) : (
+                  <Select
+                    value={form.vehicleTypeId || NONE}
+                    onValueChange={(v) => setForm({ ...form, vehicleTypeId: v === NONE ? "" : v })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={NONE}>Any vehicle (base rate)</SelectItem>
+                      {vehicles.map((v) => (
+                        <SelectItem key={v.id} value={v.id}>
+                          {v.name} ({v.seats} seats)
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+              </div>
+            )}
             <div>
               <Label>Amount (decimal string, empty = TBC)</Label>
               <Input
@@ -382,6 +426,7 @@ function RateTable({
       <thead className="border-b text-left text-muted-foreground">
         <tr>
           {productType === "HOTEL" && <th className="py-1 pr-3 font-medium">Occupancy</th>}
+          {productType === "SERVICE" && <th className="py-1 pr-3 font-medium">Vehicle</th>}
           <th className="py-1 pr-3 font-medium">Board</th>
           <th className="py-1 pr-3 font-medium">Amount</th>
           <th className="py-1 pr-3 font-medium">Validity</th>
@@ -395,6 +440,7 @@ function RateTable({
         {rates.map((r) => (
           <tr key={r.id}>
             {productType === "HOTEL" && <td className="py-1.5 pr-3 font-medium">{r.occupancy ?? "—"}</td>}
+            {productType === "SERVICE" && <td className="py-1.5 pr-3">{r.vehicleType?.name ?? "—"}</td>}
             <td className="py-1.5 pr-3">{r.board ?? "—"}</td>
             <td className="py-1.5 pr-3 whitespace-nowrap">{r.amount == null ? "TBC" : money(r.amount, r.currency)}</td>
             <td className="py-1.5 pr-3 whitespace-nowrap">
@@ -1240,6 +1286,7 @@ function RatesTab() {
               <tr>
                 <th className="pb-2 font-medium">Product</th>
                 <th className="pb-2 font-medium">Occ / board</th>
+                <th className="pb-2 font-medium">Vehicle</th>
                 <th className="pb-2 font-medium">Amount</th>
                 <th className="pb-2 font-medium">Validity</th>
                 <th className="pb-2 font-medium">Evidence</th>
@@ -1259,6 +1306,7 @@ function RatesTab() {
                     {r.occupancy ?? "—"}
                     {r.board ? ` / ${r.board}` : ""}
                   </td>
+                  <td className="py-2">{r.productType === "VEHICLE" ? "—" : (r.vehicleType?.name ?? "—")}</td>
                   <td className="py-2">{r.amount == null ? "TBC" : money(r.amount, r.currency)}</td>
                   <td className="py-2 whitespace-nowrap text-xs">
                     {r.validFrom ?? "…"} → {r.validTo ?? "…"}
@@ -1286,7 +1334,7 @@ function RatesTab() {
               ))}
               {rates.length === 0 && (
                 <tr>
-                  <td colSpan={8} className="py-6 text-center text-muted-foreground">
+                  <td colSpan={9} className="py-6 text-center text-muted-foreground">
                     No rates for this filter.
                   </td>
                 </tr>

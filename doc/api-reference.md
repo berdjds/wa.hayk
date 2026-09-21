@@ -307,15 +307,16 @@ status (409 for stale snapshot/revision conflicts). Money values are decimal str
 | `/api/travel/requests/[id]/reassign` | POST | ADMIN | Reassign validator; former validator loses decision rights |
 | `/api/travel/requests/[id]/versions` | POST | owner/ADMIN | Create a new draft revision (v02, ...) cloning latest content |
 | `/api/travel/versions/[id]/calculate` | POST | travel roles | Engine preview (no snapshot persisted); optional policy override |
-| `/api/travel/versions/[id]/content` | PUT | owner/ADMIN | Replace scenarios/stays/service lines/itinerary (draft statuses only). `itineraryDays[].services` items are `{serviceProductId?, label}` objects (legacy plain strings accepted and normalized); `serviceLines[]` accept and pass through `serviceProductId`/`date` for catalog-linked lines |
+| `/api/travel/versions/[id]/content` | PUT | owner/ADMIN | Replace scenarios/stays/service lines/itinerary (draft statuses only). `itineraryDays[].services` items are `{serviceProductId?, label, vehicleTypeId?}` objects (legacy plain strings accepted and normalized); `serviceLines[]` accept and pass through `serviceProductId`/`date`/`vehicleTypeId` for catalog-linked lines |
 | `/api/travel/versions/[id]/review` | POST | assigned validator | APPROVE / REQUEST_CHANGES / REJECT bound to `snapshotHash` |
 | `/api/travel/versions/[id]/issue` | POST | owner/ADMIN | Issue approved snapshot → client PDF; idempotent via `idempotencyKey` |
 | `/api/travel/versions/[id]/outcome` | POST | owner/ADMIN | ACCEPTED (with scenario) / DECLINED / EXPIRED |
 | `/api/travel/agencies`, `/api/travel/agencies/[id]` | GET, POST, PATCH | GET: travel roles; mutations: ADMIN | Client agencies and uppercase short codes; GET `?includeInactive=true` (ADMIN only) also lists deactivated ones |
 | `/api/travel/catalog/hotels`, `/catalog/services`, `/catalog/rates` | GET | travel roles | Catalog with rates and verification status |
 | `/api/travel/catalog/hotels(/[id])`, `/catalog/services(/[id])` | POST, PATCH | ADMIN | Create/edit hotel and service products (name, category, basis, capacity, language, duration, active flag) |
-| `/api/travel/catalog/rates` | POST | ADMIN | Add a rate version to a product; new rates start NEEDS_REVIEW |
-| `/api/travel/catalog/rates/[id]` | PATCH | ADMIN | Edit amount/validity/priority/minStay/weekdays/notes; status transitions NEEDS_REVIEW → VERIFIED → ARCHIVED (never delete) |
+| `/api/travel/catalog/rates` | POST | ADMIN | Add a rate version to a product; new rates start NEEDS_REVIEW. SERVICE rates accept an optional `vehicleTypeId` (per-vehicle transportation pricing; must reference an existing vehicle type) |
+| `/api/travel/catalog/rates/[id]` | PATCH | ADMIN | Edit amount/validity/priority/minStay/weekdays/notes; status transitions NEEDS_REVIEW → VERIFIED → ARCHIVED (never delete). `vehicleTypeId` identifies the rate bracket and is not editable (archive + recreate) |
+| `/api/travel/catalog/vehicles` | GET | travel roles | Active fleet vehicle types `[{id, name, seats}]` (Sedan / Minivan / Sprinter / Big bus) for vehicle pickers |
 | `/api/travel/catalog/suppliers` | GET | travel roles | Supplier directory for catalog products |
 | `/api/travel/templates`, `/templates/[id]/instantiate` | GET, POST | travel roles | Package templates (ARM/GEO/COM codes); instantiate into a new request |
 | `/api/travel/settings` | GET, PUT | GET: travel roles; PUT: ADMIN | Company timezone, reminders, escalation, policy activation, and company branding (`companyName`, `companyPhone`, `companyEmail`, `companyAddress`, `companyWebsite`, `brandColor` as `#rrggbb` or null) for the quotation PDF |

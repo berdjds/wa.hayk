@@ -131,6 +131,22 @@ A versioned B2B travel package costing and quotation module inside WAControl:
     avoids the `margin` property entirely (padding only) so the client document never contains
     the substring "margin"; brand colors are interpolated into CSS only after a strict
     `#rrggbb` validation, defaulting to navy `#16305b`.
+19. **Per-vehicle transportation pricing.** Transportation tours (TRANSPORTATION services,
+    basis VEHICLE_TRIP) are priced per fleet vehicle type. The catalog seed converges the
+    fleet vocabulary to Sedan (3) / Minivan (5) / Sprinter (12) / Big bus (48) — legacy names
+    (Van / Minibus / Large bus) are renamed in place so rate references survive — and stamps
+    each priced TRANSPORTATION product with one VERIFIED SERVICE RateVersion per vehicle at
+    **priority 1**, initially copying the vehicle-agnostic base rate (priority 0, kept as the
+    fallback) pending operator-entered fleet-specific prices. `ServiceLine.vehicleTypeId`
+    records the selected vehicle: `resolveServiceRate` considers only that vehicle's rows when
+    set (falling back to the vehicle-agnostic rows when none cover the line's date), and
+    `buildEngineInputForVersion` passes the selection through `ServiceLineInput`. Lines
+    without a vehicle selection keep the previous behavior (all rows; vehicle rows outrank the
+    base row by priority). The itinerary-day ↔ linked-line sync keys on
+    `(serviceProductId, date, vehicleTypeId)` — the same tour in two vehicles on one day is
+    two lines — and unknown vehicle ids are rejected with `VEHICLE_TYPE_UNKNOWN` (400), same
+    style as `SERVICE_PRODUCT_UNKNOWN`. `vehicleTypeId` identifies the rate bracket and is
+    not editable on existing rates (archive + recreate), same rule as occupancy.
 
 ## Known limitations
 

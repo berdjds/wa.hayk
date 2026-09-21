@@ -8,12 +8,18 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/components/ui/toast";
 import { addDays, daysBetween } from "@/lib/travel/engine/dates";
 import { normalizeDayServices, type DayServiceItem } from "@/lib/travel/contracts";
 import { apiError } from "../utils";
-import type { ServiceProductView } from "../types";
+import type { ServiceProductView, VehicleTypeView } from "../types";
 import type { DetailContext } from "./RequestDetail";
+
+/** Vehicle-priced services: the advisor picks a fleet vehicle, and the rate resolves per vehicle. */
+function needsVehicle(p: ServiceProductView): boolean {
+  return p.basis === "VEHICLE_TRIP" || p.basis === "VEHICLE_DAY" || p.category === "TRANSPORTATION";
+}
 
 interface DayDraft {
   dayOffset: number;
@@ -43,8 +49,12 @@ export default function ItineraryTab({ ctx }: { ctx: DetailContext }) {
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [products, setProducts] = useState<ServiceProductView[] | null>(null);
+  const [vehicles, setVehicles] = useState<VehicleTypeView[]>([]);
   const [pickerDay, setPickerDay] = useState<number | null>(null);
   const [customLabel, setCustomLabel] = useState("");
+  // Vehicle-priced product clicked in the picker, awaiting a vehicle choice.
+  const [pendingVehicleProduct, setPendingVehicleProduct] = useState<ServiceProductView | null>(null);
+  const [pickerVehicle, setPickerVehicle] = useState("");
   // Cities this component auto-filled, keyed by dayOffset — the sync never
   // overwrites a value the user typed over a derived one.
   const derivedCities = useRef<Record<number, string>>({});
@@ -86,6 +96,17 @@ export default function ItineraryTab({ ctx }: { ctx: DetailContext }) {
       .then((res) => setProducts(res.data))
       .catch((err) => toast(apiError(err, "Failed to load service catalog"), "error"));
   }, [ctx.canEditVersion, products, toast]);
+
+  // Vehicle names also render on read-only chips, so load them unconditionally.
+  useEffect(() => {
+    axios
+      .get("/api/travel/catalog/vehicles")
+      .then((res) => setVehicles(res.data))
+      .catch(() => null);
+  }, []);
+
+  const vehicleName = (id: string | null | undefined) =>
+    id ? vehicles.find((v) => v.id === id)?.name ?? null : null;
 
   function applyCitySync(source: DayDraft[], markDirty: boolean) {
     const cityByDate = deriveCityByDate(ctx);
@@ -161,7 +182,35 @@ export default function ItineraryTab({ ctx }: { ctx: DetailContext }) {
     if (pickerDay === null || !label) return;
     addService(pickerDay, { serviceProductId: null, label });
     setCustomLabel("");
+    closePicker();
+  }
+
+  function closePicker() {
     setPickerDay(null);
+    setPendingVehicleProduct(null);
+    setPickerVehicle("");
+  }
+
+  function pickProduct(p: ServiceProductView) {
+    if (pickerDay === null) return;
+    if (needsVehicle(p) && vehicles.length > 0) {
+      // Second step: the same product in two vehicles is two distinct lines.
+      setPendingVehicleProduct(p);
+      setPickerVehicle((prev) => prev || vehicles[0].id);
+      return;
+    }
+    addService(pickerDay, { serviceProductId: p.id, label: p.name });
+    closePicker();
+  }
+
+  function confirmVehicleProduct() {
+    if (pickerDay === null || !pendingVehicleProduct || !pickerVehicle) return;
+    addService(pickerDay, {
+      serviceProductId: pendingVehicleProduct.id,
+      label: pendingVehicleProduct.name,
+      vehicleTypeId: pickerVehicle,
+    });
+    closePicker();
   }
 
   async function handleSave() {
@@ -174,7 +223,11 @@ export default function ItineraryTab({ ctx }: { ctx: DetailContext }) {
           date: d.date,
           narrative: d.narrative || null,
           overnightCity: d.overnightCity || null,
-          services: d.services.map((s) => ({ serviceProductId: s.serviceProductId, label: s.label })),
+          services: d.services.map((s) => ({
+            serviceProductId: s.serviceProductId,
+            label: s.label,
+            vehicleTypeId: s.vehicleTypeId ?? null,
+          })),
         })),
       });
       toast("Itinerary saved", "success");
@@ -204,6 +257,33 @@ export default function ItineraryTab({ ctx }: { ctx: DetailContext }) {
       {products !== null && products.length === 0 && (
         <p className="text-sm text-muted-foreground">No active services in the catalog.</p>
       )}
+      {pendingVehicleProduct && (
+        <div className="flex items-end gap-2 rounded-md border bg-muted/30 p-2">
+          <div className="flex-1">
+            <p className="mb-1 text-xs font-medium">
+              {pendingVehicleProduct.name} — vehicle
+            </p>
+            <Select value={pickerVehicle} onValueChange={setPickerVehicle}>
+              <SelectTrigger>
+                <SelectValue placeholder="Select vehicle" />
+              </SelectTrigger>
+              <SelectContent>
+                {vehicles.map((v) => (
+                  <SelectItem key={v.id} value={v.id}>
+                    {v.name} ({v.seats} seats)
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <Button size="sm" onClick={confirmVehicleProduct} disabled={!pickerVehicle}>
+            Add
+          </Button>
+          <Button size="sm" variant="ghost" onClick={() => setPendingVehicleProduct(null)}>
+            Back
+          </Button>
+        </div>
+      )}
       <div className="max-h-72 space-y-3 overflow-y-auto">
         {Object.entries(productsByCategory).map(([category, items]) => (
           <div key={category}>
@@ -213,16 +293,16 @@ export default function ItineraryTab({ ctx }: { ctx: DetailContext }) {
                 <button
                   key={p.id}
                   type="button"
-                  className="w-full rounded-md border px-2 py-1 text-left text-sm hover:bg-accent"
-                  onClick={() => {
-                    if (pickerDay !== null) addService(pickerDay, { serviceProductId: p.id, label: p.name });
-                    setPickerDay(null);
-                  }}
+                  className={`w-full rounded-md border px-2 py-1 text-left text-sm hover:bg-accent${
+                    pendingVehicleProduct?.id === p.id ? " border-primary" : ""
+                  }`}
+                  onClick={() => pickProduct(p)}
                 >
                   {p.name}
                   <span className="ml-2 text-xs text-muted-foreground">
                     {p.basis.replace(/_/g, " ").toLowerCase()}
                     {p.durationVariant ? ` · ${p.durationVariant.replace(/_/g, " ")}` : ""}
+                    {needsVehicle(p) ? " · per vehicle" : ""}
                   </span>
                 </button>
               ))}
@@ -315,6 +395,7 @@ export default function ItineraryTab({ ctx }: { ctx: DetailContext }) {
                   {d.services.map((s, j) => (
                     <Badge key={j} variant="outline" className="flex items-center gap-1">
                       {s.label}
+                      {vehicleName(s.vehicleTypeId) ? ` · ${vehicleName(s.vehicleTypeId)}` : ""}
                       <button
                         type="button"
                         aria-label={`Remove ${s.label}`}
@@ -346,6 +427,7 @@ export default function ItineraryTab({ ctx }: { ctx: DetailContext }) {
                     {d.services.map((s, j) => (
                       <Badge key={j} variant="outline" className="text-xs font-normal text-muted-foreground">
                         {s.label}
+                        {vehicleName(s.vehicleTypeId) ? ` · ${vehicleName(s.vehicleTypeId)}` : ""}
                       </Badge>
                     ))}
                   </div>
@@ -355,7 +437,7 @@ export default function ItineraryTab({ ctx }: { ctx: DetailContext }) {
           )}
         </div>
       </CardContent>
-      <Dialog open={pickerDay !== null} onOpenChange={(open) => !open && setPickerDay(null)}>
+      <Dialog open={pickerDay !== null} onOpenChange={(open) => !open && closePicker()}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Add service{pickerDay !== null ? ` — Day ${days[pickerDay]?.dayOffset + 1}` : ""}</DialogTitle>

@@ -318,6 +318,12 @@ function resolveStayRates(
  * and quote-on-request is a hard blocker. A TBC winner (amount null) returns
  * null so the engine's MISSING_RATE blocker fires — TBC must never be coerced
  * to 0. Returns null also when no band covers the date.
+ *
+ * Vehicle scoping (per-vehicle transportation pricing): when the line names a
+ * vehicleTypeId, only rows for THAT vehicle are considered; if none of them
+ * cover the date, the vehicle-agnostic rows (vehicleTypeId null) are the
+ * fallback. Lines without a vehicle selection use the full row set as before
+ * (vehicle rows outrank the base row by priority).
  */
 function resolveServiceRate(
   line: ServiceLine,
@@ -326,9 +332,16 @@ function resolveServiceRate(
   issues: ResolutionIssue[],
 ): { unitRate: string; currency: string; sourceRef: string } | null {
   // ISO calendar strings compare lexicographically — safe for [from, to).
-  const covering = rateRows.filter(
-    (row) => (row.validFrom ?? "") <= referenceDate && referenceDate < (row.validTo ?? "￿"),
-  );
+  const covers = (row: RateVersion) =>
+    (row.validFrom ?? "") <= referenceDate && referenceDate < (row.validTo ?? "￿");
+  let pool = rateRows;
+  if (line.vehicleTypeId) {
+    const vehicleRows = rateRows.filter((row) => row.vehicleTypeId === line.vehicleTypeId);
+    pool = vehicleRows.some(covers)
+      ? vehicleRows
+      : rateRows.filter((row) => row.vehicleTypeId === null);
+  }
+  const covering = pool.filter(covers);
   if (covering.length === 0) return null;
   const top = Math.max(...covering.map((row) => row.priority));
   const winners = covering.filter((row) => row.priority === top);
@@ -407,6 +420,7 @@ function resolveServiceLine(
     isStaffCost: line.isStaffCost,
     override,
     sourceRef,
+    vehicleTypeId: line.vehicleTypeId ?? undefined,
   };
 }
 

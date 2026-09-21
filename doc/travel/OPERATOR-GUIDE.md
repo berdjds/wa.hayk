@@ -70,6 +70,13 @@ products, and add rate versions per product. Every new rate starts as NEEDS_REVI
 ignored by pricing until an admin verifies it (Rates tab), so adding a rate is always safe;
 rates are edited or archived, never deleted.
 
+Transportation tours are priced **per vehicle type**: Sedan and Minivan rates are the catalog
+unit prices; Sprinter and Big bus currently carry the same values pending update. To set a
+fleet-specific price, open the transportation service in Catalog → Services → Rates and add
+(or edit) the rate row for that vehicle (the Vehicle column shows which row applies); when an
+advisor pins a transportation service to a day, they pick the vehicle and the matching rate
+applies automatically.
+
 ## Rollout / rollback
 
 - Rollout is additive: new tables, routes and pages; existing WhatsApp/chat features are

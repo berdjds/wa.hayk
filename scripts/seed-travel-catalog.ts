@@ -46,6 +46,35 @@ async function upsertVehicleType(data: { name: string; seats: number; notes: str
   return prisma.vehicleType.create({ data });
 }
 
+/**
+ * Fleet vocabulary convergence (Phase: per-vehicle pricing): the catalog was
+ * seeded with workbook-era names (Van / Minibus / Large bus); the operator's
+ * fleet vocabulary is Sedan / Minivan / Sprinter / Big bus. An old-named row
+ * is RENAMED in place (its id — and any rates referencing it — survives). If
+ * both old and new names already exist, the new-named row is updated and the
+ * stale duplicate is deactivated rather than creating a name collision.
+ */
+async function convergeVehicleType(target: { name: string; seats: number; notes: string; oldNames: string[] }) {
+  const { oldNames, ...data } = target;
+  for (const oldName of oldNames) {
+    const legacy = await prisma.vehicleType.findFirst({ where: { name: oldName } });
+    if (!legacy) continue;
+    const renamed = await prisma.vehicleType.findFirst({ where: { name: data.name } });
+    if (renamed) {
+      await prisma.vehicleType.update({ where: { id: renamed.id }, data });
+      if (legacy.id !== renamed.id && legacy.active) {
+        await prisma.vehicleType.update({
+          where: { id: legacy.id },
+          data: { active: false, notes: `Superseded by "${data.name}" (renamed fleet vocabulary)` },
+        });
+      }
+      return renamed;
+    }
+    return prisma.vehicleType.update({ where: { id: legacy.id }, data });
+  }
+  return upsertVehicleType(data);
+}
+
 async function upsertHotelProduct(data: {
   name: string;
   city: string | null;
@@ -81,6 +110,9 @@ interface RateKey {
   productType: "HOTEL" | "VEHICLE" | "SERVICE";
   hotelProductId?: string;
   serviceProductId?: string;
+  // Part of the identity: per-vehicle SERVICE rows share the product,
+  // occupancy and evidenceRef of their base row and must not match it.
+  vehicleTypeId?: string;
   occupancy: string | null;
   currency: string;
   evidenceRef: string;
@@ -103,6 +135,7 @@ async function upsertRateVersion(key: RateKey, data: RateData) {
     productType: key.productType,
     hotelProductId: key.hotelProductId ?? null,
     serviceProductId: key.serviceProductId ?? null,
+    vehicleTypeId: key.vehicleTypeId ?? null,
     occupancy: key.occupancy,
     currency: key.currency,
     evidenceRef: key.evidenceRef,
@@ -472,6 +505,57 @@ async function seedServices(
   }
 }
 
+/**
+ * Per-vehicle pricing for transportation tours: every TRANSPORTATION service
+ * with a catalog rate gets one SERVICE RateVersion per fleet vehicle type,
+ * copying the vehicle-agnostic base rate (same amount/currency/validity) at
+ * priority 1 — the base row stays at priority 0 as the fallback for lines
+ * without a vehicle selection. Amounts are placeholders equal to the base
+ * rate until the operator enters fleet-specific prices in the catalog UI.
+ */
+async function seedVehicleServiceRates(vehicleTypeIds: string[]) {
+  if (vehicleTypeIds.length === 0) return;
+  const transportProducts = await prisma.serviceProduct.findMany({
+    where: { category: "TRANSPORTATION" },
+    include: {
+      rates: { where: { productType: "SERVICE", vehicleTypeId: null } },
+    },
+  });
+  for (const product of transportProducts) {
+    for (const base of product.rates) {
+      for (const vehicleTypeId of vehicleTypeIds) {
+        // Idempotent on (product, vehicle, currency, validity band).
+        const existing = await prisma.rateVersion.findFirst({
+          where: {
+            productType: "SERVICE",
+            serviceProductId: product.id,
+            vehicleTypeId,
+            currency: base.currency,
+            validFrom: base.validFrom,
+            validTo: base.validTo,
+          },
+        });
+        if (existing) continue;
+        await prisma.rateVersion.create({
+          data: {
+            productType: "SERVICE",
+            serviceProductId: product.id,
+            vehicleTypeId,
+            amount: base.amount,
+            currency: base.currency,
+            validFrom: base.validFrom,
+            validTo: base.validTo,
+            priority: 1,
+            status: "VERIFIED",
+            evidenceRef: base.evidenceRef,
+            notes: "Same as base rate pending fleet-specific pricing",
+          },
+        });
+      }
+    }
+  }
+}
+
 async function seedGeorgiaBands(
   parsed: ParsedWorkbook,
   importRowId: (entityType: string, sourceRef: string) => string | null,
@@ -671,23 +755,27 @@ export async function seedTravelCatalog(evidencePath?: string): Promise<SeedSumm
     rowByKey.get(`${entityType}|${sourceRef}`) ?? null;
   const activated: string[] = [];
 
-  // Default fleet configuration — the workbook's hidden-sheet labels
-  // (sedan 1–2, van 3–5, Sprinter 6–12, bus 18–48) are historical, not
-  // validated capacities (plan §3.3); seats here must be verified.
+  // Fleet configuration in the operator's vocabulary (Sedan / Minivan /
+  // Sprinter / Big bus); legacy workbook-era names are renamed in place by
+  // convergeVehicleType. Seats are historical (hidden-sheet labels, plan §3.3)
+  // and must be verified against the fleet.
   const fleetNote = "default configuration, verify against fleet";
-  for (const v of [
-    { name: "Sedan", seats: 3 },
-    { name: "Van", seats: 5 },
-    { name: "Minibus", seats: 12 },
-    { name: "Large bus", seats: 48 },
-  ]) {
-    await upsertVehicleType({ ...v, notes: fleetNote });
+  const fleet: { name: string; seats: number; oldNames: string[] }[] = [
+    { name: "Sedan", seats: 3, oldNames: [] },
+    { name: "Minivan", seats: 5, oldNames: ["Van"] },
+    { name: "Sprinter", seats: 12, oldNames: ["Minibus"] },
+    { name: "Big bus", seats: 48, oldNames: ["Large bus"] },
+  ];
+  const vehicleTypes = [];
+  for (const v of fleet) {
+    vehicleTypes.push(await convergeVehicleType({ ...v, notes: fleetNote }));
   }
 
   await seedHotels(parsed, importRowId, activated);
   await seedServices(parsed, importRowId, activated);
   await seedGeorgiaBands(parsed, importRowId, activated);
   await seedTemplates(parsed, importRowId, activated);
+  await seedVehicleServiceRates(vehicleTypes.map((v) => v.id));
   await seedSettingsAndUsers();
 
   if (activated.length > 0) {

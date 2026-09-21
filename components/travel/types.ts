@@ -90,6 +90,7 @@ export interface ServiceLineDetail {
   sourceRef: string | null;
   serviceProductId: string | null; // catalog link; rate resolves from SERVICE RateVersions
   date: string | null; // YYYY-MM-DD of the itinerary day that spawned the line
+  vehicleTypeId: string | null; // selected fleet vehicle; per-vehicle SERVICE rate resolves for it
 }
 
 export interface SnapshotSummary {
@@ -231,6 +232,12 @@ export interface ServiceProductView {
 export interface SupplierOption {
   id: string;
   name: string;
+}
+
+export interface VehicleTypeView {
+  id: string;
+  name: string;
+  seats: number;
 }
 
 export interface RateView {

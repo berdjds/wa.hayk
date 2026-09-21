@@ -14,8 +14,10 @@ import { useToast } from "@/components/ui/toast";
 import { COST_CATEGORIES, PRICING_BASES, type EngineOutput, type ScenarioResult } from "@/lib/travel/contracts";
 import { nightsBetween, splitStayIntervals } from "@/lib/travel/engine/dates";
 import { StateBadge, apiError, money, parseJson } from "../utils";
-import type { HotelProductView } from "../types";
+import type { HotelProductView, VehicleTypeView } from "../types";
 import type { DetailContext } from "./RequestDetail";
+
+const VEHICLE_BASES = new Set(["VEHICLE_TRIP", "VEHICLE_DAY"]);
 
 interface AllocationDraft {
   roomType: string;
@@ -76,6 +78,8 @@ interface ServiceLineDraft {
   serviceProductId: string | null;
   /** YYYY-MM-DD of the itinerary day this line is pinned to; null = not day-linked. */
   date: string | null;
+  /** Selected fleet vehicle (per-vehicle SERVICE rate); null = vehicle-agnostic base rate. */
+  vehicleTypeId: string | null;
 }
 
 const ROOM_TYPES = ["SGL", "DBL", "TPL", "UNIT"];
@@ -115,6 +119,7 @@ export default function ScenariosTab({ ctx }: { ctx: DetailContext }) {
   const [scenarios, setScenarios] = useState<ScenarioDraft[]>([]);
   const [lines, setLines] = useState<ServiceLineDraft[]>([]);
   const [hotels, setHotels] = useState<HotelProductView[]>([]);
+  const [vehicles, setVehicles] = useState<VehicleTypeView[]>([]);
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [preview, setPreview] = useState<EngineOutput | null>(null);
@@ -164,6 +169,7 @@ export default function ScenariosTab({ ctx }: { ctx: DetailContext }) {
         sourceRef: l.sourceRef ?? "",
         serviceProductId: l.serviceProductId,
         date: l.date,
+        vehicleTypeId: l.vehicleTypeId,
       })),
     );
     setDirty(false);
@@ -175,6 +181,10 @@ export default function ScenariosTab({ ctx }: { ctx: DetailContext }) {
     axios
       .get("/api/travel/catalog/hotels")
       .then((res) => setHotels(res.data))
+      .catch(() => null);
+    axios
+      .get("/api/travel/catalog/vehicles")
+      .then((res) => setVehicles(res.data))
       .catch(() => null);
   }, []);
 
@@ -387,6 +397,7 @@ export default function ScenariosTab({ ctx }: { ctx: DetailContext }) {
           sourceRef: "",
           serviceProductId: null,
           date: null,
+          vehicleTypeId: null,
         },
       ]),
     );
@@ -430,6 +441,7 @@ export default function ScenariosTab({ ctx }: { ctx: DetailContext }) {
           sourceRef: l.sourceRef || null,
           serviceProductId: l.serviceProductId,
           date: l.date,
+          vehicleTypeId: l.vehicleTypeId,
         })),
       });
       toast("Scenario content saved", "success");
@@ -623,6 +635,7 @@ export default function ScenariosTab({ ctx }: { ctx: DetailContext }) {
                   editable={editable}
                   scenarioName={scenarioName}
                   scenarios={scenarios}
+                  vehicles={vehicles}
                   onChange={updateLine}
                   onRemove={(li) => mutate(() => setLines((prev) => prev.filter((_, j) => j !== li)))}
                 />
@@ -690,6 +703,7 @@ export default function ScenariosTab({ ctx }: { ctx: DetailContext }) {
               editable={editable}
               scenarioName={scenarioName}
               scenarios={scenarios}
+              vehicles={vehicles}
               onChange={updateLine}
               onRemove={(li) => mutate(() => setLines((prev) => prev.filter((_, j) => j !== li)))}
             />
@@ -933,6 +947,7 @@ function ServiceLineTable({
   editable,
   scenarioName,
   scenarios,
+  vehicles,
   onChange,
   onRemove,
 }: {
@@ -940,10 +955,12 @@ function ServiceLineTable({
   editable: boolean;
   scenarioName: (key: string | null) => string;
   scenarios: ScenarioDraft[];
+  vehicles: VehicleTypeView[];
   onChange: (i: number, patch: Partial<ServiceLineDraft>) => void;
   onRemove: (i: number) => void;
 }) {
   if (lines.length === 0) return <p className="text-xs text-muted-foreground">No service lines.</p>;
+  const vehicleName = (id: string | null) => (id ? vehicles.find((v) => v.id === id)?.name ?? "?" : null);
   if (!editable) {
     const byCategory = new Map<string, ServiceLineDraft[]>();
     for (const { l } of lines) {
@@ -961,6 +978,7 @@ function ServiceLineTable({
                 <li key={l.key}>
                   {l.label} — {l.basis.replace(/_/g, " ").toLowerCase()} · {money(l.unitRate, l.currency)} × {l.quantity}
                   {l.participants != null ? ` · ${l.participants} pax` : ""}
+                  {vehicleName(l.vehicleTypeId) ? ` · ${vehicleName(l.vehicleTypeId)}` : ""}
                   {l.includedElsewhere ? " · included elsewhere" : ""}
                   {l.isStaffCost ? " · staff" : ""}
                   {l.serviceProductId && (
@@ -1038,6 +1056,27 @@ function ServiceLineTable({
               </SelectContent>
             </Select>
           </div>
+          {VEHICLE_BASES.has(l.basis) && (
+            <div>
+              <span className="text-xs text-muted-foreground">Vehicle</span>
+              <Select
+                value={l.vehicleTypeId ?? "ANY"}
+                onValueChange={(v) => onChange(i, { vehicleTypeId: v === "ANY" ? null : v })}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ANY">Any / default</SelectItem>
+                  {vehicles.map((v) => (
+                    <SelectItem key={v.id} value={v.id}>
+                      {v.name} ({v.seats})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
           <div>
             <span className="text-xs text-muted-foreground">Currency</span>
             <Input value={l.currency} onChange={(e) => onChange(i, { currency: e.target.value.toUpperCase() })} />

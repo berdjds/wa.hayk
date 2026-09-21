@@ -230,6 +230,8 @@ export interface ServiceLineInput {
   isStaffCost?: boolean;
   override?: { originalRate: Money | null; reason: string; actorId: string };
   sourceRef?: string;
+  /** Selected fleet vehicle (per-vehicle SERVICE rates); undefined = base rate. */
+  vehicleTypeId?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -432,11 +434,13 @@ export type ImportRowStatus = (typeof IMPORT_ROW_STATUSES)[number];
 /**
  * One service entry on an itinerary day. `serviceProductId` links the entry to
  * the catalog (a day-linked ServiceLine is kept in sync server-side); null =
- * free-text entry.
+ * free-text entry. `vehicleTypeId` records the selected fleet vehicle for
+ * vehicle-priced services (per-vehicle SERVICE rates).
  */
 export interface DayServiceItem {
   serviceProductId: string | null;
   label: string;
+  vehicleTypeId?: string | null;
 }
 
 /**
@@ -460,7 +464,12 @@ export function normalizeDayServices(json: string | null | undefined): DayServic
       if (item.trim()) out.push({ serviceProductId: null, label: item });
     } else if (item && typeof item === "object" && typeof (item as { label?: unknown }).label === "string") {
       const pid = (item as { serviceProductId?: unknown }).serviceProductId;
-      out.push({ serviceProductId: typeof pid === "string" && pid ? pid : null, label: (item as { label: string }).label });
+      const vid = (item as { vehicleTypeId?: unknown }).vehicleTypeId;
+      out.push({
+        serviceProductId: typeof pid === "string" && pid ? pid : null,
+        label: (item as { label: string }).label,
+        ...(typeof vid === "string" && vid ? { vehicleTypeId: vid } : {}),
+      });
     }
   }
   return out;

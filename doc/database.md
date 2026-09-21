@@ -126,3 +126,10 @@ Phase 3/4 additions: `ServiceLine` gained nullable `serviceProductId` (catalog l
 and is priced from SERVICE RateVersions covering its date. `ItineraryDay.services` items are
 now `{ serviceProductId: string | null; label: string }` objects; legacy plain-string arrays
 are normalized on read by `normalizeDayServices()`.
+
+Per-vehicle pricing addition: `ServiceLine` gained a nullable `vehicleTypeId` (indexed;
+selected fleet vehicle for the line). SERVICE RateVersions may carry a `vehicleTypeId` —
+transportation products hold one VERIFIED priority-1 row per vehicle type (seeded equal to
+the priority-0 vehicle-agnostic base rate until fleet-specific prices are entered).
+Resolution prefers the line's vehicle rows, falling back to the base row. VehicleType names
+follow the fleet vocabulary: Sedan / Minivan / Sprinter / Big bus.

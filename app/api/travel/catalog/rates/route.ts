@@ -36,7 +36,9 @@ const createRateSchema = z
     (d) =>
       (d.productType === "HOTEL" && !!d.hotelProductId && !d.vehicleTypeId && !d.serviceProductId) ||
       (d.productType === "VEHICLE" && !!d.vehicleTypeId && !d.hotelProductId && !d.serviceProductId) ||
-      (d.productType === "SERVICE" && !!d.serviceProductId && !d.hotelProductId && !d.vehicleTypeId),
+      // SERVICE rates may optionally be scoped to a vehicle type (per-vehicle
+      // transportation pricing); vehicleTypeId then identifies the bracket.
+      (d.productType === "SERVICE" && !!d.serviceProductId && !d.hotelProductId),
     { message: "exactly one product reference matching productType is required" },
   )
   .refine((d) => validityOrdered(d.validFrom, d.validTo), {
@@ -101,6 +103,12 @@ export async function POST(req: NextRequest) {
         (await prisma.serviceProduct.findUnique({ where: { id: rest.serviceProductId! } })));
     if (!productExists) {
       return NextResponse.json({ error: "Unknown product for productType" }, { status: 400 });
+    }
+    if (rest.productType === "SERVICE" && rest.vehicleTypeId) {
+      const vehicle = await prisma.vehicleType.findUnique({ where: { id: rest.vehicleTypeId } });
+      if (!vehicle) {
+        return NextResponse.json({ error: "Unknown vehicle type" }, { status: 400 });
+      }
     }
 
     const rate = await prisma.rateVersion.create({

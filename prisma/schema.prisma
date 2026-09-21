@@ -239,10 +239,12 @@ model ServiceLine {
   sourceRef        String? // provenance, e.g. "Tour Calculator!C58"
   serviceProductId String? // catalog link; rates resolve from RateVersion(productType: SERVICE)
   date             String? // YYYY-MM-DD of the itinerary day that spawned the line; null = not day-linked
+  vehicleTypeId    String? // selected fleet vehicle; SERVICE rates resolve per vehicle (null = vehicle-agnostic base rate)
 
   version QuoteVersion @relation(fields: [versionId], references: [id], onDelete: Cascade)
 
   @@index([serviceProductId])
+  @@index([vehicleTypeId])
 }
 
 // ---------------------------------------------------------------------------
@@ -289,7 +291,7 @@ model HotelProduct {
 
 model VehicleType {
   id        String   @id @default(cuid())
-  name      String // sedan | van | minibus | large bus
+  name      String // fleet vocabulary: Sedan | Minivan | Sprinter | Big bus
   seats     Int // usable passenger seats (driver excluded)
   luggage   Int?
   notes     String?
