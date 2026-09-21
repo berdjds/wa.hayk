@@ -51,6 +51,9 @@ jobs:
 
       - name: Package source
         run: |
+          # Write outside the checkout: archiving "." while creating the
+          # tarball inside it makes GNU tar fail with "file changed as we
+          # read it".
           tar \
             --exclude='node_modules' \
             --exclude='.next' \
@@ -62,8 +65,8 @@ jobs:
             --exclude='data/documents' \
             --exclude='*.tar.gz' \
             --exclude='*.db-journal' \
-            -czf wacontrol-source.tar.gz .
-          du -h wacontrol-source.tar.gz
+            -czf "$RUNNER_TEMP/wacontrol-source.tar.gz" .
+          du -h "$RUNNER_TEMP/wacontrol-source.tar.gz"
 
       - name: Install SSH key
         run: |
@@ -73,7 +76,7 @@ jobs:
           ssh-keyscan -H "${VPS_HOST}" >> ~/.ssh/known_hosts
 
       - name: Upload source
-        run: scp -i ~/.ssh/deploy_key wacontrol-source.tar.gz "${VPS_USER}@${VPS_HOST}:/tmp/"
+        run: scp -i ~/.ssh/deploy_key "$RUNNER_TEMP/wacontrol-source.tar.gz" "${VPS_USER}@${VPS_HOST}:/tmp/"
 
       - name: Build and restart on VPS
         run: |
