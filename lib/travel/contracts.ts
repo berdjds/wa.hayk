@@ -234,6 +234,10 @@ export interface ServiceLineInput {
   sourceRef?: string;
   /** Selected fleet vehicle (per-vehicle SERVICE rates); undefined = base rate. */
   vehicleTypeId?: string;
+  /** Catalog link; echoed into ScenarioResult.lines so editors can key by (product, date, vehicle). */
+  serviceProductId?: string;
+  /** YYYY-MM-DD of the itinerary day this line is pinned to; undefined = not day-linked. */
+  date?: ISODate;
 }
 
 // ---------------------------------------------------------------------------
@@ -335,6 +339,34 @@ export interface NightlyCharge {
   extraBeds: number;
   extraBedCharge: Money;
   sourceRef?: string;
+  /** Night row total (rate × rooms + extra beds) converted; null when FX failed (v0.11.0). */
+  amountAmd?: Money | null;
+  amountQuote?: Money | null;
+}
+
+/** Where a priced line's rate came from — provenance for the cost-visibility UI (v0.11.0). */
+export const AMOUNT_SOURCES = ["CATALOG", "MANUAL", "OVERRIDE", "INCLUDED", "MISSING"] as const;
+export type AmountSource = (typeof AMOUNT_SOURCES)[number];
+
+/** Per-line net cost in a scenario result, for the owner/validator/admin cost view (v0.11.0). */
+export interface ScenarioResultLine {
+  ref: string;
+  label: string;
+  category: CostCategory;
+  basis: PricingBasis;
+  currency: string;
+  unitRate: Money | null;
+  quantity: Money;
+  participants: number | null;
+  amountSource: AmountSource;
+  /** Line total converted to AMD; null when the line could not be priced or FX failed. */
+  amountAmd: Money | null;
+  /** Line total converted to the quote currency; null likewise. */
+  amountQuote: Money | null;
+  /** Catalog link + day pin, so editors key lines by (product, date, vehicle). */
+  serviceProductId?: string;
+  date?: ISODate;
+  vehicleTypeId?: string;
 }
 
 export interface ScenarioResult {
@@ -346,6 +378,8 @@ export interface ScenarioResult {
   days: number;
   totals: CategoryCurrencyTotals;
   nightly: NightlyCharge[];
+  /** Per-service-line net costs (v0.11.0). Redacted away for non-owner advisors. */
+  lines: ScenarioResultLine[];
   /** Policy stage results in quote currency (unrounded). */
   policyTarget: Money | null;
   policyFloor: Money | null;
@@ -443,6 +477,8 @@ export interface DayServiceItem {
   serviceProductId: string | null;
   label: string;
   vehicleTypeId?: string | null;
+  /** Times the service is consumed (e.g. 2 ticket groups); defaults to 1. v0.11.0. */
+  quantity?: number;
 }
 
 /**
@@ -467,10 +503,12 @@ export function normalizeDayServices(json: string | null | undefined): DayServic
     } else if (item && typeof item === "object" && typeof (item as { label?: unknown }).label === "string") {
       const pid = (item as { serviceProductId?: unknown }).serviceProductId;
       const vid = (item as { vehicleTypeId?: unknown }).vehicleTypeId;
+      const qty = (item as { quantity?: unknown }).quantity;
       out.push({
         serviceProductId: typeof pid === "string" && pid ? pid : null,
         label: (item as { label: string }).label,
         ...(typeof vid === "string" && vid ? { vehicleTypeId: vid } : {}),
+        ...(typeof qty === "number" && Number.isInteger(qty) && qty >= 1 ? { quantity: qty } : {}),
       });
     }
   }

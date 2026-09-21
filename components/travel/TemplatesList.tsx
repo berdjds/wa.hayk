@@ -71,6 +71,15 @@ export default function TemplatesList({ role }: TemplatesListProps) {
                 </div>
                 {canInstantiate && (
                   <div className="flex gap-2">
+                    {role === "ADMIN" && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => (window.location.href = `/travel/templates/${t.id}`)}
+                      >
+                        Edit
+                      </Button>
+                    )}
                     <Button variant="outline" size="sm" onClick={() => setBatchFor(t)}>
                       Batch pricing
                     </Button>

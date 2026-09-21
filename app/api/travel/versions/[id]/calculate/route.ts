@@ -76,9 +76,11 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     const result = calculate(input);
     const quoteCurrency = input.fx.quoteCurrency;
 
-    if (actor.role === ROLE_ADVISOR) {
-      // Sell-side fields only: internal costing never leaves this route for
-      // an advisor (same redaction as the detail endpoint).
+    if (actor.role === ROLE_ADVISOR && !isOwner) {
+      // Sell-side fields only: internal costing never leaves this route for a
+      // non-owner advisor (v0.11.0: the OWNER prices their own request and sees
+      // the full result, including per-line net costs). Non-owner advisors are
+      // already 404'd above — this branch is defense in depth.
       return NextResponse.json({
         valid: result.valid,
         engineVersion: result.engineVersion,

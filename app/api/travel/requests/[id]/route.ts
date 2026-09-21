@@ -14,8 +14,8 @@ const patchBodySchema = z.object({
 // Full detail: agency, versions with scenarios/stays/lines, snapshot summary
 // (hash + validity, not the full result blob), assignments, decisions, and
 // document metadata without filesystem paths. Advisors get 404 for other
-// advisors' requests (IDOR) and see scenario results redacted to sell-side
-// fields only — internal costing is ADMIN/VALIDATOR territory.
+// advisors' requests (IDOR). The request owner sees full costing (v0.11.0) —
+// redaction to sell-side fields would only apply to a non-owner advisor.
 export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
   const actor = await getTravelActor();
   if (!actor) return unauthorized();
@@ -70,6 +70,10 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
       }
     }
     const advisorView = actor.role === ROLE_ADVISOR;
+    // v0.11.0: the request owner sees full costing (per-line net costs — the
+    // initiator prices the request). Redaction remains for a hypothetical
+    // non-owner advisor; they are 404'd above, so this is defense in depth.
+    const redactResults = advisorView && request.ownerId !== actor.id;
 
     const sanitized = {
       ...request,
@@ -99,7 +103,7 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
           snapshot: snapshotPublic,
           scenarios: v.scenarios.map((sc) => ({
             ...sc,
-            resultJson: advisorView ? redactScenarioResultJson(sc.resultJson) : sc.resultJson,
+            resultJson: redactResults ? redactScenarioResultJson(sc.resultJson) : sc.resultJson,
           })),
           documents: v.documents
             // INTERNAL documents carry margins — advisors never see them,

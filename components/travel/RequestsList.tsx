@@ -11,10 +11,11 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/toast";
 import { QUOTE_STATUSES } from "@/lib/travel/contracts";
+import { nightsBetween } from "@/lib/travel/engine/dates";
 import TravelShell from "./TravelShell";
 import TravelerSetupEditor from "./TravelerSetupEditor";
 import { StatusBadge, apiError } from "./utils";
-import type { Agency, RequestListItem, TravelerSetupView } from "./types";
+import type { Agency, RequestListItem, TemplateView, TravelerSetupView } from "./types";
 
 const EMPTY_TRAVELERS: TravelerSetupView = {
   adults: 2,
@@ -43,6 +44,8 @@ export default function RequestsList({ role, userId }: RequestsListProps) {
   const [onlyMine, setOnlyMine] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [templates, setTemplates] = useState<TemplateView[] | null>(null);
+  const [templateVersionId, setTemplateVersionId] = useState("");
   const [form, setForm] = useState({
     agencyId: "",
     title: "",
@@ -54,6 +57,18 @@ export default function RequestsList({ role, userId }: RequestsListProps) {
 
   const canCreate = role === "ADMIN" || role === "ADVISOR";
   const invalidDates = form.startDate !== "" && form.endDate !== "" && !(form.endDate > form.startDate);
+
+  // Trip length drives which template versions are offered (v0.11.0).
+  const tripNights =
+    form.startDate && form.endDate && !invalidDates ? nightsBetween(form.startDate, form.endDate) : null;
+  const matchingTemplates =
+    tripNights === null || !templates
+      ? []
+      : templates.flatMap((t) =>
+          t.versions
+            .filter((v) => v.status === "ACTIVE" && v.nights === tripNights)
+            .map((v) => ({ template: t, version: v })),
+        );
 
   const fetchRequests = useCallback(async () => {
     try {
@@ -81,6 +96,31 @@ export default function RequestsList({ role, userId }: RequestsListProps) {
       .catch(() => toast("Failed to load agencies", "error"));
   }, [toast]);
 
+  // Templates load lazily with the dialog — they only matter when creating.
+  useEffect(() => {
+    if (!createOpen || templates !== null) return;
+    axios
+      .get("/api/travel/templates")
+      .then((res) => setTemplates(res.data))
+      .catch(() => toast("Failed to load templates", "error"));
+  }, [createOpen, templates, toast]);
+
+  // A date change can invalidate the picked template version; drop it rather
+  // than silently instantiating a version that no longer matches the trip.
+  useEffect(() => {
+    if (templateVersionId && !matchingTemplates.some((m) => m.version.id === templateVersionId)) {
+      setTemplateVersionId("");
+    }
+  }, [templateVersionId, matchingTemplates]);
+
+  function pickTemplate(value: string) {
+    // Radix Select forbids empty-string item values, hence the NONE sentinel.
+    const versionId = value === "NONE" ? "" : value;
+    setTemplateVersionId(versionId);
+    const match = matchingTemplates.find((m) => m.version.id === versionId);
+    if (match) setForm((f) => ({ ...f, title: match.template.name }));
+  }
+
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
     if (!form.agencyId) {
@@ -89,14 +129,21 @@ export default function RequestsList({ role, userId }: RequestsListProps) {
     }
     setSaving(true);
     try {
-      const res = await axios.post("/api/travel/requests", {
+      const payload = {
         agencyId: form.agencyId,
         title: form.title,
         startDate: form.startDate,
         endDate: form.endDate,
         travelers: form.travelers,
         notes: form.notes || null,
-      });
+      };
+      const match = matchingTemplates.find((m) => m.version.id === templateVersionId);
+      const res = match
+        ? await axios.post(`/api/travel/templates/${match.template.id}/instantiate`, {
+            ...payload,
+            templateVersionId: match.version.id,
+          })
+        : await axios.post("/api/travel/requests", payload);
       toast(`Created ${res.data.request.packageCode}`, "success");
       window.location.href = `/travel/requests/${res.data.request.id}`;
     } catch (err) {
@@ -239,6 +286,29 @@ export default function RequestsList({ role, userId }: RequestsListProps) {
               </div>
             </div>
             {invalidDates && <p className="text-xs text-red-600">End date must be after the start date.</p>}
+            {templates !== null && tripNights !== null && (
+              <div>
+                <Label>Template</Label>
+                <Select value={templateVersionId || "NONE"} onValueChange={pickTemplate}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="No template" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="NONE">No template</SelectItem>
+                    {matchingTemplates.map(({ template: t, version: v }) => (
+                      <SelectItem key={v.id} value={v.id}>
+                        {t.name} — {v.nights} nights (v{v.versionNo})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {matchingTemplates.length === 0 && (
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    No active template covers {tripNights} nights.
+                  </p>
+                )}
+              </div>
+            )}
             <div>
               <Label>Travelers</Label>
               <TravelerSetupEditor value={form.travelers} onChange={setTravelers} />

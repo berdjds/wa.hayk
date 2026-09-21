@@ -1,5 +1,7 @@
 "use client";
 
+import { useEffect, useState } from "react";
+import axios from "axios";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -14,7 +16,9 @@ import type { TravelerSetupView } from "./types";
  * `childAges` is kept in sync with `children`: growing pads with a default
  * age, shrinking truncates. `paying` auto-follows `adults + children` only
  * while it still equals the previous sum — a manually overridden value is
- * never clobbered.
+ * never clobbered. `infants` auto-follows the count of childAges at or below
+ * TravelSettings.infantMaxAge (fetched here) with the same override rule
+ * (v0.11.0).
  */
 
 const DEFAULT_CHILD_AGE = 7;
@@ -27,6 +31,21 @@ interface TravelerSetupEditorProps {
 }
 
 export default function TravelerSetupEditor({ value, onChange }: TravelerSetupEditorProps) {
+  // The schema default is 2; the fetch refines it to the configured value.
+  const [infantMaxAge, setInfantMaxAge] = useState(2);
+
+  useEffect(() => {
+    axios
+      .get("/api/travel/settings")
+      .then((res) => {
+        const max = res.data?.settings?.infantMaxAge;
+        if (typeof max === "number") setInfantMaxAge(max);
+      })
+      .catch(() => null); // keep the default when settings are unreachable
+  }, []);
+
+  const derivedInfants = (ages: number[]) => ages.filter((a) => a <= infantMaxAge).length;
+
   function setCount(key: "adults" | "children", next: number) {
     const clamped = Math.max(key === "adults" ? 1 : 0, next);
     const patch: Partial<TravelerSetupView> = { [key]: clamped };
@@ -38,6 +57,9 @@ export default function TravelerSetupEditor({ value, onChange }: TravelerSetupEd
       const ages = (value.childAges ?? []).slice(0, clamped);
       while (ages.length < clamped) ages.push(DEFAULT_CHILD_AGE);
       patch.childAges = ages;
+      if (value.infants === derivedInfants(value.childAges ?? [])) {
+        patch.infants = derivedInfants(ages);
+      }
     }
     onChange({ ...value, ...patch });
   }
@@ -46,7 +68,11 @@ export default function TravelerSetupEditor({ value, onChange }: TravelerSetupEd
     const ages = [...(value.childAges ?? [])];
     while (ages.length <= index) ages.push(DEFAULT_CHILD_AGE);
     ages[index] = age;
-    onChange({ ...value, childAges: ages });
+    const patch: Partial<TravelerSetupView> = { childAges: ages };
+    if (value.infants === derivedInfants(value.childAges ?? [])) {
+      patch.infants = derivedInfants(ages);
+    }
+    onChange({ ...value, ...patch });
   }
 
   function setExtra(key: (typeof EXTRA_KEYS)[number], raw: string) {
@@ -87,7 +113,9 @@ export default function TravelerSetupEditor({ value, onChange }: TravelerSetupEd
       <div className="grid grid-cols-3 gap-2 sm:grid-cols-5">
         {EXTRA_KEYS.map((k) => (
           <div key={k}>
-            <span className="text-xs text-muted-foreground">{k}</span>
+            <span className="text-xs text-muted-foreground">
+              {k === "infants" ? `infants (auto ≤ age ${infantMaxAge})` : k}
+            </span>
             <Input type="number" min={0} value={value[k]} onChange={(e) => setExtra(k, e.target.value)} />
           </div>
         ))}

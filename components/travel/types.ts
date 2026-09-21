@@ -305,6 +305,9 @@ export interface TravelSettingsView {
   companyWebsite: string | null;
   brandColor: string | null;
   validatorGroupJid: string | null;
+  infantMaxAge: number;
+  /** JSON array of user ids — the virtual validator group. */
+  validatorUserIds: string;
   updatedAt: string;
 }
 
@@ -315,6 +318,7 @@ export interface TemplateVersionView {
   nights: number;
   days: number;
   daysJson: string;
+  scenariosJson: string | null;
   legacyMarkup: string | null;
   provenance: string | null;
   status: string;

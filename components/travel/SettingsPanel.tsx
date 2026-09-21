@@ -9,7 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { useToast } from "@/components/ui/toast";
 import TravelShell from "./TravelShell";
 import { apiError, formatDateTime } from "./utils";
-import type { PolicyView, TravelSettingsView } from "./types";
+import type { PolicyView, TravelSettingsView, TravelUser } from "./types";
 
 interface SettingsPanelProps {
   role: string;
@@ -20,7 +20,9 @@ export default function SettingsPanel({ role, userId }: SettingsPanelProps) {
   const { toast } = useToast();
   const [settings, setSettings] = useState<TravelSettingsView | null>(null);
   const [activePolicy, setActivePolicy] = useState<PolicyView | null>(null);
-  const [form, setForm] = useState({ companyTz: "", overdueReminderHours: "", requireSettingsForIssue: true, validatorGroupJid: "" });
+  const [form, setForm] = useState({ companyTz: "", overdueReminderHours: "", requireSettingsForIssue: true, infantMaxAge: "2" });
+  const [validatorIds, setValidatorIds] = useState<string[]>([]);
+  const [assignableUsers, setAssignableUsers] = useState<TravelUser[]>([]);
   const [branding, setBranding] = useState({
     companyName: "",
     companyPhone: "",
@@ -43,8 +45,13 @@ export default function SettingsPanel({ role, userId }: SettingsPanelProps) {
           overdueReminderHours:
             res.data.settings.overdueReminderHours == null ? "" : String(res.data.settings.overdueReminderHours),
           requireSettingsForIssue: res.data.settings.requireSettingsForIssue,
-          validatorGroupJid: res.data.settings.validatorGroupJid ?? "",
+          infantMaxAge: String(res.data.settings.infantMaxAge ?? 2),
         });
+        try {
+          setValidatorIds(JSON.parse(res.data.settings.validatorUserIds ?? "[]"));
+        } catch {
+          setValidatorIds([]);
+        }
         setBranding({
           companyName: res.data.settings.companyName ?? "",
           companyPhone: res.data.settings.companyPhone ?? "",
@@ -55,6 +62,10 @@ export default function SettingsPanel({ role, userId }: SettingsPanelProps) {
         });
       })
       .catch((err) => toast(apiError(err, "Failed to load settings"), "error"));
+    axios
+      .get("/api/travel/users/assignable")
+      .then((res) => setAssignableUsers(res.data as TravelUser[]))
+      .catch(() => setAssignableUsers([]));
   }, [toast]);
 
   useEffect(load, [load]);
@@ -67,7 +78,8 @@ export default function SettingsPanel({ role, userId }: SettingsPanelProps) {
         companyTz: form.companyTz,
         overdueReminderHours: form.overdueReminderHours === "" ? null : Number.parseInt(form.overdueReminderHours, 10),
         requireSettingsForIssue: form.requireSettingsForIssue,
-        validatorGroupJid: form.validatorGroupJid.trim() === "" ? null : form.validatorGroupJid.trim(),
+        infantMaxAge: Number.parseInt(form.infantMaxAge || "2", 10),
+        validatorUserIds: validatorIds,
       });
       toast("Settings saved", "success");
       load();
@@ -137,16 +149,62 @@ export default function SettingsPanel({ role, userId }: SettingsPanelProps) {
                   Require active policy + FX before issuing
                 </label>
                 <div>
-                  <Label>Validator WhatsApp group</Label>
+                  <Label>Infant max age</Label>
                   <Input
-                    value={form.validatorGroupJid}
-                    onChange={(e) => setForm({ ...form, validatorGroupJid: e.target.value })}
-                    placeholder="120363…@g.us"
+                    type="number"
+                    min={0}
+                    max={12}
+                    value={form.infantMaxAge}
+                    onChange={(e) => setForm({ ...form, infantMaxAge: e.target.value })}
                   />
                   <p className="mt-1 text-xs text-muted-foreground">
-                    Group id (ends in @g.us) that receives quotation PDFs on submit/issue. Find it in the chat
-                    list of the dashboard. Optional.
+                    A child whose age at return is at or below this counts as an infant. Infant counts are
+                    auto-filled from child ages on new requests.
                   </p>
+                </div>
+                <div>
+                  <Label>Validator group</Label>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Members are notified on submit and receive the internal costing sheet; the first member is
+                    assigned as validator on new requests. Decision rights always belong to the single assigned
+                    validator.
+                  </p>
+                  <div className="mt-2 max-h-48 space-y-1 overflow-auto rounded-md border p-2">
+                    {assignableUsers.length === 0 && (
+                      <p className="text-xs text-muted-foreground">No active users found.</p>
+                    )}
+                    {assignableUsers.map((u) => {
+                      const selected = validatorIds.includes(u.id);
+                      return (
+                        <label key={u.id} className="flex items-center gap-2 text-sm">
+                          <input
+                            type="checkbox"
+                            checked={selected}
+                            onChange={() =>
+                              setValidatorIds(
+                                selected ? validatorIds.filter((id) => id !== u.id) : [...validatorIds, u.id],
+                              )
+                            }
+                          />
+                          <span>
+                            {u.name || u.email} ({u.role ?? "USER"})
+                            {u.phone ? (
+                              <span className="text-muted-foreground"> · +{u.phone}</span>
+                            ) : (
+                              <span className="font-medium text-amber-600">
+                                {" "}· no phone — set it in Admin → Users
+                              </span>
+                            )}
+                          </span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                  {validatorIds.some((id) => !assignableUsers.find((u) => u.id === id)?.phone) && (
+                    <p className="mt-1 text-xs font-medium text-amber-600">
+                      Some selected members have no WhatsApp phone — they will be skipped for WhatsApp delivery.
+                    </p>
+                  )}
                 </div>
                 <Button type="submit" disabled={saving}>
                   {saving ? "Saving..." : "Save settings"}

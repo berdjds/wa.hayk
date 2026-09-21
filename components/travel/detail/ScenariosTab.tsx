@@ -480,8 +480,9 @@ export default function ScenariosTab({ ctx }: { ctx: DetailContext }) {
   // ---- render -------------------------------------------------------------------
 
   // Prices come from the shared summary (ctx.quoteResults) — this tab no longer
-  // runs its own calculation.
-  const canSeeInternal = ctx.role === "ADMIN" || ctx.role === "VALIDATOR";
+  // runs its own calculation. v0.11.0: the request owner sees internal costing
+  // too (the initiator prices the request); other advisors are redacted server-side.
+  const canSeeInternal = ctx.isAdmin || ctx.role === "VALIDATOR" || ctx.isOwner;
   // ISO dates compare lexicographically; check-out must be strictly after check-in.
   const hasInvalidStayDates = scenarios.some((sc) => sc.stays.some((t) => !(t.checkOut > t.checkIn)));
 
@@ -596,6 +597,40 @@ export default function ScenariosTab({ ctx }: { ctx: DetailContext }) {
                     Add stay segment
                   </Button>
                 )}
+
+                {/* Per-stay nightly costs (v0.11.0): nightly[] rows carry
+                    AMD/quote conversions; absent on redacted or old snapshots. */}
+                {canSeeInternal &&
+                  result?.nightly?.some((n) => n.amountAmd != null) &&
+                  sc.stays.map((stay) => {
+                    const rows = (result.nightly ?? []).filter(
+                      (n) => n.stayRef === stay.key && n.amountAmd != null,
+                    );
+                    if (rows.length === 0) return null;
+                    const sum = (key: "amountAmd" | "amountQuote") =>
+                      String(Math.round(rows.reduce((acc, n) => acc + Number(n[key] ?? 0), 0) * 100) / 100);
+                    return (
+                      <div key={stay.key} className="rounded-md border bg-muted/20 px-3 py-2 text-xs">
+                        <p className="mb-1 font-medium">
+                          {stay.hotelName}
+                          {stay.city ? ` · ${stay.city}` : ""} — {rows.length} night row(s)
+                        </p>
+                        <ul className="space-y-0.5 text-muted-foreground">
+                          {rows.map((n, ni) => (
+                            <li key={ni}>
+                              {n.date} · {n.roomType} ×{n.rooms}
+                              {n.extraBeds > 0 ? ` +${n.extraBeds} bed(s)` : ""} — {money(n.amountAmd, "AMD")}
+                              {n.amountQuote != null && currency !== "AMD" ? ` · ${money(n.amountQuote, currency)}` : ""}
+                            </li>
+                          ))}
+                        </ul>
+                        <p className="mt-1 border-t pt-1 font-medium">
+                          Stay total: {money(sum("amountAmd"), "AMD")}
+                          {currency !== "AMD" ? ` · ${money(sum("amountQuote"), currency)}` : ""}
+                        </p>
+                      </div>
+                    );
+                  })}
               </div>
 
               {/* result summary (from the shared quote preview) */}
@@ -622,7 +657,7 @@ export default function ScenariosTab({ ctx }: { ctx: DetailContext }) {
                   )}
                   {!canSeeInternal && (
                     <p className="mt-2 border-t pt-2 text-xs text-muted-foreground">
-                      Internal costing is visible to validators/admins.
+                      Internal costing is visible to the request owner, validators and admins.
                     </p>
                   )}
                   {result.issues.length > 0 && (

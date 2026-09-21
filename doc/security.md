@@ -58,6 +58,12 @@ documents (which contain margins) stay restricted: downloads require ADMIN/VALID
 WhatsApp delivery of INTERNAL documents is limited to ADMIN/VALIDATOR users or the assigned
 validator.
 
+Since v0.11.0 the travel-request owner sees per-line net costs and full engine results
+(`scenarios[].lines`, nightly stay costs) — an operator decision, since the owner runs the
+costing. Non-owner advisors are unchanged: they are 404'd from other people's requests and
+would see only sell-side fields if redaction ever applied. INTERNAL PDFs remain invisible to
+advisors (including owners).
+
 ## Security Checklist Before Production
 
 - [ ] Upgrade all dependencies and resolve `npm audit` findings.

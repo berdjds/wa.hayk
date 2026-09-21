@@ -42,55 +42,85 @@ Verification: `npx tsc --noEmit`, `npm test` (vitest), `npm run build`.
    phone, email, website, address and brand color used on the client quotation PDF cover and
    footer. Branding is frozen into each quotation at submit time, so editing it later never
    restyles already-issued documents.
-8. **Validator WhatsApp group** (optional): Travel → Settings → "Validator WhatsApp group" takes
-   a group id (`…@g.us`, visible in the dashboard chat list). The quotation PDFs are delivered
-   to that group automatically on submit (internal costing sheet) and issue (client PDF).
-9. Docker: mount a volume for `data/documents/` alongside the existing data volume.
+8. **Validator user group** (v0.11.0): Travel → Settings → "Validator group" is a multi-select
+   of users (name, role, phone shown; a warning icon marks members without a phone — set it in
+   Admin → Users). On submit, the INTERNAL costing sheet goes individually to the assigned
+   validator AND every group member; on issue, the client PDF goes to owner + validator + group.
+   The first active group member is auto-assigned as the validator on new requests, so submit
+   never blocks on a missing assignment (re-assignable as before). This replaces the old
+   validator WhatsApp group id field.
+9. **Infant max age** (v0.11.0): Travel → Settings → "Infant max age" (0–12, default 2).
+   Children at or below this age at return are counted as infants automatically in the traveler
+   editor; the advisor can still override the infant count manually.
+10. Docker: mount a volume for `data/documents/` alongside the existing data volume.
 
 ## Operator workflow
 
 1. Advisor: Travel → New request (agency, dates, travelers) — the package code
-   (`CLIENTSHORT-YYYY-MM-DD-NNNN`) is generated once and never changes. Travelers are entered
-   booking.com style: −/+ steppers for adults and children, and one "age at return" (0–12)
-   dropdown per child. The child ages feed room-allocation validation; the paying count
-   defaults to 1 and auto-follows adults + children only until you override it manually. The
-   same editor appears when editing a request on the Overview tab.
+   (`CLIENTSHORT-YYYY-MM-DD-NNNN`) is generated once and never changes. Once both dates are
+   picked, an optional **template picker** lists the active template versions matching the trip
+   length in nights; choosing one pre-fills the title (still editable) and, on create,
+   populates the new request from the template: day-by-day itinerary with catalog-linked
+   services (priced automatically) and default hotel scenario(s) with dated stays. Travelers
+   are entered booking.com style: −/+ steppers for adults and children, and one "age at
+   return" (0–12) dropdown per child; children at or below the infant max age (Settings) count
+   as infants automatically, with manual override. The child ages feed room-allocation
+   validation; the paying count defaults to 1 and auto-follows adults + children only until
+   you override it manually. The same editor appears when editing a request on the Overview tab.
 2. Build the itinerary and scenarios on the request page. The **quote summary bar** under the
    page header always shows the current sell price and per-paying-person price per scenario —
    it recalculates automatically after every save (use its Recalculate button to refresh on
    demand). On the Itinerary tab, an empty itinerary is generated automatically from the travel
    dates (one day per date, overnight cities pre-filled from hotel stays) and saved — the
    departure day needs no hotel, so it never raises a "no stay covers this date" warning.
-   Picking a service for a day opens a picker grouped into sections (private-vehicle tours,
-   per-seat group tours with their departure weekdays, tickets & degustations, meals, guides,
-   staff costs, …) with a search box on top; only private-vehicle tours ask for a vehicle.
+   Day services are shown in two columns — **Tours** and **Tickets & degustations** — each entry
+   with a quantity stepper (−/+) and its net cost (`x AMD · y USD`) from the live quote preview;
+   other categories stay as plain chips (v0.11.0). Net costs are visible to the request owner,
+   validators and admins. Picking a service for a day opens a picker grouped into sections
+   (private-vehicle tours, per-seat group tours with their departure weekdays, tickets &
+   degustations, meals, guides, staff costs, …) with a search box on top and an indicative
+   catalog rate per entry; only private-vehicle tours ask for a vehicle.
    Catalog services are priced automatically from their verified rate on the day's date;
    free-text entries stay unpriced labels.
    Overnight cities auto-fill from the scenario's hotel stays — "Sync
-   cities from stays" reapplies that after stay edits. On the Scenarios tab, adding a hotel with
+   cities from stays" reapplies that after stay edits. On the Scenarios tab, each stay shows its
+   nightly rates and stay total (AMD + quote currency) next to the scenario totals (same
+   visibility rule as line costs). Adding a hotel with
    its own dates splits the existing stay (e.g. inserting 3–5 Oct into 1–6 Oct yields 2+2+1
    nights — previewed before saving). Service lines are edited once, in the "Service lines" card
    at the bottom of the Scenarios tab (day-linked catalog services appear as read-only rows —
    manage them on the Itinerary tab); alternative scenarios are never summed together.
 3. Assign a validator (or ask an admin), then Submit. Any active user can be assigned —
    including yourself (self-validation is a supported mode for small teams) — and the picker
-   lists all of them. A confirmation dialog lists the exact sell
+   lists all of them. When a validator group is configured (Settings), the first active member
+   is pre-assigned at creation. A confirmation dialog lists the exact sell
    amounts and any blockers per scenario before the snapshot is bound — blockers do not stop the
    submit, but the validator cannot approve until they are resolved. Submit also renders the
-   INTERNAL costing sheet and WhatsApps it to the assigned validator (and the configured
-   validator group) when WhatsApp is connected; delivery failures never block the submit.
+   INTERNAL costing sheet and WhatsApps it to the assigned validator and each validator-group
+   member individually when WhatsApp is connected; delivery failures never block the submit.
 4. Validator: Travel → Review queue → open the package → Approve / Request changes / Reject
    (reason required). Validators without a travel role land here from their assignment and see
    only the requests they validate. Approvals bind to the exact snapshot; any later edit needs
    a new version and a new review.
 5. Advisor: after APPROVED, Issue → generates the client PDF (immutable, hash-recorded) and
-   WhatsApps it to owner + validator + group. Record the outcome (Accepted with the chosen
-   scenario / Declined / Expired). Generated documents live at the bottom of the Review tab
-   (no separate Documents tab); each rendered document has a "Send via WhatsApp" button for
+   WhatsApps it to owner + validator + group members. Record the outcome (Accepted with the
+   chosen scenario / Declined / Expired). Generated documents live at the bottom of the Review
+   tab (no separate Documents tab); each rendered document has a "Send via WhatsApp" button for
    manual delivery to picked users (with a phone on file) or WhatsApp groups. INTERNAL
    documents can only go to validators/admins — margins are inside.
 6. Both sides receive email + WhatsApp notifications at each step; delivery problems are
    visible under Travel → Notifications (admin can retry or reprocess the queue).
+
+## Template editor (ADMIN, v0.11.0)
+
+Travel → Templates → **Edit** opens the template editor: template name, version selector, day
+rows (narrative, overnight city, services with the same catalog picker as the itinerary editor,
+including quantity per service), and optional default hotel scenarios per version (hotel or
+free-text name, board, check-in offset + nights instead of absolute dates, room allocations).
+Saving recomputes the version's nights/days from the content, which is what the new-request
+template picker matches against. Changes apply to future instantiations only — existing
+requests are never touched. Workbook-imported templates keep label-only day services until an
+admin links catalog services here.
 
 ## Catalog management (ADMIN)
 

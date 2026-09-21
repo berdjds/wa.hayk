@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import axios from "axios";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -11,9 +11,9 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/components/ui/toast";
 import { addDays, daysBetween } from "@/lib/travel/engine/dates";
-import { normalizeDayServices, type DayServiceItem } from "@/lib/travel/contracts";
-import { apiError, basisLabel, parseJson } from "../utils";
-import type { ServiceProductView, VehicleTypeView } from "../types";
+import { normalizeDayServices, type DayServiceItem, type ScenarioResultLine } from "@/lib/travel/contracts";
+import { apiError, basisLabel, money, parseJson } from "../utils";
+import type { RateView, ServiceProductView, VehicleTypeView } from "../types";
 import type { DetailContext } from "./RequestDetail";
 
 /**
@@ -122,8 +122,88 @@ export default function ItineraryTab({ ctx }: { ctx: DetailContext }) {
       .catch(() => null);
   }, []);
 
+  // FX map for the picker's indicative-rate hints (AMD per 1 unit, as of today).
+  const [fxRates, setFxRates] = useState<Record<string, string> | null>(null);
+  useEffect(() => {
+    const today = new Date().toISOString().slice(0, 10);
+    axios
+      .get(`/api/travel/fx?asOf=${today}`)
+      .then((res) => setFxRates(res.data?.rates ?? null))
+      .catch(() => null);
+  }, []);
+
+  // Per-line net costs from the shared quote preview (v0.11.0). Day-linked
+  // lines are shared across scenarios, so the first scenario's lines suffice.
+  // Absent for redacted advisors and pre-v0.11.0 snapshots — costs then hide.
+  const canSeeCosts = ctx.isAdmin || ctx.role === "VALIDATOR" || ctx.isOwner;
+  const costByKey = useMemo(() => {
+    const map = new Map<string, ScenarioResultLine>();
+    if (!canSeeCosts) return map;
+    const firstScenarioId = version.scenarios[0]?.id;
+    const result = firstScenarioId ? ctx.quoteResults?.get(firstScenarioId) : null;
+    for (const line of result?.lines ?? []) {
+      if (line.serviceProductId && line.date) {
+        map.set(`${line.serviceProductId}|${line.date}|${line.vehicleTypeId ?? ""}`, line);
+      }
+    }
+    return map;
+  }, [canSeeCosts, ctx.quoteResults, version.scenarios]);
+
   const vehicleName = (id: string | null | undefined) =>
     id ? vehicles.find((v) => v.id === id)?.name ?? null : null;
+
+  /** Catalog category for a day service; label-only services fall to "OTHER". */
+  const categoryOf = (s: DayServiceItem): string =>
+    s.serviceProductId ? products?.find((p) => p.id === s.serviceProductId)?.category ?? "OTHER" : "OTHER";
+
+  const serviceCost = (s: DayServiceItem, date: string): ScenarioResultLine | undefined =>
+    s.serviceProductId ? costByKey.get(`${s.serviceProductId}|${date}|${s.vehicleTypeId ?? ""}`) : undefined;
+
+  function setServiceQuantity(dayIdx: number, svcIdx: number, delta: number) {
+    const services = days[dayIdx].services.map((s, j) =>
+      j === svcIdx ? { ...s, quantity: Math.max(1, (s.quantity ?? 1) + delta) } : s,
+    );
+    update(dayIdx, { services });
+  }
+
+  /**
+   * Indicative catalog rate for the picker: the highest-priority row covering
+   * the picked day's date (the same band resolve.ts would price from), vehicle
+   * rows preferred when a vehicle is chosen. Indicative only — ambiguity and
+   * quote-on-request simply yield no hint.
+   */
+  function indicativeRate(p: ServiceProductView, vehicleTypeId?: string): RateView | null {
+    const date = pickerDay !== null ? days[pickerDay]?.date : undefined;
+    if (!date) return null;
+    const covers = (r: RateView) => (r.validFrom ?? "") <= date && date < (r.validTo ?? "￿");
+    let pool = p.rates.filter((r) => r.amount !== null && !r.quoteOnRequest);
+    if (vehicleTypeId) {
+      const vehicleRows = pool.filter((r) => r.vehicleTypeId === vehicleTypeId);
+      pool = vehicleRows.some(covers) ? vehicleRows : pool.filter((r) => r.vehicleTypeId === null);
+    }
+    const covering = pool.filter(covers);
+    if (covering.length === 0) return null;
+    const top = Math.max(...covering.map((r) => r.priority));
+    return covering.filter((r) => r.priority === top)[0] ?? null;
+  }
+
+  /** "≈ 12000 AMD · 32.88 USD" hint for a catalog rate row; null without FX. */
+  function rateHint(r: RateView | null): string | null {
+    if (!r?.amount) return null;
+    const parts = [money(r.amount, r.currency)];
+    if (fxRates) {
+      const perAmd = Number(fxRates[r.currency] ?? (r.currency === "AMD" ? "1" : "0"));
+      const quoteRate = Number(fxRates[ctx.resultCurrency] ?? (ctx.resultCurrency === "AMD" ? "1" : "0"));
+      if (perAmd > 0) {
+        const amd = Number(r.amount) * perAmd;
+        if (r.currency !== "AMD") parts.push(`≈ ${money(amd.toFixed(2), "AMD")}`);
+        if (quoteRate > 0 && ctx.resultCurrency !== "AMD" && ctx.resultCurrency !== r.currency) {
+          parts.push(`≈ ${money((amd / quoteRate).toFixed(2), ctx.resultCurrency)}`);
+        }
+      }
+    }
+    return parts.join(" · ");
+  }
 
   function applyCitySync(source: DayDraft[], markDirty: boolean) {
     const cityByDate = deriveCityByDate(ctx);
@@ -259,6 +339,7 @@ export default function ItineraryTab({ ctx }: { ctx: DetailContext }) {
             serviceProductId: s.serviceProductId,
             label: s.label,
             vehicleTypeId: s.vehicleTypeId ?? null,
+            quantity: s.quantity ?? null,
           })),
         })),
       });
@@ -334,6 +415,11 @@ export default function ItineraryTab({ ctx }: { ctx: DetailContext }) {
           <div className="flex-1">
             <p className="mb-1 text-xs font-medium">
               {pendingVehicleProduct.name} — vehicle
+              {pickerVehicle && rateHint(indicativeRate(pendingVehicleProduct, pickerVehicle)) && (
+                <span className="ml-2 font-normal text-muted-foreground">
+                  {rateHint(indicativeRate(pendingVehicleProduct, pickerVehicle))}
+                </span>
+              )}
             </p>
             <Select value={pickerVehicle} onValueChange={setPickerVehicle}>
               <SelectTrigger>
@@ -388,6 +474,7 @@ export default function ItineraryTab({ ctx }: { ctx: DetailContext }) {
                     {p.category === "TRANSPORTATION" && !needsVehicle(p) && weekdaysLabel(p.weekdays)
                       ? ` · departs ${weekdaysLabel(p.weekdays)}`
                       : ""}
+                    {rateHint(indicativeRate(p)) ? ` · ${rateHint(indicativeRate(p))}` : ""}
                   </span>
                 </button>
               ))}
@@ -455,37 +542,136 @@ export default function ItineraryTab({ ctx }: { ctx: DetailContext }) {
             <p className="text-sm text-muted-foreground">No itinerary days yet.</p>
           ))}
         <div className="space-y-3">
-          {days.map((d, i) =>
-            ctx.canEditVersion ? (
-              <div key={i} className="grid gap-2 rounded-md border p-3 sm:grid-cols-[80px_130px_1fr_160px_1fr_40px]">
-                <div className="flex items-center text-sm font-medium">Day {d.dayOffset + 1}</div>
-                <Input type="date" value={d.date} onChange={(e) => update(i, { date: e.target.value })} />
-                <Textarea
-                  rows={2}
-                  placeholder="Narrative"
-                  value={d.narrative}
-                  onChange={(e) => update(i, { narrative: e.target.value })}
-                />
-                <div>
-                  <Input
-                    placeholder="Overnight city"
-                    value={d.overnightCity}
-                    onChange={(e) => update(i, { overnightCity: e.target.value })}
-                  />
-                  {hasStays && !cityByDate[d.date] && (
-                    // Nights span [startDate, endDate): the departure day has no
-                    // overnight by definition — hint instead of warning.
-                    d.date >= ctx.detail.endDate ? (
-                      <p className="mt-1 text-xs text-muted-foreground">Departure day — no overnight needed</p>
-                    ) : (
-                      <p className="mt-1 text-xs text-amber-600">No stay covers this date</p>
-                    )
+          {days.map((d, i) => {
+            if (!ctx.canEditVersion) {
+              return (
+                <div key={i} className="rounded-md border p-3 text-sm">
+                  <div className="mb-1 flex items-center gap-3 font-medium">
+                    <span>Day {d.dayOffset + 1}</span>
+                    <span className="text-muted-foreground">{d.date}</span>
+                    {d.overnightCity && <span className="text-muted-foreground">· {d.overnightCity}</span>}
+                  </div>
+                  {d.narrative && <p className="whitespace-pre-wrap">{d.narrative}</p>}
+                  {d.services.length > 0 && (
+                    <div className="mt-1 flex flex-wrap gap-1">
+                      {d.services.map((s, j) => (
+                        <Badge key={j} variant="outline" className="text-xs font-normal text-muted-foreground">
+                          {s.label}
+                          {(s.quantity ?? 1) > 1 ? ` ×${s.quantity}` : ""}
+                          {vehicleName(s.vehicleTypeId) ? ` · ${vehicleName(s.vehicleTypeId)}` : ""}
+                        </Badge>
+                      ))}
+                    </div>
                   )}
                 </div>
-                <div className="flex flex-wrap content-start items-start gap-1">
-                  {d.services.map((s, j) => (
+              );
+            }
+            // Edit mode: Tours and Tickets & degustations get their own columns
+            // with quantity steppers and net costs (v0.11.0); other categories
+            // stay as a plain chips row.
+            const tours = d.services.map((s, j) => ({ s, j })).filter(({ s }) => categoryOf(s) === "TRANSPORTATION");
+            const tickets = d.services.map((s, j) => ({ s, j })).filter(({ s }) => categoryOf(s) === "TICKETS");
+            const others = d.services
+              .map((s, j) => ({ s, j }))
+              .filter(({ s }) => !["TRANSPORTATION", "TICKETS"].includes(categoryOf(s)));
+            const renderEntry = ({ s, j }: { s: DayServiceItem; j: number }) => {
+              const cost = serviceCost(s, d.date);
+              return (
+                <div key={j} className="flex items-center gap-2 rounded border bg-muted/20 px-2 py-1 text-sm">
+                  <span className="flex-1">
+                    {s.label}
+                    {vehicleName(s.vehicleTypeId) && (
+                      <span className="text-xs text-muted-foreground"> · {vehicleName(s.vehicleTypeId)}</span>
+                    )}
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      aria-label={`Decrease ${s.label} quantity`}
+                      className="h-5 w-5 rounded border text-xs leading-none"
+                      disabled={(s.quantity ?? 1) <= 1}
+                      onClick={() => setServiceQuantity(i, j, -1)}
+                    >
+                      −
+                    </button>
+                    <span className="w-5 text-center text-xs">{s.quantity ?? 1}</span>
+                    <button
+                      type="button"
+                      aria-label={`Increase ${s.label} quantity`}
+                      className="h-5 w-5 rounded border text-xs leading-none"
+                      onClick={() => setServiceQuantity(i, j, 1)}
+                    >
+                      +
+                    </button>
+                  </span>
+                  {cost?.amountAmd != null && (
+                    <span className="whitespace-nowrap text-xs text-muted-foreground">
+                      {money(cost.amountAmd, "AMD")}
+                      {cost.amountQuote != null && ctx.resultCurrency !== "AMD"
+                        ? ` · ${money(cost.amountQuote, ctx.resultCurrency)}`
+                        : ""}
+                    </span>
+                  )}
+                  <button
+                    type="button"
+                    aria-label={`Remove ${s.label}`}
+                    className="text-muted-foreground hover:text-foreground"
+                    onClick={() => removeService(i, j)}
+                  >
+                    ✕
+                  </button>
+                </div>
+              );
+            };
+            const column = (title: string, items: { s: DayServiceItem; j: number }[]) => (
+              <div>
+                <p className="mb-1 text-xs font-medium text-muted-foreground">{title}</p>
+                <div className="space-y-1">
+                  {items.map(renderEntry)}
+                  {items.length === 0 && <p className="text-xs text-muted-foreground">—</p>}
+                </div>
+              </div>
+            );
+            return (
+              <div key={i} className="rounded-md border p-3">
+                <div className="grid gap-2 sm:grid-cols-[80px_130px_1fr_160px_40px]">
+                  <div className="flex items-center text-sm font-medium">Day {d.dayOffset + 1}</div>
+                  <Input type="date" value={d.date} onChange={(e) => update(i, { date: e.target.value })} />
+                  <Textarea
+                    rows={2}
+                    placeholder="Narrative"
+                    value={d.narrative}
+                    onChange={(e) => update(i, { narrative: e.target.value })}
+                  />
+                  <div>
+                    <Input
+                      placeholder="Overnight city"
+                      value={d.overnightCity}
+                      onChange={(e) => update(i, { overnightCity: e.target.value })}
+                    />
+                    {hasStays && !cityByDate[d.date] && (
+                      // Nights span [startDate, endDate): the departure day has no
+                      // overnight by definition — hint instead of warning.
+                      d.date >= ctx.detail.endDate ? (
+                        <p className="mt-1 text-xs text-muted-foreground">Departure day — no overnight needed</p>
+                      ) : (
+                        <p className="mt-1 text-xs text-amber-600">No stay covers this date</p>
+                      )
+                    )}
+                  </div>
+                  <Button variant="ghost" size="sm" onClick={() => removeDay(i)}>
+                    ✕
+                  </Button>
+                </div>
+                <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                  {column("Tours", tours)}
+                  {column("Tickets & degustations", tickets)}
+                </div>
+                <div className="mt-2 flex flex-wrap content-start items-start gap-1">
+                  {others.map(({ s, j }) => (
                     <Badge key={j} variant="outline" className="flex items-center gap-1">
                       {s.label}
+                      {(s.quantity ?? 1) > 1 ? ` ×${s.quantity}` : ""}
                       {vehicleName(s.vehicleTypeId) ? ` · ${vehicleName(s.vehicleTypeId)}` : ""}
                       <button
                         type="button"
@@ -501,31 +687,9 @@ export default function ItineraryTab({ ctx }: { ctx: DetailContext }) {
                     + Add service
                   </Button>
                 </div>
-                <Button variant="ghost" size="sm" onClick={() => removeDay(i)}>
-                  ✕
-                </Button>
               </div>
-            ) : (
-              <div key={i} className="rounded-md border p-3 text-sm">
-                <div className="mb-1 flex items-center gap-3 font-medium">
-                  <span>Day {d.dayOffset + 1}</span>
-                  <span className="text-muted-foreground">{d.date}</span>
-                  {d.overnightCity && <span className="text-muted-foreground">· {d.overnightCity}</span>}
-                </div>
-                {d.narrative && <p className="whitespace-pre-wrap">{d.narrative}</p>}
-                {d.services.length > 0 && (
-                  <div className="mt-1 flex flex-wrap gap-1">
-                    {d.services.map((s, j) => (
-                      <Badge key={j} variant="outline" className="text-xs font-normal text-muted-foreground">
-                        {s.label}
-                        {vehicleName(s.vehicleTypeId) ? ` · ${vehicleName(s.vehicleTypeId)}` : ""}
-                      </Badge>
-                    ))}
-                  </div>
-                )}
-              </div>
-            ),
-          )}
+            );
+          })}
         </div>
       </CardContent>
       <Dialog open={pickerDay !== null} onOpenChange={(open) => !open && closePicker()}>

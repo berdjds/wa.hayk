@@ -601,3 +601,135 @@ describe("legacy Cascade rounding fixture", () => {
     expect(engineSell("300000")).toBe("937");
   });
 });
+
+// ---------------------------------------------------------------------------
+
+describe("per-line net cost output (v0.11.0)", () => {
+  const usdQuote = { fx: FX({ quoteCurrency: "USD" }) };
+
+  it("PER_PERSON: rate × pax × quantity, converted to AMD and quote currency", () => {
+    const res = calculate(
+      makeInput(
+        [
+          makeScenario({
+            travelers: T({ paying: 2 }),
+            services: [
+              makeService({
+                ref: "L-TICKET",
+                label: "Garni ticket",
+                category: "TICKETS",
+                basis: "PER_PERSON",
+                currency: "USD",
+                unitRate: "100",
+                quantity: "3",
+                serviceProductId: "sp-1",
+                date: "2026-10-01",
+                vehicleTypeId: "veh-1",
+              }),
+            ],
+          }),
+        ],
+        usdQuote,
+      ),
+    ).scenarios[0];
+    expect(res.valid).toBe(true);
+    // 100 USD × 2 pax × 3 qty = 600 USD = 219000 AMD at 365 AMD/USD.
+    expect(res.totals.byCategory.TICKETS.USD).toBe("600");
+    const line = res.lines.find((l) => l.ref === "L-TICKET")!;
+    expect(line).toMatchObject({
+      label: "Garni ticket",
+      category: "TICKETS",
+      basis: "PER_PERSON",
+      currency: "USD",
+      unitRate: "100",
+      quantity: "3",
+      participants: null,
+      amountSource: "MANUAL",
+      amountAmd: "219000",
+      amountQuote: "600",
+      // Catalog key fields pass through so editors can map lines back to days.
+      serviceProductId: "sp-1",
+      date: "2026-10-01",
+      vehicleTypeId: "veh-1",
+    });
+  });
+
+  it("CAPACITY_BLOCK: ceil(pax/capacity) units × rate × quantity", () => {
+    const res = calculate(
+      makeInput(
+        [
+          makeScenario({
+            travelers: T({ paying: 5 }),
+            services: [
+              makeService({
+                ref: "L-BLOCK",
+                basis: "CAPACITY_BLOCK",
+                capacity: 2,
+                unitRate: "50",
+                quantity: "2",
+              }),
+            ],
+          }),
+        ],
+        usdQuote,
+      ),
+    ).scenarios[0];
+    // ceil(5/2) = 3 units × 50 AMD × 2 qty = 300 AMD.
+    const line = res.lines.find((l) => l.ref === "L-BLOCK")!;
+    expect(line.amountAmd).toBe("300");
+    expect(Number(line.amountQuote)).toBeCloseTo(300 / 365, 10);
+  });
+
+  it("amountSource: catalog / override / included / missing", () => {
+    const res = calculate(
+      makeInput(
+        [
+          makeScenario({
+            services: [
+              makeService({ ref: "L-CAT", sourceRef: "RateVersion abc (Test!A1)" }),
+              makeService({
+                ref: "L-OVR",
+                unitRate: "1200",
+                override: { originalRate: "1000", reason: "negotiated", actorId: "u1" },
+              }),
+              makeService({ ref: "L-INC", includedElsewhere: true }),
+              makeService({ ref: "L-MISS", unitRate: null }),
+            ],
+          }),
+        ],
+        usdQuote,
+      ),
+    ).scenarios[0];
+    const byRef = (ref: string) => res.lines.find((l) => l.ref === ref)!;
+    expect(byRef("L-CAT").amountSource).toBe("CATALOG");
+    expect(byRef("L-OVR").amountSource).toBe("OVERRIDE");
+    expect(byRef("L-OVR").unitRate).toBe("1200");
+    expect(byRef("L-INC").amountSource).toBe("INCLUDED");
+    expect(byRef("L-MISS").amountSource).toBe("MISSING");
+    expect(byRef("L-MISS").amountAmd).toBeNull();
+    expect(byRef("L-MISS").amountQuote).toBeNull();
+    expect(blockerCodes(res)).toContain("MISSING_RATE");
+  });
+
+  it("nightly rows carry AMD/quote conversions; FX failure leaves nulls", () => {
+    const stay = makeStay({
+      checkIn: "2026-10-01",
+      checkOut: "2026-10-03",
+      roomAllocations: [alloc({ rooms: 2 })],
+      rates: {
+        STANDARD: [{ from: "2026-10-01", to: "2026-10-03", rate: "100", currency: "USD", priority: 0 }],
+      },
+    });
+    const sc = makeScenario({ tourStart: "2026-10-01", tourEnd: "2026-10-03", stays: [stay] });
+
+    const ok = calculate(makeInput([sc], usdQuote)).scenarios[0];
+    expect(ok.nightly).toHaveLength(2);
+    // 100 USD × 2 rooms = 200 USD/night = 73000 AMD.
+    expect(ok.nightly[0].amountAmd).toBe("73000");
+    expect(ok.nightly[0].amountQuote).toBe("200");
+
+    const noFx = calculate(makeInput([sc], { fx: FX({ rates: {}, quoteCurrency: "USD" }) })).scenarios[0];
+    expect(noFx.nightly[0].amountAmd).toBeNull();
+    expect(noFx.lines).toEqual([]);
+  });
+});

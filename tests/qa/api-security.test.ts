@@ -2,13 +2,12 @@
  * QA: route-level security fixes — advisor data scoping and leak prevention.
  *
  * - GET /travel/requests/[id]: other advisor → 404 (IDOR); the owner-advisor
- *   gets scenario results redacted to sell-side fields; VALIDATOR gets the
- *   full costing blob; documents expose renderState only, never filePath.
+ *   sees the full costing blob (v0.11.0 — the initiator prices the request);
+ *   VALIDATOR likewise; documents expose renderState only, never filePath.
  * - POST /travel/versions/[id]/calculate: owner / assigned validator / ADMIN
- *   only (404 otherwise); advisor output is redacted and advisor policy
- *   overrides are refused (403).
- * - POST /travel/requests/[id]/submit: advisor response carries no full
- *   engine result.
+ *   only (404 otherwise); advisor policy overrides are refused (403).
+ * - POST /travel/requests/[id]/submit: the submitter is necessarily the owner
+ *   or ADMIN, so the response carries the full engine result.
  * - GET /travel/documents/[id]: CLIENT docs restricted to owner / assigned
  *   validator / ADMIN (404 otherwise).
  * - GET /travel/settings: non-ADMIN sees only the active policy's currency.
@@ -96,7 +95,7 @@ describe("GET /travel/requests/[id] scoping", () => {
     expect(res.status).toBe(404);
   });
 
-  it("the owner-advisor sees scenario results redacted to sell-side fields", async () => {
+  it("the owner-advisor sees the full costing blob incl. per-line net costs (v0.11.0)", async () => {
     const { request } = await submittedRequest();
     session(fx.advisor);
     const res = await requestByIdRoute.GET(req(`http://t/api/travel/requests/${request.id}`), { params: { id: request.id } });
@@ -104,12 +103,9 @@ describe("GET /travel/requests/[id] scoping", () => {
     const body = await res.json();
     const scenario = body.versions[0].scenarios[0];
     const parsed = JSON.parse(scenario.resultJson);
-    expect(Object.keys(parsed).sort()).toEqual(
-      ["days", "issues", "label", "nights", "perPayingPerson", "ref", "sell", "valid"].sort(),
-    );
     expect(parsed.sell).toBe("342"); // 3 × 100 USD × 1.14 markup
-    // Internal costing must not appear anywhere in the redacted blob.
-    expect(scenario.resultJson).not.toMatch(/costQuote|profit|margin|nightly|trace|policyTarget/);
+    expect(parsed.totals.costQuote).toBe("300");
+    expect(Array.isArray(parsed.lines)).toBe(true);
     // Per-version quote currency comes from the frozen snapshot display data.
     expect(body.versions[0].quoteCurrency).toBe("USD");
   });
@@ -179,18 +175,17 @@ describe("POST /travel/versions/[id]/calculate scoping", () => {
     ).toBe(200);
   });
 
-  it("the owner-advisor gets redacted scenarios and no policy override", async () => {
+  it("the owner-advisor gets the full result (v0.11.0) but still no policy override", async () => {
     const { version } = await submittedRequest();
 
     session(fx.advisor);
     const res = await calculateRoute.POST(req(`http://t/api/travel/versions/${version.id}/calculate`, { method: "POST" }), { params: { id: version.id } });
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(Object.keys(body.scenarios[0]).sort()).toEqual(
-      ["days", "issues", "label", "nights", "perPayingPerson", "ref", "sell", "valid"].sort(),
-    );
     expect(body.quoteCurrency).toBe("USD");
-    expect(JSON.stringify(body)).not.toMatch(/costQuote|profit|trace/);
+    // The owner prices their own request: full costing, including line costs.
+    expect(body.scenarios[0].totals.costQuote).toBe("300");
+    expect(Array.isArray(body.scenarios[0].lines)).toBe(true);
 
     const withPolicy = await calculateRoute.POST(
       req(`http://t/api/travel/versions/${version.id}/calculate`, {
@@ -204,7 +199,7 @@ describe("POST /travel/versions/[id]/calculate scoping", () => {
 });
 
 describe("POST /travel/requests/[id]/submit response", () => {
-  it("advisor gets versionId/hash + redacted scenarios, never the full result", async () => {
+  it("the owner-advisor gets versionId/hash plus the full engine result (v0.11.0)", async () => {
     const { request } = await (async () => {
       const { request, version } = await workflow.createRequest(actorOf(fx.advisor), createRequestInput(fx.agency.id));
       await saveContent(prisma, actorOf(fx.advisor), request.id, version.id, scenarioContent(fx.hotel.id, fx.hotel.name));
@@ -217,11 +212,8 @@ describe("POST /travel/requests/[id]/submit response", () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.hash).toMatch(/^[0-9a-f]{64}$/);
-    expect(body.result).toBeUndefined();
     expect(body.quoteCurrency).toBe("USD");
-    expect(Object.keys(body.scenarios[0]).sort()).toEqual(
-      ["days", "issues", "label", "nights", "perPayingPerson", "ref", "sell", "valid"].sort(),
-    );
+    expect(body.result.scenarios[0].totals.costQuote).toBe("300");
   });
 });
 

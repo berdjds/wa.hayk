@@ -24,10 +24,17 @@ const updateSettingsSchema = z.object({
     .regex(/^#[0-9a-fA-F]{6}$/, "expected a #rrggbb hex color")
     .nullish(),
   // WhatsApp group receiving quotation documents (....@g.us).
+  // Deprecated since v0.11.0 (validatorUserIds replaced it); still accepted so
+  // older clients don't break, but nothing reads it anymore.
   validatorGroupJid: z
     .string()
     .regex(/^\d+(-\d+)?@g\.us$/, "expected a WhatsApp group id like 120363...@g.us")
     .nullish(),
+  // Children at or below this age (at return) are infants.
+  infantMaxAge: z.number().int().min(0).max(12).optional(),
+  // Virtual validator group: user ids; membership validated against active
+  // users in the handler (zod can't query the DB).
+  validatorUserIds: z.array(z.string().min(1)).max(50).optional(),
 });
 
 export async function GET() {
@@ -67,7 +74,24 @@ export async function PUT(req: NextRequest) {
   }
 
   try {
-    const { activatePolicyId, ...settingsPatch } = parsed.data;
+    const { activatePolicyId, validatorUserIds, ...restPatch } = parsed.data;
+
+    // The validator group is stored as a JSON array string; every member must
+    // be an active user.
+    const settingsPatch: typeof restPatch & { validatorUserIds?: string } = { ...restPatch };
+    if (validatorUserIds !== undefined) {
+      const active = await prisma.user.findMany({
+        where: { id: { in: validatorUserIds }, active: true },
+        select: { id: true },
+      });
+      if (active.length !== new Set(validatorUserIds).size) {
+        return NextResponse.json(
+          { error: "validatorUserIds must reference active users only" },
+          { status: 400 },
+        );
+      }
+      settingsPatch.validatorUserIds = JSON.stringify(Array.from(new Set(validatorUserIds)));
+    }
 
     if (activatePolicyId) {
       const policy = await prisma.pricingPolicyVersion.findUnique({

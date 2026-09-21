@@ -11,6 +11,7 @@ import { readFile } from "node:fs/promises";
 import { prisma } from "@/lib/prisma";
 import { writeAuditLog } from "@/lib/audit";
 import { sendWhatsAppMessage } from "@/lib/whatsapp";
+import { getTravelSettings } from "@/lib/travel/settings";
 import { ROLE_ADMIN, ROLE_VALIDATOR, versionLabel } from "@/lib/travel/contracts";
 
 export interface DocumentSendResult {
@@ -24,9 +25,10 @@ export interface DocumentSendResult {
  * their WhatsApp phone) and/or WhatsApp groups (by @g.us jid).
  *
  * INTERNAL documents carry margins: they may only go to ADMIN/VALIDATOR
- * users or the request's currently assigned validator (any role — the
- * assignment itself grants internal visibility, v0.10.0). Other recipients
- * get a failure entry instead of the document.
+ * users, the request's currently assigned validator, or members of the
+ * validator group in settings (v0.11.0 — membership grants internal
+ * visibility, same as an assignment). Other recipients get a failure entry
+ * instead of the document.
  */
 export async function sendQuoteDocument(
   documentId: string,
@@ -67,6 +69,15 @@ export async function sendQuoteDocument(
     select: { validatorId: true },
   });
 
+  // Validator-group membership (settings) grants INTERNAL visibility too.
+  let validatorGroup: string[] = [];
+  try {
+    const ids: unknown = JSON.parse((await getTravelSettings()).validatorUserIds);
+    if (Array.isArray(ids)) validatorGroup = ids.filter((x): x is string => typeof x === "string");
+  } catch {
+    validatorGroup = [];
+  }
+
   const results: DocumentSendResult[] = [];
 
   for (const userId of targets.userIds ?? []) {
@@ -83,7 +94,8 @@ export async function sendQuoteDocument(
       doc.kind === "INTERNAL" &&
       user.role !== ROLE_ADMIN &&
       user.role !== ROLE_VALIDATOR &&
-      user.id !== assignment?.validatorId
+      user.id !== assignment?.validatorId &&
+      !validatorGroup.includes(user.id)
     ) {
       results.push({ to: label, ok: false, error: "internal documents are restricted to validators/admins" });
       continue;

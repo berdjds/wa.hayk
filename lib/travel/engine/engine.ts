@@ -2,6 +2,7 @@ import Decimal from "decimal.js";
 import {
   COST_CATEGORIES,
   ENGINE_VERSION,
+  type AmountSource,
   type CostCategory,
   type EngineInput,
   type EngineIssue,
@@ -12,6 +13,8 @@ import {
   type RatePeriod,
   type ScenarioEngineInput,
   type ScenarioResult,
+  type ScenarioResultLine,
+  type ServiceLineInput,
 } from "@/lib/travel/contracts";
 import { enumerateNights, isValidISODate, nightsBetween } from "./dates";
 import { validateOccupancy } from "./occupancy";
@@ -253,35 +256,56 @@ function calculateScenario(sc: ScenarioEngineInput, input: EngineInput): Scenari
   }
 
   // --- Service lines ----------------------------------------------------------
+  // Net-cost visibility (v0.11.0): every line is recorded with its computed
+  // amount (source currency) and provenance, converted to AMD/quote below once
+  // FX is resolved. Lines that fail validation are recorded with amount null.
+  const pendingLines: { line: ServiceLineInput; amount: Decimal | null; amountSource: AmountSource }[] = [];
   for (const line of sc.services) {
+    const amountSource: AmountSource = line.includedElsewhere
+      ? "INCLUDED"
+      : line.unitRate === null
+        ? "MISSING"
+        : line.override
+          ? "OVERRIDE"
+          : // resolve.ts stamps catalog-resolved rates with a "RateVersion <id>" sourceRef.
+            line.sourceRef?.startsWith("RateVersion ")
+            ? "CATALOG"
+            : "MANUAL";
     if (line.includedElsewhere) {
       trace.push(`line ${line.ref} "${line.label}": included elsewhere — charged 0`);
+      pendingLines.push({ line, amount: new Decimal(0), amountSource });
       continue;
     }
     if (line.unitRate === null) {
       push("MISSING_RATE", "BLOCKER", `line ${line.ref} "${line.label}": rate is missing/TBC`, { lineRef: line.ref, field: "unitRate" });
+      pendingLines.push({ line, amount: null, amountSource });
       continue;
     }
     const rate = parseMoney(line.unitRate);
     if (rate === null) {
       push("MISSING_RATE", "BLOCKER", `line ${line.ref} "${line.label}": rate "${line.unitRate}" is not a valid decimal`, { lineRef: line.ref, field: "unitRate" });
+      pendingLines.push({ line, amount: null, amountSource });
       continue;
     }
     if (rate.lt(0)) {
       push("INVALID_POLICY", "BLOCKER", `line ${line.ref} "${line.label}": unitRate "${line.unitRate}" is negative — money fields must be non-negative`, { lineRef: line.ref, field: "unitRate" });
+      pendingLines.push({ line, amount: null, amountSource });
       continue;
     }
     const qty = parseMoney(line.quantity);
     if (qty === null) {
       push("INVALID_POLICY", "BLOCKER", `line ${line.ref} "${line.label}": quantity "${line.quantity}" is not a valid decimal`, { lineRef: line.ref, field: "quantity" });
+      pendingLines.push({ line, amount: null, amountSource });
       continue;
     }
     if (qty.lt(0)) {
       push("INVALID_POLICY", "BLOCKER", `line ${line.ref} "${line.label}": quantity "${line.quantity}" is negative`, { lineRef: line.ref, field: "quantity" });
+      pendingLines.push({ line, amount: null, amountSource });
       continue;
     }
     if (line.participants !== undefined && line.participants < 0) {
       push("INVALID_POLICY", "BLOCKER", `line ${line.ref} "${line.label}": participants ${line.participants} is negative`, { lineRef: line.ref, field: "participants" });
+      pendingLines.push({ line, amount: null, amountSource });
       continue;
     }
     // Staff lines never multiply by guest PAX — the workbook counts staff
@@ -300,6 +324,7 @@ function calculateScenario(sc: ScenarioEngineInput, input: EngineInput): Scenari
       case "CAPACITY_BLOCK": {
         if (line.capacity === undefined || line.capacity < 1) {
           push("INVALID_POLICY", "BLOCKER", `line ${line.ref} "${line.label}": CAPACITY_BLOCK requires capacity ≥ 1`, { lineRef: line.ref, field: "capacity" });
+          pendingLines.push({ line, amount: null, amountSource });
           continue;
         }
         const pax = line.participants ?? defaultPax;
@@ -317,6 +342,7 @@ function calculateScenario(sc: ScenarioEngineInput, input: EngineInput): Scenari
     }
     addCost(line.category, line.currency, amount);
     trace.push(`line ${line.ref} "${line.label}" [${line.basis}]: ${formula} = ${money(amount)} ${line.currency}`);
+    pendingLines.push({ line, amount, amountSource });
   }
 
   // --- Vehicle capacity -------------------------------------------------------
@@ -367,6 +393,36 @@ function calculateScenario(sc: ScenarioEngineInput, input: EngineInput): Scenari
     });
   }
 
+  // Line/nightly conversion happens once FX is known (v0.11.0). When FX failed
+  // the amounts stay null — a partial conversion would present false precision.
+  const rQuote = fxOk ? fxRates.get(input.fx.quoteCurrency)! : null;
+  const convert = (amount: Decimal, currency: string): { amountAmd: Money | null; amountQuote: Money | null } => {
+    const fx = rQuote ? fxRates.get(currency) : undefined;
+    if (!fx || !rQuote) return { amountAmd: null, amountQuote: null };
+    const amd = amount.times(fx);
+    return { amountAmd: money(amd), amountQuote: money(amd.div(rQuote)) };
+  };
+  const lines: ScenarioResultLine[] = pendingLines.map(({ line, amount, amountSource }) => ({
+    ref: line.ref,
+    label: line.label,
+    category: line.category,
+    basis: line.basis,
+    currency: line.currency,
+    unitRate: line.unitRate,
+    quantity: line.quantity,
+    participants: line.participants ?? null,
+    amountSource,
+    ...(amount === null ? { amountAmd: null, amountQuote: null } : convert(amount, line.currency)),
+    ...(line.serviceProductId ? { serviceProductId: line.serviceProductId } : {}),
+    ...(line.date ? { date: line.date } : {}),
+    ...(line.vehicleTypeId ? { vehicleTypeId: line.vehicleTypeId } : {}),
+  }));
+  // nightly rows exist only for nights that priced, so rate/extraBedCharge parse.
+  const nightlyOut: NightlyCharge[] = nightly.map((n) => {
+    const rowAmount = parseMoney(n.rate)!.times(n.rooms).plus(parseMoney(n.extraBedCharge)!);
+    return { ...n, ...convert(rowAmount, n.currency) };
+  });
+
   // --- Pricing policy (skipped when FX failed: costQuote would be a lie) -----
   let policyTarget: Money | null = null;
   let policyFloor: Money | null = null;
@@ -400,7 +456,8 @@ function calculateScenario(sc: ScenarioEngineInput, input: EngineInput): Scenari
     nights,
     days,
     totals: { byCategory, costByCurrency, costQuote: money(costQuote) },
-    nightly,
+    nightly: nightlyOut,
+    lines,
     policyTarget,
     policyFloor,
     unroundedSell,

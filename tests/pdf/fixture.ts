@@ -178,6 +178,7 @@ function scenarioResultA(): ScenarioResult {
     profit: "207300.00",
     margin: "0.1235",
     perPayingPerson: "76318.18",
+    lines: [],
     trace: [
       "stay ST-YER: 5 nights × 8 STANDARD rooms @ 28500.75 AMD",
       "policy: MARKUP_ON_COST 0.14 over cost 1471700.00 AMD",
@@ -214,6 +215,7 @@ function scenarioResultB(): ScenarioResult {
     profit: "313200.00",
     margin: "0.1700",
     perPayingPerson: "83750.00",
+    lines: [],
     trace: ["policy: MARKUP_ON_COST 0.14 over cost 1529300.00 AMD"],
   };
 }

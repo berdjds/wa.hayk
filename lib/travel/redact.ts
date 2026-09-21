@@ -2,14 +2,15 @@
  * Advisor-facing redaction of engine results.
  *
  * Internal costing (costQuote, profit, margin, category totals, nightly rates,
- * trace, policy targets) is restricted to ADMIN/VALIDATOR; an advisor sees
- * only the sell-side summary of THEIR OWN request (business rule). Every route
- * that returns engine output for an ADVISOR goes through these helpers.
+ * per-line net costs, trace, policy targets) is restricted to ADMIN/VALIDATOR
+ * and — since v0.11.0 — the request OWNER (the initiator prices the request).
+ * Non-owner advisors are 404'd by the routes before redaction is even
+ * reachable, so these helpers remain as defense in depth.
  */
 
 import type { ScenarioResult } from "@/lib/travel/contracts";
 
-/** The exact sell-side fields an advisor may see per scenario. */
+/** The exact sell-side fields a non-owner advisor may see per scenario. */
 export interface AdvisorScenarioView {
   ref: string;
   label: string;

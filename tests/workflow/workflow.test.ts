@@ -8,6 +8,7 @@ import type { PrismaClient } from "@prisma/client";
 import { ensureSchema, getPrisma } from "../travel-db/helpers";
 import {
   END_DATE,
+  START_DATE,
   Fixtures,
   TRAVELERS,
   actorOf,
@@ -104,6 +105,50 @@ describe("createRequest", () => {
           travelers: { ...TRAVELERS, children: 1, childAges: [age], paying: 3 },
         }),
       ).rejects.toThrow();
+    }
+  });
+});
+
+describe("infant derivation from childAges (v0.11.0)", () => {
+  async function infantsOf(travelers: Record<string, unknown>) {
+    // Omit infants unless the case sets it — derivation only runs when the
+    // client leaves infants unset.
+    const base: Record<string, unknown> = { ...TRAVELERS, ...travelers };
+    if (!("infants" in travelers)) delete base.infants;
+    const { request } = await workflow.createRequest(actorOf(fx.advisor), {
+      ...createRequestInput(fx.agency.id),
+      travelers: base as unknown as import("@/lib/travel/contracts").TravelerSetup,
+    });
+    return JSON.parse(request.travelers).infants as number;
+  }
+
+  it("derives infants from ages at/below the default threshold (2)", async () => {
+    // Below and at the threshold count; above does not.
+    expect(await infantsOf({ children: 3, childAges: [1, 2, 5] })).toBe(2);
+    expect(await infantsOf({ children: 2, childAges: [6, 9] })).toBe(0);
+    expect(await infantsOf({ children: 0, childAges: [] })).toBe(0);
+  });
+
+  it("respects an explicit infants value (manual override)", async () => {
+    expect(await infantsOf({ children: 2, childAges: [0, 1], infants: 0 })).toBe(0);
+    expect(await infantsOf({ children: 2, childAges: [8, 9], infants: 1 })).toBe(1);
+  });
+
+  it("rejects infants > children", async () => {
+    await expect(
+      workflow.createRequest(actorOf(fx.advisor), {
+        ...createRequestInput(fx.agency.id),
+        travelers: { ...TRAVELERS, children: 1, childAges: [1], infants: 2 },
+      }),
+    ).rejects.toThrow();
+  });
+
+  it("honors a configured infantMaxAge", async () => {
+    await prisma.travelSettings.update({ where: { id: "default" }, data: { infantMaxAge: 4 } });
+    try {
+      expect(await infantsOf({ children: 2, childAges: [3, 5] })).toBe(1);
+    } finally {
+      await prisma.travelSettings.update({ where: { id: "default" }, data: { infantMaxAge: 2 } });
     }
   });
 });
@@ -337,5 +382,147 @@ describe("issue", () => {
       code: "SETTINGS_INCOMPLETE",
     });
     await prisma.pricingPolicyVersion.update({ where: { id: fx.policy.id }, data: { active: true } });
+  });
+});
+
+// Runs last: these tests mutate TravelSettings.validatorUserIds, which would
+// change notification fan-out assertions elsewhere. Each test restores [].
+describe("validator group (v0.11.0)", () => {
+  async function setGroup(ids: string[]) {
+    await prisma.travelSettings.update({
+      where: { id: "default" },
+      data: { validatorUserIds: JSON.stringify(ids) },
+    });
+  }
+
+  it("auto-assigns the first active group member at creation, quietly", async () => {
+    await setGroup([fx.validator2.id, fx.validator.id]);
+    try {
+      const { request } = await workflow.createRequest(actorOf(fx.advisor), createRequestInput(fx.agency.id));
+      const r = await prisma.travelRequest.findUnique({ where: { id: request.id } });
+      expect(r?.currentValidatorId).toBe(fx.validator2.id);
+      // Creation stays quiet: assignment notifications fire only when an
+      // assignment is REPLACED, and none existed yet.
+      expect(await prisma.workflowEvent.count({ where: { requestId: request.id } })).toBe(0);
+      const assignment = await prisma.validationAssignment.findFirst({
+        where: { requestId: request.id, active: true },
+      });
+      expect(assignment?.validatorId).toBe(fx.validator2.id);
+    } finally {
+      await setGroup([]);
+    }
+  });
+
+  it("skips deactivated group members when auto-assigning", async () => {
+    await prisma.user.update({ where: { id: fx.validator2.id }, data: { active: false } });
+    await setGroup([fx.validator2.id, fx.validator.id]);
+    try {
+      const { request } = await workflow.createRequest(actorOf(fx.advisor), createRequestInput(fx.agency.id));
+      const r = await prisma.travelRequest.findUnique({ where: { id: request.id } });
+      expect(r?.currentValidatorId).toBe(fx.validator.id);
+    } finally {
+      await setGroup([]);
+      await prisma.user.update({ where: { id: fx.validator2.id }, data: { active: true } });
+    }
+  });
+
+  it("submit notifies group members (deduped) on top of owner + assigned validator", async () => {
+    // validator is in the group AND the assignee — must receive one set of
+    // deliveries, not two. plainUser (no phone) still gets an EMAIL row.
+    await setGroup([fx.plainUser.id, fx.validator.id]);
+    try {
+      const { request } = await draftWithContent();
+      await workflow.submit(actorOf(fx.advisor), request.id);
+      const event = await prisma.workflowEvent.findFirst({
+        where: { requestId: request.id, type: "SUBMITTED" },
+        include: { deliveries: true },
+      });
+      const recipientIds = new Set(event!.deliveries.map((d) => d.recipientId));
+      expect(recipientIds).toEqual(new Set([fx.advisor.id, fx.validator.id, fx.plainUser.id]));
+      // 3 recipients × 2 channels
+      expect(event!.deliveries).toHaveLength(6);
+      const plainWhatsApp = event!.deliveries.find(
+        (d) => d.recipientId === fx.plainUser.id && d.channel === "WHATSAPP",
+      );
+      expect(plainWhatsApp?.status).toBe("SKIPPED_NO_DESTINATION");
+    } finally {
+      await setGroup([]);
+    }
+  });
+
+  it("auto-sends the INTERNAL sheet to group members individually", async () => {
+    const { sendWhatsAppMessage } = await import("@/lib/whatsapp");
+    const mock = vi.mocked(sendWhatsAppMessage);
+    await setGroup([fx.validator.id, fx.plainUser.id]); // plainUser has no phone
+    try {
+      const { request } = await draftWithContent(); // assigns fx.validator too
+      mock.mockClear();
+      await workflow.submit(actorOf(fx.advisor), request.id);
+      const docSends = mock.mock.calls.filter(([arg]) => arg.type === "document");
+      // validator (assignee + group member, deduped) gets the PDF; plainUser
+      // is skipped (no phone on file) — exactly one document send.
+      expect(docSends).toHaveLength(1);
+      expect(docSends[0][0].remoteJid).toBe(fx.validator.phone);
+      expect(docSends[0][0].mediaMimeType).toBe("application/pdf");
+    } finally {
+      await setGroup([]);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+
+describe("day service quantity → ServiceLine → engine (v0.11.0)", () => {
+  it("quantity flows onto the linked line, follows edits, and multiplies the engine amount", async () => {
+    const product = await prisma.serviceProduct.create({
+      data: { name: "City tour", category: "EXTRA_SERVICES", basis: "GROUP" },
+    });
+    await prisma.rateVersion.create({
+      data: {
+        productType: "SERVICE",
+        serviceProductId: product.id,
+        amount: "100",
+        currency: "AMD",
+        status: "VERIFIED",
+        evidenceRef: "Test!B2",
+        validFrom: START_DATE,
+        validTo: END_DATE,
+      },
+    });
+
+    const { request, version } = await workflow.createRequest(actorOf(fx.advisor), createRequestInput(fx.agency.id));
+    const dayWith = (quantity: number) => [
+      {
+        dayOffset: 0,
+        date: START_DATE,
+        narrative: null,
+        overnightCity: null,
+        services: [{ serviceProductId: product.id, label: product.name, quantity, vehicleTypeId: null }],
+      },
+    ];
+    await saveContent(prisma, actorOf(fx.advisor), request.id, version.id, { itineraryDays: dayWith(3) });
+
+    let line = await prisma.serviceLine.findFirst({ where: { versionId: version.id, serviceProductId: product.id } });
+    expect(line?.quantity).toBe("3");
+
+    // Engine: GROUP basis = rate × quantity → 100 AMD × 3.
+    const { buildEngineInputForVersion } = await import("@/lib/travel/resolve");
+    const { calculate } = await import("@/lib/travel/engine");
+    const result = calculate(await buildEngineInputForVersion(version.id)).scenarios[0];
+    const engineLine = result.lines.find((l) => l.serviceProductId === product.id)!;
+    expect(engineLine.amountAmd).toBe("300");
+    expect(engineLine.amountSource).toBe("CATALOG");
+    expect(engineLine.date).toBe(START_DATE);
+
+    // Editing the day quantity updates the SAME line in place (identity and
+    // any manual edits survive); a later save with quantity 5 reprices to 500.
+    await saveContent(prisma, actorOf(fx.advisor), request.id, version.id, { itineraryDays: dayWith(5) });
+    const updated = await prisma.serviceLine.findFirst({
+      where: { versionId: version.id, serviceProductId: product.id },
+    });
+    expect(updated?.id).toBe(line!.id);
+    expect(updated?.quantity).toBe("5");
+    const repriced = calculate(await buildEngineInputForVersion(version.id)).scenarios[0];
+    expect(repriced.lines.find((l) => l.serviceProductId === product.id)?.amountAmd).toBe("500");
   });
 });

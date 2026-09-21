@@ -354,3 +354,70 @@ describe("WhatsApp document delivery (v0.10.0)", () => {
     expect(request.id).toBeTruthy();
   });
 });
+
+// Last block: mutates TravelSettings (validatorUserIds / infantMaxAge); each
+// test restores defaults so no other suite in this file is affected.
+describe("validator group + infant settings (v0.11.0)", () => {
+  it("validates infantMaxAge and validatorUserIds", async () => {
+    session(fx.admin);
+    const put = (body: unknown) =>
+      settingsRoute.PUT(req("http://t/api/travel/settings", { method: "PUT", body }));
+
+    expect((await put({ infantMaxAge: 13 })).status).toBe(400);
+    expect((await put({ infantMaxAge: -1 })).status).toBe(400);
+    expect((await put({ validatorUserIds: ["no-such-user"] })).status).toBe(400);
+    // Inactive users are rejected as group members.
+    await prisma.user.update({ where: { id: fx.validator2.id }, data: { active: false } });
+    expect((await put({ validatorUserIds: [fx.validator2.id] })).status).toBe(400);
+    await prisma.user.update({ where: { id: fx.validator2.id }, data: { active: true } });
+
+    const ok = await put({ infantMaxAge: 3, validatorUserIds: [fx.validator.id, fx.plainUser.id] });
+    expect(ok.status).toBe(200);
+    const body = await ok.json();
+    expect(body.infantMaxAge).toBe(3);
+    expect(JSON.parse(body.validatorUserIds)).toEqual([fx.validator.id, fx.plainUser.id]);
+
+    // Restore defaults.
+    await put({ infantMaxAge: 2, validatorUserIds: [] });
+  });
+
+  it("INTERNAL documents can be delivered to validator-group members of any role", async () => {
+    const dir = mkdtempSync(path.join(tmpdir(), "qa-send-group-"));
+    const file = path.join(dir, "doc.pdf");
+    writeFileSync(file, "%PDF-1.4 qa");
+
+    const { version } = await workflow.createRequest(actorOf(fx.advisor), createRequestInput(fx.agency.id));
+    const internal = await prisma.quoteDocument.create({
+      data: {
+        versionId: version.id,
+        snapshotHash: "0".repeat(64),
+        kind: "INTERNAL",
+        templateVersion: "1",
+        filePath: file,
+        sha256: "abc",
+        idempotencyKey: "send-group-internal",
+      },
+    });
+    // A USER-role group member: without membership this exact send is refused
+    // (covered in the delivery block above).
+    const member = await prisma.user.create({
+      data: { email: "groupmember@test.io", name: "Group Member", password: "x", role: "USER", phone: "37400000098" },
+    });
+    await prisma.travelSettings.update({
+      where: { id: "default" },
+      data: { validatorUserIds: JSON.stringify([member.id]) },
+    });
+    try {
+      session(fx.advisor); // request owner triggers delivery
+      const res = await documentSendRoute.POST(
+        req(`http://t/api/travel/documents/${internal.id}/send`, { method: "POST", body: { userIds: [member.id] } }),
+        { params: { id: internal.id } },
+      );
+      expect(res.status).toBe(200);
+      const { results } = await res.json();
+      expect(results[0].ok).toBe(true);
+    } finally {
+      await prisma.travelSettings.update({ where: { id: "default" }, data: { validatorUserIds: "[]" } });
+    }
+  });
+});

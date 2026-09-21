@@ -116,10 +116,14 @@ HotelProduct, VehicleType, ServiceProduct, RateVersion (verification lifecycle
 NEEDS_REVIEW → VERIFIED → ARCHIVED), FXRateVersion, PricingPolicyVersion, CalculationSnapshot
 (immutable inputs/results + sha256 hash), ValidationAssignment, ReviewDecision, WorkflowEvent,
 NotificationDelivery (outbox, unique dedupKey), QuoteDocument (hash-recorded PDFs on disk),
-ImportBatch/ImportRow (workbook staging), BatchRun, PackageTemplate/TemplateVersion,
-TravelSettings (singleton; also gained `validatorGroupJid`, the WhatsApp group for quotation
-document delivery, in v0.10.0). `User` gained a nullable `phone` (WhatsApp notification
-destination) and role values ADVISOR/VALIDATOR. Money and FX values are decimal strings; JSON
+ImportBatch/ImportRow (workbook staging), BatchRun, PackageTemplate/TemplateVersion
+(TemplateVersion gained `scenariosJson` — default scenario definitions instantiated into new
+requests — in v0.11.0),
+TravelSettings (singleton; gained `validatorGroupJid`, the WhatsApp group for quotation
+document delivery, in v0.10.0 — deprecated/ignored since v0.11.0 in favor of
+`validatorUserIds`, the virtual validator user group; also gained `infantMaxAge`, the
+traveler-classification ceiling, in v0.11.0). `User` gained a nullable `phone` (WhatsApp
+notification destination) and role values ADVISOR/VALIDATOR. Money and FX values are decimal strings; JSON
 payloads are String columns. See `prisma/schema.prisma` comments and `lib/travel/contracts.ts`.
 
 `TravelRequest.travelers` is a JSON `TravelerSetup` string: counts (adults, children, infants,
@@ -130,8 +134,9 @@ child at return, 0–12; one entry per child, validated by `travelerSchema` in
 Phase 3/4 additions: `ServiceLine` gained nullable `serviceProductId` (catalog link) and `date`
 (YYYY-MM-DD) columns — a linked line is shared (`scenarioId = null`), keeps `unitRate = null`,
 and is priced from SERVICE RateVersions covering its date. `ItineraryDay.services` items are
-now `{ serviceProductId: string | null; label: string }` objects; legacy plain-string arrays
-are normalized on read by `normalizeDayServices()`.
+now `{ serviceProductId: string | null; label: string; vehicleTypeId?: string | null;
+quantity?: number }` objects (quantity drives the synced ServiceLine quantity since v0.11.0);
+legacy plain-string arrays are normalized on read by `normalizeDayServices()`.
 
 Per-vehicle pricing addition: `ServiceLine` gained a nullable `vehicleTypeId` (indexed;
 selected fleet vehicle for the line). SERVICE RateVersions may carry a `vehicleTypeId` —

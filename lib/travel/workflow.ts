@@ -34,6 +34,7 @@ import {
   type EngineOutput,
   type NotificationPayload,
   type QuoteStatus,
+  type TravelerSetup,
   type WorkflowEventType,
 } from "@/lib/travel/contracts";
 import { calculate } from "@/lib/travel/engine";
@@ -118,7 +119,9 @@ export const travelerSchema = z
   .object({
     adults: z.number().int().min(0),
     children: z.number().int().min(0),
-    infants: z.number().int().min(0),
+    // Optional since v0.11.0: when omitted, the server derives infants from
+    // childAges and TravelSettings.infantMaxAge (see withDerivedInfants).
+    infants: z.number().int().min(0).optional(),
     // One age per child, 0-12 (age at return/check-out) — mirrors the
     // booking.com occupancy picker the operator works from.
     childAges: z.array(z.number().int().min(0).max(12)).optional(),
@@ -135,7 +138,28 @@ export const travelerSchema = z
         message: "childAges must list one age per child",
       });
     }
+    // Infants are the ≤ infantMaxAge subset of children, so they can never
+    // outnumber them.
+    if (t.infants !== undefined && t.infants > t.children) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["infants"],
+        message: "infants cannot exceed children",
+      });
+    }
   });
+
+/**
+ * Fills `infants` from childAges + TravelSettings.infantMaxAge when the
+ * client left it unset (v0.11.0); an explicit value (manual override in the
+ * editor) is always respected.
+ */
+async function withDerivedInfants(t: z.infer<typeof travelerSchema>): Promise<TravelerSetup> {
+  if (t.infants !== undefined) return { ...t, infants: t.infants };
+  const settings = await getTravelSettings();
+  const infants = (t.childAges ?? []).filter((age) => age <= settings.infantMaxAge).length;
+  return { ...t, infants };
+}
 
 export const createRequestSchema = z.object({
   agencyId: z.string().min(1).max(200),
@@ -240,10 +264,15 @@ export const serviceLineContentSchema = z
     }
   });
 
-/** A day service is normally a structured item; legacy string items (pre-Phase-3 payloads and template JSON) are accepted and normalized. */
+/** A day service is normally a structured item; legacy string items (pre-Phase-3 payloads and template JSON) are accepted and normalized. `quantity` (v0.11.0) is written onto the linked ServiceLine by the day-linked sync below (keyed on product+date+vehicle, default "1"). */
 const dayServiceItemSchema = z.preprocess(
   (value) => (typeof value === "string" ? { label: value } : value),
-  z.object({ serviceProductId: z.string().nullish(), label: shortString, vehicleTypeId: z.string().nullish() }),
+  z.object({
+    serviceProductId: z.string().nullish(),
+    label: shortString,
+    vehicleTypeId: z.string().nullish(),
+    quantity: z.number().int().min(1).nullish(),
+  }),
 );
 
 export const itineraryDayContentSchema = z.object({
@@ -392,6 +421,9 @@ export async function createRequest(actor: WorkflowActor, data: CreateRequestInp
     throw new WorkflowError("AGENCY_INACTIVE", `agency ${agency.name} (${agency.shortCode}) is inactive`, 400);
   }
 
+  const travelers = await withDerivedInfants(parsed.travelers);
+  const filled = { ...parsed, travelers };
+
   // SQLite serializes writes; under burst concurrency the interactive
   // transaction can lose the lock race (P1008/P2028). Retry the whole creation
   // a few times — code generation is atomic per attempt, so retries only
@@ -400,7 +432,12 @@ export async function createRequest(actor: WorkflowActor, data: CreateRequestInp
   let lastErr: unknown;
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     try {
-      return await createRequestOnce(actor, parsed);
+      const created = await createRequestOnce(actor, filled);
+      // After the creation commits: the first active validator-group member
+      // becomes the default assignee so submit() never blocks on a missing
+      // assignment (still re-assignable via the assign dialog).
+      await autoAssignFromValidatorGroup(actor, created.request.id);
+      return created;
     } catch (err: any) {
       lastErr = err;
       const code = err?.code;
@@ -412,7 +449,44 @@ export async function createRequest(actor: WorkflowActor, data: CreateRequestInp
   throw lastErr;
 }
 
-async function createRequestOnce(actor: WorkflowActor, parsed: CreateRequestInput) {
+/**
+ * Auto-assigns the first active member of the validator group (v0.11.0).
+ * Quiet by construction: setValidator only emits a notification when
+ * REPLACING an assignment, and none exists at creation — only an audit entry
+ * is written. Never throws into request creation.
+ */
+async function autoAssignFromValidatorGroup(actor: WorkflowActor, requestId: string) {
+  try {
+    for (const id of await validatorGroupIds()) {
+      const target = await prisma.user.findUnique({ where: { id }, select: { active: true } });
+      if (target?.active) {
+        await setValidator(actor, requestId, { validatorId: id }, "VALIDATOR_ASSIGNED");
+        return;
+      }
+    }
+  } catch (err) {
+    console.error("[Travel] validator-group auto-assign failed:", err);
+  }
+}
+
+/**
+ * The virtual validator group: TravelSettings.validatorUserIds, a JSON array
+ * of user ids (v0.11.0). Malformed content degrades to an empty group.
+ */
+async function validatorGroupIds(): Promise<string[]> {
+  const settings = await getTravelSettings();
+  try {
+    const ids: unknown = JSON.parse(settings.validatorUserIds);
+    return Array.isArray(ids) ? ids.filter((x): x is string => typeof x === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+async function createRequestOnce(
+  actor: WorkflowActor,
+  parsed: Omit<CreateRequestInput, "travelers"> & { travelers: TravelerSetup },
+) {
   // Code generation runs its own atomic counter transaction (see codes.ts) and
   // validates that the agency exists and carries a shortCode.
   const packageCode = await generatePackageCode(parsed.agencyId);
@@ -517,7 +591,7 @@ export async function updateDraft(
   if (parsed.destinations !== undefined) data.destinations = JSON.stringify(parsed.destinations);
   if (parsed.startDate !== undefined) data.startDate = parsed.startDate;
   if (parsed.endDate !== undefined) data.endDate = parsed.endDate;
-  if (parsed.travelers !== undefined) data.travelers = JSON.stringify(parsed.travelers);
+  if (parsed.travelers !== undefined) data.travelers = JSON.stringify(await withDerivedInfants(parsed.travelers));
   if (parsed.roomPrefs !== undefined) data.roomPrefs = parsed.roomPrefs;
   if (parsed.flightDetails !== undefined) data.flightDetails = parsed.flightDetails;
   if (parsed.notes !== undefined) data.notes = parsed.notes;
@@ -691,16 +765,26 @@ export async function saveVersionContent(
       // triple — the same tour in two different vehicles is two lines. Manual
       // lines (no serviceProductId) and scenario-bound lines are never
       // touched here — they belong to the Scenarios tab editor.
-      const desired = new Map<string, { productId: string; date: string; vehicleTypeId: string | null }>();
+      // Quantity (v0.11.0) is day-driven: the day service's quantity is written
+      // onto the line, defaulting to "1". A duplicate (product, date, vehicle)
+      // on the same day collapses — the first occurrence's quantity wins.
+      const desired = new Map<
+        string,
+        { productId: string; date: string; vehicleTypeId: string | null; quantity: string }
+      >();
       for (const day of parsed.itineraryDays) {
         for (const svc of day.services ?? []) {
           if (svc.serviceProductId) {
             const vehicleTypeId = svc.vehicleTypeId ?? null;
-            desired.set(`${svc.serviceProductId}${day.date}${vehicleTypeId ?? ""}`, {
-              productId: svc.serviceProductId,
-              date: day.date,
-              vehicleTypeId,
-            });
+            const key = `${svc.serviceProductId}${day.date}${vehicleTypeId ?? ""}`;
+            if (!desired.has(key)) {
+              desired.set(key, {
+                productId: svc.serviceProductId,
+                date: day.date,
+                vehicleTypeId,
+                quantity: String(svc.quantity ?? 1),
+              });
+            }
           }
         }
       }
@@ -739,25 +823,32 @@ export async function saveVersionContent(
         where: { versionId, serviceProductId: { not: null }, scenarioId: null },
       });
       const unmatched = [...linked];
-      for (const { productId, date, vehicleTypeId } of desiredPairs) {
+      for (const { productId, date, vehicleTypeId, quantity } of desiredPairs) {
         const exactIdx = unmatched.findIndex(
           (l) => l.serviceProductId === productId && l.date === date && (l.vehicleTypeId ?? null) === vehicleTypeId,
         );
         if (exactIdx >= 0) {
-          unmatched.splice(exactIdx, 1);
+          const line = unmatched.splice(exactIdx, 1)[0];
+          // Quantity follows the day service (the ItineraryTab stepper); other
+          // manual edits on the line (rate, override) are untouched.
+          if (line.quantity !== quantity) {
+            await tx.serviceLine.update({ where: { id: line.id }, data: { quantity } });
+            linkedLinesChanged = true;
+          }
           continue;
         }
         // Same product on a different day or with a changed vehicle: retarget
-        // the existing line so any manual edits on it (quantity, typed rate,
-        // override) survive the move. Prefer the line already carrying the
-        // same vehicle so two-vehicle days never steal each other's lines.
+        // the existing line so any manual edits on it (typed rate, override)
+        // survive the move. Prefer the line already carrying the same vehicle
+        // so two-vehicle days never steal each other's lines. Quantity is
+        // day-driven, so it follows the day service here too.
         let moveIdx = unmatched.findIndex(
           (l) => l.serviceProductId === productId && (l.vehicleTypeId ?? null) === vehicleTypeId,
         );
         if (moveIdx < 0) moveIdx = unmatched.findIndex((l) => l.serviceProductId === productId);
         if (moveIdx >= 0) {
           const line = unmatched.splice(moveIdx, 1)[0];
-          await tx.serviceLine.update({ where: { id: line.id }, data: { date, vehicleTypeId } });
+          await tx.serviceLine.update({ where: { id: line.id }, data: { date, vehicleTypeId, quantity } });
           linkedLinesChanged = true;
           continue;
         }
@@ -773,7 +864,7 @@ export async function saveVersionContent(
             // null rate on purpose: resolve.ts prices linked lines from the
             // catalog band covering `date` (per vehicle when one is selected).
             unitRate: null,
-            quantity: "1",
+            quantity,
             capacity: product.capacity ?? null,
             serviceProductId: productId,
             date,
@@ -854,6 +945,9 @@ export async function submit(actor: WorkflowActor, requestId: string) {
   // Company branding is frozen the same way: editing TravelSettings later must
   // not retroactively restyle an issued document.
   const branding = await getCompanyBranding();
+  // Loaded before the transaction: notification fan-out and the INTERNAL
+  // document delivery both include the validator group members.
+  const groupIds = await validatorGroupIds();
 
   const inputsJson = canonicalize(input);
   // The engine version is part of the hashed identity so a rule change
@@ -931,7 +1025,9 @@ export async function submit(actor: WorkflowActor, requestId: string) {
         data: { status: "PENDING_VALIDATION" },
       });
 
-      const recipients = await loadUsersById([request.ownerId, assignment.validatorId]);
+      // The validator group (v0.11.0) is notified alongside owner + assigned
+      // validator; loadUsersById dedupes when memberships overlap.
+      const recipients = await loadUsersById([request.ownerId, assignment.validatorId, ...groupIds]);
       await queueWorkflowEvent(tx, {
         requestId,
         versionId: version.id,
@@ -988,29 +1084,28 @@ export async function submit(actor: WorkflowActor, requestId: string) {
   );
 
   // Outside the transaction: rendering is slow and must never roll back the
-  // submission. Delivery is best-effort (validator's phone + configured
-  // group); WhatsApp being offline must not fail a submit.
+  // submission. Delivery is best-effort (assigned validator + validator group
+  // members, individually); WhatsApp being offline must not fail a submit.
   await renderDocumentPdf(internalDocumentId);
-  await autoSendDocument(internalDocumentId, [assignment.validatorId], actor.id);
+  await autoSendDocument(internalDocumentId, [assignment.validatorId, ...groupIds], actor.id);
 
   return { versionId: version.id, hash, result, quoteCurrency: input.fx.quoteCurrency ?? "USD" };
 }
 
 /**
  * Best-effort WhatsApp delivery of a rendered document to the given users
- * plus the configured validator group. Swallows all errors — document
- * delivery must never fail the workflow action that produced the document.
+ * (callers include validator-group members in the list). Swallows all
+ * errors — document delivery must never fail the workflow action that
+ * produced the document.
  */
 async function autoSendDocument(documentId: string, userIds: (string | null | undefined)[], actorId: string) {
   try {
-    const settings = await getTravelSettings();
-    const recipients = userIds.filter((id): id is string => !!id);
-    const groupJids = settings.validatorGroupJid ? [settings.validatorGroupJid] : [];
-    if (recipients.length === 0 && groupJids.length === 0) return;
+    const recipients = Array.from(new Set(userIds.filter((id): id is string => !!id)));
+    if (recipients.length === 0) return;
     // Skip the audit noise when there is nothing to send (render failed).
     const doc = await prisma.quoteDocument.findUnique({ where: { id: documentId }, select: { filePath: true } });
     if (!doc || doc.filePath === "PENDING" || doc.filePath.startsWith("FAILED:")) return;
-    const results = await sendQuoteDocument(documentId, { userIds: recipients, groupJids }, actorId);
+    const results = await sendQuoteDocument(documentId, { userIds: recipients }, actorId);
     for (const r of results.filter((r) => !r.ok)) {
       console.warn(`[Travel] WhatsApp document delivery to ${r.to} failed: ${r.error}`);
     }
@@ -1374,9 +1469,10 @@ export async function issue(
   await renderDocumentPdf(documentId);
 
   // Best-effort WhatsApp delivery of the client PDF to owner + validator +
-  // configured group; failures are logged, never thrown.
+  // validator group members; failures are logged, never thrown.
   const assignment = await activeAssignment(request.id);
-  await autoSendDocument(documentId, [request.ownerId, assignment?.validatorId], actor.id);
+  const groupIds = await validatorGroupIds();
+  await autoSendDocument(documentId, [request.ownerId, assignment?.validatorId, ...groupIds], actor.id);
 
   const document = await prisma.quoteDocument.findUnique({ where: { id: documentId } });
   return { document: document!, idempotent: false };
@@ -1544,7 +1640,7 @@ async function setValidator(
   return activeAssignment(requestId);
 }
 
-/** ADMIN, or the owner assigning someone else (self-assignment would enable self-approval). */
+/** ADMIN, or the owner assigning anyone (including themselves — v0.10.0). */
 export async function assignValidator(
   actor: WorkflowActor,
   requestId: string,

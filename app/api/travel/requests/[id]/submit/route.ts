@@ -1,6 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import { ROLE_ADVISOR } from "@/lib/travel/contracts";
-import { redactScenarioResult } from "@/lib/travel/redact";
 import { submit } from "@/lib/travel/workflow";
 import { getTravelActor, travelError, unauthorized } from "../../../guard";
 
@@ -10,16 +8,9 @@ export async function POST(_req: NextRequest, { params }: { params: { id: string
 
   try {
     const submitted = await submit(actor, params.id);
-    // Advisors get the binding identity (versionId/hash) and the sell-side
-    // scenario summary — never the full engine result with internal costing.
-    if (actor.role === ROLE_ADVISOR) {
-      return NextResponse.json({
-        versionId: submitted.versionId,
-        hash: submitted.hash,
-        quoteCurrency: submitted.quoteCurrency,
-        scenarios: submitted.result.scenarios.map(redactScenarioResult),
-      });
-    }
+    // submit() asserts owner-or-admin, so an ADVISOR here is the request owner —
+    // and the owner sees full costing (v0.11.0). Redaction would only apply to
+    // a non-owner advisor, who cannot submit.
     return NextResponse.json(submitted);
   } catch (err) {
     return travelError(err, "[API /travel/requests/[id]/submit]");

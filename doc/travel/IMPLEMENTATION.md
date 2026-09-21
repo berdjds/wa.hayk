@@ -216,7 +216,8 @@ A versioned B2B travel package costing and quotation module inside WAControl:
     document in the same transaction (idempotency key `internal-<versionId>`; resubmission
     rebinds the row to the new snapshot and re-renders), renders it post-transaction, and
     best-effort WhatsApps it to the assigned validator's phone plus the configured
-    `TravelSettings.validatorGroupJid` (a `…@g.us` group, editable in Travel → Settings).
+    `TravelSettings.validatorGroupJid` (a `…@g.us` group, editable in Travel → Settings —
+    superseded by the validator user group in v0.11.0, see decision 26).
     `issue()` does the same for the CLIENT document to owner + validator + group. Manual
     delivery: `POST /api/travel/documents/[id]/send` (owner / assigned validator / ADMIN)
     takes `{ userIds, groupJids }` and reports per-recipient success; INTERNAL recipients are
@@ -224,6 +225,48 @@ A versioned B2B travel package costing and quotation module inside WAControl:
     delivery goes through `lib/travel/whatsapp-docs.ts`, never throws into the workflow, and
     writes `QUOTE_DOCUMENT_SENT` audit entries. Advisors never see INTERNAL documents, not
     even as list metadata.
+26. **Virtual validator user group (v0.11.0).** The validator "group" is a list of users, not a
+    WhatsApp group: `TravelSettings.validatorUserIds` (JSON array, validated as active users in
+    the settings route) replaces the `validatorGroupJid` column (kept for data, unused). Submit
+    fans out text notifications to owner + assigned validator + group members (deduped) and the
+    INTERNAL costing sheet is WhatsApped to the assigned validator and each group member
+    individually; issue does the same with the CLIENT PDF. INTERNAL visibility in
+    `whatsapp-docs.ts` treats group membership like an assignment grant. `createRequest`
+    auto-assigns the first active group member as the validator (via `setValidator` semantics,
+    quietly — no notification when nothing is replaced) so submit never blocks on a missing
+    assignment. Decision rights stay with the single assigned validator; group membership only
+    adds visibility.
+27. **Template-driven request creation (v0.11.0).** `TemplateVersion.scenariosJson` (new nullable
+    column) holds default hotel scenarios with RELATIVE dates (`checkInOffset`/`nights` against
+    the request startDate, slim allocations — capacity fields are filled from the linked hotel
+    product at instantiate), and `daysJson` day services upgrade from plain labels to structured
+    `{ serviceProductId, label, quantity?, vehicleTypeId? }` (legacy strings still accepted,
+    normalized like `normalizeDayServices`; schemas in `lib/travel/templates.ts`). Instantiate
+    saves the days (revision 0 → 1), then applies scenariosJson with a second
+    `saveVersionContent({ expectedRevision: 1, scenarios })` that replaces the skeleton
+    "Option A"/TBD stay; the title defaults to the template name when blank. Editing is
+    ADMIN-only via `PUT /api/travel/templates/[id]/versions/[versionId]` (+ the
+    `/travel/templates/[id]` editor page), because template changes silently shape every future
+    instantiate; nights/days recompute from content (`templateLength()`, scenarios
+    authoritative) so the new-request dialog picker — which offers active template versions
+    matching the trip's night count — stays accurate. Imported workbook templates keep
+    label-only days until edited.
+28. **Line-level cost visibility for the request owner (v0.11.0).** `ScenarioResult` gained
+    `lines`: per-service-line net costs `{ ref, label, category, basis, currency, unitRate,
+    quantity, participants, amountSource (CATALOG/MANUAL/OVERRIDE/INCLUDED/MISSING), amountAmd,
+    amountQuote }` plus `serviceProductId`/`date`/`vehicleTypeId` passthrough so editors key
+    lines by (product, date, vehicle); `NightlyCharge` rows carry `amountAmd`/`amountQuote`.
+    Conversions happen once FX is known; FX failure leaves nulls rather than partial truths.
+    Day-service `quantity` is written onto the linked ServiceLine by the day-linked sync
+    (created AND updated/retargeted lines follow the day quantity — manual quantity edits on
+    day-linked lines no longer survive, by design; the itinerary stepper is the single editor).
+    Redaction rule change: the request OWNER sees the full engine result (the initiator prices
+    the request — deliberate operator decision); non-owner advisors remain redacted (and are
+    404'd by the routes anyway, so `redactScenarioResult` is now defense in depth). The
+    Itinerary tab shows Tours and Tickets & degustations columns with quantity steppers and
+    `AMD · quote` line costs from the shared quote preview (first scenario's lines — day-linked
+    lines are shared), and the Scenarios tab shows per-stay nightly rates and stay totals.
+    INTERNAL documents remain advisor-invisible; only the engine JSON visibility changed.
 
 ## Known limitations
 
@@ -235,8 +278,9 @@ A versioned B2B travel package costing and quotation module inside WAControl:
   conflicting/ambiguous rates are staged as NEEDS_REVIEW with evidence anchors.
 - `RateVersion.weekdays`/`minStay` are stored but not yet enforced during resolution
   (weekday departures validated for shared tours only via product metadata display).
-- Template instantiation copies itinerary days; service pricing lines are assembled by the
-  advisor (template service refs are workbook provenance, not catalog ids).
+- Template instantiation copies itinerary days AND, since v0.11.0, catalog-linked day services
+  (priced automatically) plus default hotel scenarios; templates without structured content keep
+  label-only days until edited in the template editor (see decision 27).
 - Batch pricing prices stays + template structure per PAX band; it does not reproduce the
   workbook's broken Mass Calculation totals (intentionally).
 - WhatsApp notifications require the linked session to be `ready`; failures are visible and

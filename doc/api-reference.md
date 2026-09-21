@@ -309,14 +309,14 @@ status (409 for stale snapshot/revision conflicts). Money values are decimal str
 | Route | Methods | Role | Purpose |
 |---|---|---|---|
 | `/api/travel/requests` | GET, POST | travel roles | Search (q/status/owner/dates) and create requests; POST generates the immutable package code `CLIENTSHORT-YYYY-MM-DD-NNNN` |
-| `/api/travel/requests/[id]` | GET, PATCH | travel roles | Detail (versions, scenarios, snapshot summary, assignments, decisions, documents); PATCH edits drafts with `expectedRevision` optimistic lock |
-| `/api/travel/requests/[id]/submit` | POST | owner/ADMIN | DRAFT/CHANGES_REQUESTED → PENDING_VALIDATION; freezes calculation snapshot |
+| `/api/travel/requests/[id]` | GET, PATCH | travel roles | Detail (versions, scenarios, snapshot summary, assignments, decisions, documents); PATCH edits drafts with `expectedRevision` optimistic lock. Since v0.11.0 the request owner sees full scenario results (per-line net costs included); redaction to sell-side fields would only apply to a non-owner advisor, who is 404'd |
+| `/api/travel/requests/[id]/submit` | POST | owner/ADMIN | DRAFT/CHANGES_REQUESTED → PENDING_VALIDATION; freezes calculation snapshot. Response carries the full engine result (the submitter is the owner or ADMIN — v0.11.0) |
 | `/api/travel/requests/[id]/assignments` | GET, POST | travel roles | Validator assignment history / assign validator (any active user is assignable, self-assignment allowed — v0.10.0) |
 | `/api/travel/requests/[id]/reassign` | POST | ADMIN | Reassign validator; former validator loses decision rights |
 | `/api/travel/users/assignable` | GET | travel roles | Active users (`id`, `name`, `email`, `role`, `phone`) for the validator picker |
 | `/api/travel/requests/[id]/versions` | POST | owner/ADMIN | Create a new draft revision (v02, ...) cloning latest content |
-| `/api/travel/versions/[id]/calculate` | POST | travel roles | Engine preview (no snapshot persisted); optional policy override |
-| `/api/travel/versions/[id]/content` | PUT | owner/ADMIN | Replace scenarios/stays/service lines/itinerary (draft statuses only). `itineraryDays[].services` items are `{serviceProductId?, label, vehicleTypeId?}` objects (legacy plain strings accepted and normalized); `serviceLines[]` accept and pass through `serviceProductId`/`date`/`vehicleTypeId` for catalog-linked lines |
+| `/api/travel/versions/[id]/calculate` | POST | travel roles | Engine preview (no snapshot persisted); optional policy override. Since v0.11.0 full results include `scenarios[].lines` (per-line net costs: rate, quantity, amountSource, AMD + quote-currency amounts) and per-night conversions in `nightly[]`; the request owner (and ADMIN/VALIDATOR) sees the full result |
+| `/api/travel/versions/[id]/content` | PUT | owner/ADMIN | Replace scenarios/stays/service lines/itinerary (draft statuses only). `itineraryDays[].services` items are `{serviceProductId?, label, vehicleTypeId?, quantity?}` objects (legacy plain strings accepted and normalized; quantity drives the linked service line's quantity since v0.11.0); `serviceLines[]` accept and pass through `serviceProductId`/`date`/`vehicleTypeId` for catalog-linked lines |
 | `/api/travel/versions/[id]/review` | POST | assigned validator | APPROVE / REQUEST_CHANGES / REJECT bound to `snapshotHash` |
 | `/api/travel/versions/[id]/issue` | POST | owner/ADMIN | Issue approved snapshot → client PDF; idempotent via `idempotencyKey` |
 | `/api/travel/versions/[id]/outcome` | POST | owner/ADMIN | ACCEPTED (with scenario) / DECLINED / EXPIRED |
@@ -327,8 +327,9 @@ status (409 for stale snapshot/revision conflicts). Money values are decimal str
 | `/api/travel/catalog/rates/[id]` | PATCH | ADMIN | Edit amount/validity/priority/minStay/weekdays/notes; status transitions NEEDS_REVIEW → VERIFIED → ARCHIVED (never delete). `vehicleTypeId` identifies the rate bracket and is not editable (archive + recreate) |
 | `/api/travel/catalog/vehicles` | GET | travel roles | Active fleet vehicle types `[{id, name, seats}]` (Sedan / Minivan / Sprinter / Big bus) for vehicle pickers |
 | `/api/travel/catalog/suppliers` | GET | travel roles | Supplier directory for catalog products |
-| `/api/travel/templates`, `/templates/[id]/instantiate` | GET, POST | travel roles | Package templates (ARM/GEO/COM codes); instantiate into a new request |
-| `/api/travel/settings` | GET, PUT | GET: travel roles; PUT: ADMIN | Company timezone, reminders, escalation, policy activation, `validatorGroupJid` (WhatsApp group for document delivery), and company branding (`companyName`, `companyPhone`, `companyEmail`, `companyAddress`, `companyWebsite`, `brandColor` as `#rrggbb` or null) for the quotation PDF |
+| `/api/travel/templates`, `/templates/[id]/instantiate` | GET, POST | travel roles | Package templates (ARM/GEO/COM codes); instantiate into a new request. Since v0.11.0 instantiation populates structured itinerary days (catalog-linked services with quantities) and the template's default scenarios (title defaults to the template name) |
+| `/api/travel/templates/[id]/versions/[versionId]` | PUT | ADMIN | Edit a template version: `{name?, days?, scenarios?}`; `scenarios: null` clears the defaults; `nights`/`days` are recomputed from the day count |
+| `/api/travel/settings` | GET, PUT | GET: travel roles; PUT: ADMIN | Company timezone, reminders, escalation, policy activation, `validatorUserIds` (virtual validator user group: submit notifications, INTERNAL costing sheet, auto-assignment of the first member — v0.11.0; `validatorGroupJid` is deprecated/ignored), `infantMaxAge` (0–12, traveler classification ceiling), and company branding (`companyName`, `companyPhone`, `companyEmail`, `companyAddress`, `companyWebsite`, `brandColor` as `#rrggbb` or null) for the quotation PDF |
 | `/api/travel/policies`, `/api/travel/fx` | GET, POST | ADMIN | Pricing policy versions and effective-dated FX rates |
 | `/api/travel/imports`, `/imports/[id]`, `/imports/[id]/verify` | GET, POST | ADMIN | Workbook import staging batches and row verification |
 | `/api/travel/documents/[id]` | GET | travel roles (INTERNAL: ADMIN/VALIDATOR) | Authorized PDF download |

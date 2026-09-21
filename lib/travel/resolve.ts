@@ -421,6 +421,8 @@ function resolveServiceLine(
     override,
     sourceRef,
     vehicleTypeId: line.vehicleTypeId ?? undefined,
+    serviceProductId: line.serviceProductId ?? undefined,
+    date: line.date ?? undefined,
   };
 }
 

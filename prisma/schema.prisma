@@ -533,7 +533,12 @@ model TemplateVersion {
   versionNo   Int      @default(1)
   nights      Int
   days        Int
-  daysJson    String // ordered [{dayOffset, narrative, overnightCity, services}]
+  daysJson    String // ordered [{dayOffset, narrative, overnightCity, services}] — services are {serviceProductId?, label, quantity?, vehicleTypeId?} (plain strings normalized)
+  // Optional default hotel scenarios (v0.11.0): [{key, label, stays: [{hotelProductId,
+  // city, board, checkInOffset, nights, allocations: [{roomType, rooms, adults,
+  // children, infants, extraBeds}]}]}] — absolute dates derived from the request
+  // startDate at instantiate time.
+  scenariosJson String?
   legacyMarkup String? // imported legacy markup fraction, labelled as markup
   provenance  String? // e.g. "Mass Calculation row 35"
   status      String   @default("ACTIVE") // ACTIVE | ARCHIVED
@@ -563,6 +568,14 @@ model TravelSettings {
   brandColor              String?
   // WhatsApp group (....@g.us) that receives quotation documents on
   // submit/issue alongside the assigned validator.
+  // Deprecated in v0.11.0 in favor of validatorUserIds (a virtual group of
+  // dashboard users); the column is kept for existing data but unused.
   validatorGroupJid       String?
+  // Children at or below this age (at return) count as infants.
+  infantMaxAge            Int     @default(2)
+  // JSON array of user ids: the virtual validator group. Members get submit
+  // notifications + the INTERNAL costing sheet; the first member is
+  // auto-assigned as validator on new requests.
+  validatorUserIds        String  @default("[]")
   updatedAt               DateTime @updatedAt
 }
