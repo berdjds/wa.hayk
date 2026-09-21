@@ -311,7 +311,7 @@ status (409 for stale snapshot/revision conflicts). Money values are decimal str
 | `/api/travel/versions/[id]/review` | POST | assigned validator | APPROVE / REQUEST_CHANGES / REJECT bound to `snapshotHash` |
 | `/api/travel/versions/[id]/issue` | POST | owner/ADMIN | Issue approved snapshot → client PDF; idempotent via `idempotencyKey` |
 | `/api/travel/versions/[id]/outcome` | POST | owner/ADMIN | ACCEPTED (with scenario) / DECLINED / EXPIRED |
-| `/api/travel/agencies`, `/api/travel/agencies/[id]` | GET, POST, PATCH | GET: travel roles; mutations: ADMIN | Client agencies and uppercase short codes |
+| `/api/travel/agencies`, `/api/travel/agencies/[id]` | GET, POST, PATCH | GET: travel roles; mutations: ADMIN | Client agencies and uppercase short codes; GET `?includeInactive=true` (ADMIN only) also lists deactivated ones |
 | `/api/travel/catalog/hotels`, `/catalog/services`, `/catalog/rates` | GET | travel roles | Catalog with rates and verification status |
 | `/api/travel/catalog/rates/[id]` | PATCH | ADMIN | Rate verification: NEEDS_REVIEW → VERIFIED → ARCHIVED (never delete) |
 | `/api/travel/templates`, `/templates/[id]/instantiate` | GET, POST | travel roles | Package templates (ARM/GEO/COM codes); instantiate into a new request |

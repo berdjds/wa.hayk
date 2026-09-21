@@ -23,7 +23,8 @@ Verification: `npx tsc --noEmit`, `npm test` (vitest), `npm run build`.
    minimum profit + currency, rounding increment, quote currency. The imported workbook 14%
    is a **legacy markup**, seeded inactive on purpose.
 2. **Agencies**: create each client agency with its uppercase short code (required before any
-   request can be created for that client; package codes embed it).
+   request can be created for that client; package codes embed it). Managed from
+   Travel → Agencies (ADMIN) — list, create, edit, deactivate/reactivate.
 3. **Users**: give advisors/validators their roles; set `phone` (international format, no `+`)
    for WhatsApp notifications and ensure email addresses are real. Missing destinations are
    flagged in Travel → Notifications, not silently skipped.

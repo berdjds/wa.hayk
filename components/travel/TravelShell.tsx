@@ -20,6 +20,7 @@ const NAV = [
 ];
 
 const ADMIN_NAV = [
+  { key: "agencies", href: "/travel/agencies", label: "Agencies" },
   { key: "catalog", href: "/travel/catalog", label: "Catalog" },
   { key: "settings", href: "/travel/settings", label: "Settings" },
 ];

@@ -12,13 +12,18 @@ const createAgencySchema = z.object({
   contactPhone: z.string().nullish(),
 });
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   const actor = await getTravelActor();
   if (!actor) return unauthorized();
 
+  // Advisors only ever see active agencies; admins may list deactivated ones
+  // from the management page.
+  const includeInactive =
+    actor.role === "ADMIN" && req.nextUrl.searchParams.get("includeInactive") === "true";
+
   try {
     const agencies = await prisma.agency.findMany({
-      where: { active: true },
+      where: includeInactive ? {} : { active: true },
       orderBy: { shortCode: "asc" },
     });
     return NextResponse.json(agencies);
