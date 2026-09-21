@@ -173,3 +173,22 @@ Append this service block to the existing `docker-compose.yml` on the VPS. It fo
 ## Scaling Notes
 
 WAControl maintains the WhatsApp client as an in-memory singleton in `lib/whatsapp.ts`. It is designed for a single server instance. Scaling horizontally would require externalizing the WhatsApp session state and message queue.
+
+## CI/CD (GitHub Actions)
+
+`.github/workflows/ci-cd.yml` runs on every push to `main`:
+
+1. **Test job** — `npm ci` (Chromium download skipped), `prisma generate`, `tsc --noEmit`,
+   `vitest run`, `next build`.
+2. **Deploy job** (main only, serialized via concurrency group) — tars the source, uploads to
+   the VPS (`213.136.80.87`, `/root/productionapp`), builds the Docker image, restarts
+   `wacontrol-app` via docker compose, seeds the admin and the travel catalog (idempotent;
+   demo users skipped in production), then health-checks `https://wa.hayk.ae/login`.
+
+Repository secrets: `VPS_HOST`, `VPS_USER`, `VPS_SSH_KEY` (dedicated CI keypair
+`~/.ssh/wacontrol_ci`, authorized on the VPS — revocable without touching the manual deploy
+key). The manual `deploy.sh` / `deploy-vps.sh` scripts remain available as a fallback.
+
+Optional production env for travel email notifications: `WACONTROL_SMTP_HOST`,
+`WACONTROL_SMTP_PORT`, `WACONTROL_SMTP_USER`, `WACONTROL_SMTP_PASS`, `WACONTROL_SMTP_FROM`
+(in `/root/productionapp/.env` on the VPS).

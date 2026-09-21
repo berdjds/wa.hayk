@@ -26,7 +26,10 @@ jobs:
           node-version: 20
           cache: npm
 
-      - run: npm ci
+      # --ignore-scripts: dependency postinstalls (puppeteer's browser
+      # download) hang on the hosted runners. Prisma's own postinstall is
+      # replaced by the explicit generate below; sharp/bcryptjs need none.
+      - run: npm ci --ignore-scripts
       - run: npx prisma generate
       - run: npx tsc --noEmit
       - name: Unit and integration tests
