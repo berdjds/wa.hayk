@@ -11,9 +11,9 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/components/ui/toast";
-import { COST_CATEGORIES, PRICING_BASES, type EngineOutput, type ScenarioResult } from "@/lib/travel/contracts";
+import { COST_CATEGORIES, PRICING_BASES } from "@/lib/travel/contracts";
 import { nightsBetween, splitStayIntervals } from "@/lib/travel/engine/dates";
-import { StateBadge, apiError, money, parseJson } from "../utils";
+import { StateBadge, apiError, basisLabel, money, parseJson } from "../utils";
 import type { HotelProductView, VehicleTypeView } from "../types";
 import type { DetailContext } from "./RequestDetail";
 
@@ -122,9 +122,6 @@ export default function ScenariosTab({ ctx }: { ctx: DetailContext }) {
   const [vehicles, setVehicles] = useState<VehicleTypeView[]>([]);
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [preview, setPreview] = useState<EngineOutput | null>(null);
-  const [previewCurrency, setPreviewCurrency] = useState<string | null>(null);
-  const [calculating, setCalculating] = useState(false);
   const [splitFor, setSplitFor] = useState<{ sc: number; stay: number } | null>(null);
   const [splitFrom, setSplitFrom] = useState("");
   const [splitTo, setSplitTo] = useState("");
@@ -173,8 +170,6 @@ export default function ScenariosTab({ ctx }: { ctx: DetailContext }) {
       })),
     );
     setDirty(false);
-    setPreview(null);
-    setPreviewCurrency(null);
   }, [version]);
 
   useEffect(() => {
@@ -404,7 +399,6 @@ export default function ScenariosTab({ ctx }: { ctx: DetailContext }) {
   }
 
   // ---- persistence ------------------------------------------------------------
-
   async function handleSave() {
     setSaving(true);
     try {
@@ -446,7 +440,6 @@ export default function ScenariosTab({ ctx }: { ctx: DetailContext }) {
       });
       toast("Scenario content saved", "success");
       setDirty(false);
-      setPreview(null);
       ctx.refresh();
     } catch (err: any) {
       if (err?.response?.status === 409) {
@@ -457,21 +450,6 @@ export default function ScenariosTab({ ctx }: { ctx: DetailContext }) {
       }
     } finally {
       setSaving(false);
-    }
-  }
-
-  async function handleCalculate() {
-    setCalculating(true);
-    try {
-      const res = await axios.post(`/api/travel/versions/${version.id}/calculate`, {});
-      const data = res.data as EngineOutput & { quoteCurrency?: string };
-      setPreview(data);
-      setPreviewCurrency(data.quoteCurrency ?? null);
-      if (dirty) toast("Preview reflects the last saved content — save your edits first", "info");
-    } catch (err) {
-      toast(apiError(err, "Calculation failed"), "error");
-    } finally {
-      setCalculating(false);
     }
   }
 
@@ -501,8 +479,8 @@ export default function ScenariosTab({ ctx }: { ctx: DetailContext }) {
 
   // ---- render -------------------------------------------------------------------
 
-  const resultByRef = new Map<string, ScenarioResult>();
-  if (preview) for (const sc of preview.scenarios) resultByRef.set(sc.ref, sc);
+  // Prices come from the shared summary (ctx.quoteResults) — this tab no longer
+  // runs its own calculation.
   const canSeeInternal = ctx.role === "ADMIN" || ctx.role === "VALIDATOR";
   // ISO dates compare lexicographically; check-out must be strictly after check-in.
   const hasInvalidStayDates = scenarios.some((sc) => sc.stays.some((t) => !(t.checkOut > t.checkIn)));
@@ -515,8 +493,12 @@ export default function ScenariosTab({ ctx }: { ctx: DetailContext }) {
             <div>
               <CardTitle>Scenarios</CardTitle>
               <CardDescription>
-                Stay segments and service lines per option.
+                Stay segments per option; service lines are edited once, below. Prices update in the quote
+                summary after every save.
                 {editable ? "" : " Read-only for this version status."}
+                {editable && dirty && (
+                  <span className="block text-amber-700">Unsaved changes — save to update the prices above.</span>
+                )}
                 {editable && hasInvalidStayDates && (
                   <span className="block text-red-600">
                     Check-out must be after check-in on every stay — fix the dates before saving.
@@ -535,9 +517,6 @@ export default function ScenariosTab({ ctx }: { ctx: DetailContext }) {
                   </Button>
                 </>
               )}
-              <Button variant="outline" size="sm" onClick={handleCalculate} disabled={calculating}>
-                {calculating ? "Calculating..." : "Calculate preview"}
-              </Button>
             </div>
           </div>
         </CardHeader>
@@ -545,12 +524,8 @@ export default function ScenariosTab({ ctx }: { ctx: DetailContext }) {
 
       {scenarios.map((sc, si) => {
         const persisted = version.scenarios.find((p) => p.id === sc.key);
-        const persistedResult = parseJson<ScenarioResult | null>(persisted?.resultJson, null);
-        const previewResult = resultByRef.get(sc.key) ?? null;
-        const result = previewResult ?? persistedResult;
-        // Preview results use the currency the calculate endpoint returned;
-        // persisted results use the version-bound snapshot currency.
-        const currency = previewResult ? (previewCurrency ?? ctx.resultCurrency) : ctx.resultCurrency;
+        const result = ctx.quoteResults?.get(sc.key) ?? null;
+        const currency = ctx.resultCurrency;
         return (
           <Card key={sc.key}>
             <CardHeader>
@@ -623,25 +598,7 @@ export default function ScenariosTab({ ctx }: { ctx: DetailContext }) {
                 )}
               </div>
 
-              {/* service lines for this scenario + shared */}
-              <div>
-                <p className="mb-2 text-xs font-medium text-muted-foreground">
-                  Service lines ({sc.label} + shared)
-                </p>
-                <ServiceLineTable
-                  lines={lines
-                    .map((l, i) => ({ l, i }))
-                    .filter(({ l }) => l.scenarioKey === null || l.scenarioKey === sc.key)}
-                  editable={editable}
-                  scenarioName={scenarioName}
-                  scenarios={scenarios}
-                  vehicles={vehicles}
-                  onChange={updateLine}
-                  onRemove={(li) => mutate(() => setLines((prev) => prev.filter((_, j) => j !== li)))}
-                />
-              </div>
-
-              {/* result summary */}
+              {/* result summary (from the shared quote preview) */}
               {result && (
                 <div className="rounded-md border bg-muted/30 p-3 text-sm">
                   <div className="flex flex-wrap items-center gap-3">
@@ -653,7 +610,6 @@ export default function ScenariosTab({ ctx }: { ctx: DetailContext }) {
                     <span>
                       {result.nights} night{result.nights === 1 ? "" : "s"} / {result.days} days
                     </span>
-                    {previewResult && <Badge variant="outline">preview</Badge>}
                   </div>
                   {/* Internal costing is redacted for advisors — render it only
                       when the result actually carries those fields. */}
@@ -687,29 +643,29 @@ export default function ScenariosTab({ ctx }: { ctx: DetailContext }) {
         );
       })}
 
-      {editable && (
-        <Card>
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-base">All service lines</CardTitle>
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-base">Service lines</CardTitle>
+            {editable && (
               <Button variant="outline" size="sm" onClick={addLine}>
                 Add service line
               </Button>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <ServiceLineTable
-              lines={lines.map((l, i) => ({ l, i }))}
-              editable={editable}
-              scenarioName={scenarioName}
-              scenarios={scenarios}
-              vehicles={vehicles}
-              onChange={updateLine}
-              onRemove={(li) => mutate(() => setLines((prev) => prev.filter((_, j) => j !== li)))}
-            />
-          </CardContent>
-        </Card>
-      )}
+            )}
+          </div>
+        </CardHeader>
+        <CardContent>
+          <ServiceLineTable
+            lines={lines.map((l, i) => ({ l, i }))}
+            editable={editable}
+            scenarioName={scenarioName}
+            scenarios={scenarios}
+            vehicles={vehicles}
+            onChange={updateLine}
+            onRemove={(li) => mutate(() => setLines((prev) => prev.filter((_, j) => j !== li)))}
+          />
+        </CardContent>
+      </Card>
 
       {/* split dialog */}
       <Dialog open={splitFor !== null} onOpenChange={(open) => !open && setSplitFor(null)}>
@@ -976,7 +932,7 @@ function ServiceLineTable({
             <ul className="ml-2 space-y-0.5 text-sm">
               {catLines.map((l) => (
                 <li key={l.key}>
-                  {l.label} — {l.basis.replace(/_/g, " ").toLowerCase()} · {money(l.unitRate, l.currency)} × {l.quantity}
+                  {l.label} — {basisLabel(l.basis, l.capacity ? Number(l.capacity) : null)} · {money(l.unitRate, l.currency)} × {l.quantity}
                   {l.participants != null ? ` · ${l.participants} pax` : ""}
                   {vehicleName(l.vehicleTypeId) ? ` · ${vehicleName(l.vehicleTypeId)}` : ""}
                   {l.includedElsewhere ? " · included elsewhere" : ""}
@@ -1007,7 +963,30 @@ function ServiceLineTable({
   }
   return (
     <div className="space-y-2">
-      {lines.map(({ l, i }) => (
+      {lines.map(({ l, i }) =>
+        // Day-linked lines are managed on the Itinerary tab — editing them
+        // here would fight the itinerary sync on every save, so they render
+        // as compact read-only rows.
+        l.serviceProductId ? (
+          <div key={l.key} className="flex flex-wrap items-center gap-2 rounded border bg-muted/20 px-3 py-2 text-sm">
+            <span className="font-medium">{l.label}</span>
+            <Badge variant="outline" title={l.date ? `Itinerary day ${l.date}` : "Itinerary-linked"}>
+              itinerary{l.date ? ` · ${l.date}` : ""}
+            </Badge>
+            <span className="text-xs text-muted-foreground">
+              {basisLabel(l.basis, l.capacity ? Number(l.capacity) : null)}
+              {l.quantity !== "1" ? ` × ${l.quantity}` : ""}
+              {vehicleName(l.vehicleTypeId) ? ` · ${vehicleName(l.vehicleTypeId)}` : ""}
+              {l.scenarioKey ? ` · ${scenarioName(l.scenarioKey)}` : ""}
+            </span>
+            {l.overrideRate && (
+              <Badge variant="outline" className="border-amber-300 bg-amber-50 text-amber-800">
+                override
+              </Badge>
+            )}
+            <span className="ml-auto text-xs text-muted-foreground">Managed on the Itinerary tab</span>
+          </div>
+        ) : (
         <div key={l.key} className="grid items-end gap-2 rounded border bg-muted/20 p-2 lg:grid-cols-[1.4fr_1fr_1fr_70px_90px_70px_70px_70px_110px_auto]">
           <div>
             <span className="text-xs text-muted-foreground">
@@ -1018,13 +997,7 @@ function ServiceLineTable({
                 </Badge>
               )}
             </span>
-            <Input value={l.label} onChange={(e) => onChange(i, { label: e.target.value })} disabled={!!l.serviceProductId} />
-            {l.serviceProductId && (
-              <p className="mt-1 text-xs text-muted-foreground">
-                From itinerary{l.date ? ` · ${l.date}` : ""} — manage on the Itinerary tab; catalog-priced when no rate
-                is typed here.
-              </p>
-            )}
+            <Input value={l.label} onChange={(e) => onChange(i, { label: e.target.value })} />
           </div>
           <div>
             <span className="text-xs text-muted-foreground">Category</span>
@@ -1134,7 +1107,8 @@ function ServiceLineTable({
             </Button>
           </div>
         </div>
-      ))}
+        ),
+      )}
       <p className="text-xs text-muted-foreground">
         {lines.filter(({ l }) => l.scenarioKey === null).length} shared · grouped per scenario:{" "}
         {Array.from(new Set(lines.map(({ l }) => scenarioName(l.scenarioKey)))).join(", ")}

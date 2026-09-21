@@ -17,8 +17,9 @@ import OverviewTab from "./OverviewTab";
 import ItineraryTab from "./ItineraryTab";
 import ScenariosTab from "./ScenariosTab";
 import ReviewTab from "./ReviewTab";
-import DocumentsTab from "./DocumentsTab";
 import HistoryTab from "./HistoryTab";
+import QuoteSummaryBar from "./QuoteSummaryBar";
+import { useQuotePreview } from "./useQuotePreview";
 
 interface RequestDetailProps {
   requestId: string;
@@ -42,6 +43,11 @@ export interface DetailContext {
   canEditVersion: boolean;
   /** owner/ADMIN and the request itself accepts field edits. */
   canEditRequest: boolean;
+  /** Scenario id → result: live preview for editable versions, persisted snapshot otherwise. */
+  quoteResults: Map<string, ScenarioResult> | null;
+  quoteLoading: boolean;
+  quoteError: string | null;
+  recalculateQuote: () => void;
   refresh: () => void;
 }
 
@@ -85,6 +91,32 @@ export default function RequestDetail({ requestId, role, userId }: RequestDetail
     [detail, selectedVersionId],
   );
 
+  // Computed before the early return so the preview hook can run
+  // unconditionally (hooks cannot sit behind the loading guard).
+  const editableVersion =
+    !!detail &&
+    !!version &&
+    (detail.ownerId === userId || role === "ADMIN") &&
+    ["DRAFT", "CHANGES_REQUESTED"].includes(version.status);
+  const preview = useQuotePreview(
+    version?.id ?? "",
+    detail?.revision ?? 0,
+    editableVersion && (version?.scenarios.length ?? 0) > 0,
+  );
+  // Non-editable versions (and the first moments of an editable one) read the
+  // snapshot persisted at submit — the approved price must not move.
+  const persistedResults = useMemo(() => {
+    if (!version) return null;
+    const map = new Map<string, ScenarioResult>();
+    for (const sc of version.scenarios) {
+      const r = parseJson<ScenarioResult | null>(sc.resultJson, null);
+      if (r) map.set(sc.id, r);
+    }
+    return map;
+  }, [version]);
+  const quoteResults =
+    editableVersion && preview.results.size > 0 ? preview.results : persistedResults;
+
   if (!detail || !version) {
     return (
       <TravelShell title="Travel request" role={role} current="requests">
@@ -97,8 +129,7 @@ export default function RequestDetail({ requestId, role, userId }: RequestDetail
   const isAdmin = role === "ADMIN";
   const latest = detail.versions[detail.versions.length - 1];
   const isLatestVersion = version.id === latest.id;
-  const canEditVersion =
-    (isOwner || isAdmin) && ["DRAFT", "CHANGES_REQUESTED"].includes(version.status);
+  const canEditVersion = editableVersion;
   const canEditRequest =
     (isOwner || isAdmin) && ["DRAFT", "CHANGES_REQUESTED"].includes(detail.status) && isLatestVersion;
   const canRevise =
@@ -117,6 +148,10 @@ export default function RequestDetail({ requestId, role, userId }: RequestDetail
     resultCurrency: version.quoteCurrency ?? quoteCurrency,
     canEditVersion,
     canEditRequest,
+    quoteResults,
+    quoteLoading: editableVersion ? preview.loading : false,
+    quoteError: editableVersion ? preview.error : null,
+    recalculateQuote: preview.recalculate,
     refresh: load,
   };
 
@@ -212,13 +247,14 @@ export default function RequestDetail({ requestId, role, userId }: RequestDetail
         )}
       </Card>
 
+      <QuoteSummaryBar ctx={ctx} />
+
       <Tabs defaultValue="overview" className="space-y-4">
         <TabsList className="flex-wrap">
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="itinerary">Itinerary</TabsTrigger>
           <TabsTrigger value="scenarios">Scenarios</TabsTrigger>
           <TabsTrigger value="review">Review</TabsTrigger>
-          <TabsTrigger value="documents">Documents</TabsTrigger>
           <TabsTrigger value="history">History</TabsTrigger>
         </TabsList>
         <TabsContent value="overview">
@@ -232,9 +268,6 @@ export default function RequestDetail({ requestId, role, userId }: RequestDetail
         </TabsContent>
         <TabsContent value="review">
           <ReviewTab ctx={ctx} />
-        </TabsContent>
-        <TabsContent value="documents">
-          <DocumentsTab ctx={ctx} />
         </TabsContent>
         <TabsContent value="history">
           <HistoryTab ctx={ctx} />

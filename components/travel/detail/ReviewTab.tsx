@@ -12,6 +12,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { useToast } from "@/components/ui/toast";
 import { versionLabel, type EngineIssue, type ScenarioResult } from "@/lib/travel/contracts";
 import { StateBadge, StatusBadge, apiError, formatDateTime, money, parseJson, shortHash } from "../utils";
+import DocumentsTab from "./DocumentsTab";
 import type { TravelUser } from "../types";
 import type { DetailContext } from "./RequestDetail";
 
@@ -27,6 +28,14 @@ export default function ReviewTab({ ctx }: { ctx: DetailContext }) {
   const [reviewReason, setReviewReason] = useState("");
   const [outcomeAction, setOutcomeAction] = useState<"ACCEPTED" | "DECLINED" | "EXPIRED" | null>(null);
   const [outcomeScenarioId, setOutcomeScenarioId] = useState("");
+  const [submitOpen, setSubmitOpen] = useState(false);
+
+  // Opening the submit dialog re-runs the preview so the amounts the advisor
+  // confirms are the latest saved content, not a stale earlier calculation.
+  const recalculateQuote = ctx.recalculateQuote;
+  useEffect(() => {
+    if (submitOpen) recalculateQuote();
+  }, [submitOpen, recalculateQuote]);
 
   const isAssignedValidator = detail.currentValidatorId === ctx.userId;
   const canSubmit =
@@ -60,10 +69,12 @@ export default function ReviewTab({ ctx }: { ctx: DetailContext }) {
       try {
         const res = await axios.post(`/api/travel/requests/${detail.id}/submit`);
         toast(`Submitted — snapshot ${shortHash(res.data.hash)}`, "success");
+        setSubmitOpen(false);
         ctx.refresh();
       } catch (err: any) {
         if (err?.response?.data?.code === "VALIDATOR_NOT_ASSIGNED") {
           toast("Assign a validator before submitting", "error");
+          setSubmitOpen(false);
           setAssignOpen(true);
         } else {
           toast(apiError(err, "Submit failed"), "error");
@@ -105,7 +116,7 @@ export default function ReviewTab({ ctx }: { ctx: DetailContext }) {
         });
         const renderState: string | undefined = res.data.document?.renderState;
         if (renderState === "FAILED") {
-          toast("Issued, but PDF generation failed — see Documents tab", "error");
+          toast("Issued, but PDF generation failed — see the Documents section below", "error");
         } else if (res.data.idempotent) {
           toast("Already issued — showing existing document", "success");
         } else {
@@ -223,7 +234,7 @@ export default function ReviewTab({ ctx }: { ctx: DetailContext }) {
             </Button>
           )}
           {canSubmit && (
-            <Button onClick={handleSubmit} disabled={busy}>
+            <Button onClick={() => setSubmitOpen(true)} disabled={busy}>
               {version.status === "CHANGES_REQUESTED" ? "Resubmit for validation" : "Submit for validation"}
             </Button>
           )}
@@ -288,6 +299,79 @@ export default function ReviewTab({ ctx }: { ctx: DetailContext }) {
           ctx.refresh();
         }}
       />
+
+      {/* submit confirmation: the advisor sees the exact amounts first. The
+          server allows submitting with blockers (approval is what they block),
+          so they are shown as a warning, not a hard stop. */}
+      <Dialog open={submitOpen} onOpenChange={setSubmitOpen}>
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-xl">
+          <DialogHeader>
+            <DialogTitle>
+              {version.status === "CHANGES_REQUESTED" ? "Resubmit for validation" : "Submit for validation"}
+            </DialogTitle>
+            <DialogDescription>
+              Confirm these amounts. Submitting binds a snapshot of the current content; any later edit requires a
+              new review round.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            {version.scenarios.map((sc) => {
+              const r = ctx.quoteResults?.get(sc.id) ?? null;
+              const blockers = r ? r.issues.filter((i) => i.severity === "BLOCKER") : [];
+              return (
+                <div key={sc.id} className="rounded-md border p-3 text-sm">
+                  <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+                    <span className="font-medium">{sc.label}</span>
+                    {r ? (
+                      <>
+                        <StateBadge value={r.valid ? "READY" : "FAILED"} />
+                        <span>
+                          Sell: <strong>{money(r.sell, ctx.resultCurrency)}</strong>
+                        </span>
+                        {r.perPayingPerson && (
+                          <span className="text-muted-foreground">
+                            per paying person: {money(r.perPayingPerson, ctx.resultCurrency)}
+                          </span>
+                        )}
+                      </>
+                    ) : (
+                      <span className="text-muted-foreground">
+                        {ctx.quoteLoading ? "Calculating…" : "not calculated"}
+                      </span>
+                    )}
+                  </div>
+                  {blockers.length > 0 && (
+                    <ul className="mt-2 space-y-1 border-t pt-2">
+                      {blockers.map((iss, i) => (
+                        <li key={i} className="flex items-start gap-2 text-xs text-red-600">
+                          <span className="font-mono">{iss.code}</span>
+                          <span>{iss.message}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              );
+            })}
+            {version.scenarios.some(
+              (sc) => (ctx.quoteResults?.get(sc.id)?.issues ?? []).some((i) => i.severity === "BLOCKER"),
+            ) && (
+              <p className="text-xs text-amber-700">
+                Blockers do not prevent submitting, but the validator cannot approve until they are resolved.
+              </p>
+            )}
+            {ctx.quoteError && <p className="text-xs text-red-600">{ctx.quoteError} — amounts may be stale.</p>}
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setSubmitOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleSubmit} disabled={busy || ctx.quoteLoading}>
+              {busy ? "Submitting..." : "Confirm & submit"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* review decision dialog */}
       <Dialog open={reviewAction !== null} onOpenChange={(open) => !open && setReviewAction(null)}>
@@ -375,6 +459,10 @@ export default function ReviewTab({ ctx }: { ctx: DetailContext }) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Documents live here since the tabs were merged — issuance and its
+          artifacts belong to the same review surface. */}
+      <DocumentsTab ctx={ctx} />
     </div>
   );
 }

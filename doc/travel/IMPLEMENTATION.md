@@ -166,6 +166,22 @@ A versioned B2B travel package costing and quotation module inside WAControl:
     keeps `childAges` in sync with `children` (pad with 7 / truncate) and auto-derives
     `paying = adults + children` only while paying still equals the previous sum, so a manual
     override is never clobbered.
+22. **Live quote preview via revision-triggered calculate.** The request detail page renders a
+    "Quote summary" bar between the header and the tabs so the advisor always sees calculated
+    amounts before submitting. For editable versions (DRAFT/CHANGES_REQUESTED) a shared
+    `useQuotePreview` hook POSTs the existing (unpersisted, advisor-redacted) calculate
+    endpoint and re-runs whenever `detail.revision` changes — the server bumps the revision on
+    every content save, making it a perfect "content changed" signal; a run counter discards
+    stale responses, and errors keep the last known prices. Non-editable versions read the
+    persisted per-scenario snapshot (`Scenario.resultJson`) — no API call, so an approved price
+    never moves. Submit now opens a confirmation dialog listing sell / per-paying-person /
+    blockers per scenario; blockers are a warning, not a hard stop, because `submit()`
+    deliberately allows submitting with issues (approval is what they block). The Scenarios
+    tab's own preview machinery, per-scenario service-line tables and the duplicate "All
+    service lines" card are gone: one always-rendered "Service lines" card, with day-linked
+    (itinerary-managed) lines as compact read-only rows. The Documents tab merged into Review
+    (5 tabs); advisor redaction is unchanged — the preview hook consumes the same redacted
+    payload the old Calculate preview button did.
 
 ## Known limitations
 

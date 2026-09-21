@@ -50,20 +50,27 @@ Verification: `npx tsc --noEmit`, `npm test` (vitest), `npm run build`.
    dropdown per child. The child ages feed room-allocation validation; the paying count
    auto-follows adults + children until you override it manually. The same editor appears when
    editing a request on the Overview tab.
-2. Build the itinerary and scenarios on the request page. On the Itinerary tab, generate the
-   day-by-day plan from the travel dates, then pick services per day from the catalog (they are
-   priced automatically from verified catalog rates) or add free-text entries; overnight cities
-   auto-fill from the scenario's hotel stays — "Sync cities from stays" reapplies that after
-   stay edits. On the Scenarios tab, adding a hotel with its own dates splits the existing stay
-   (e.g. inserting 3–5 Oct into 1–6 Oct yields 2+2+1 nights — previewed before saving). Use
-   "Calculate preview" to see per-scenario costs, issues and selling totals; alternative
-   scenarios are never summed together.
-3. Assign a validator (or ask an admin) and Submit. The advisor cannot validate own work.
+2. Build the itinerary and scenarios on the request page. The **quote summary bar** under the
+   page header always shows the current sell price and per-paying-person price per scenario —
+   it recalculates automatically after every save (use its Recalculate button to refresh on
+   demand). On the Itinerary tab, generate the day-by-day plan from the travel dates, then pick
+   services per day from the catalog (they are priced automatically from verified catalog rates)
+   or add free-text entries; overnight cities auto-fill from the scenario's hotel stays — "Sync
+   cities from stays" reapplies that after stay edits. On the Scenarios tab, adding a hotel with
+   its own dates splits the existing stay (e.g. inserting 3–5 Oct into 1–6 Oct yields 2+2+1
+   nights — previewed before saving). Service lines are edited once, in the "Service lines" card
+   at the bottom of the Scenarios tab (day-linked catalog services appear as read-only rows —
+   manage them on the Itinerary tab); alternative scenarios are never summed together.
+3. Assign a validator (or ask an admin), then Submit. A confirmation dialog lists the exact sell
+   amounts and any blockers per scenario before the snapshot is bound — blockers do not stop the
+   submit, but the validator cannot approve until they are resolved. The advisor cannot validate
+   own work.
 4. Validator: Travel → Review queue → open the package → Approve / Request changes / Reject
    (reason required). Approvals bind to the exact snapshot; any later edit needs a new
    version and a new review.
 5. Advisor: after APPROVED, Issue → generates the client PDF (immutable, hash-recorded).
-   Record the outcome (Accepted with the chosen scenario / Declined / Expired).
+   Record the outcome (Accepted with the chosen scenario / Declined / Expired). Generated
+   documents live at the bottom of the Review tab (no separate Documents tab).
 6. Both sides receive email + WhatsApp notifications at each step; delivery problems are
    visible under Travel → Notifications (admin can retry or reprocess the queue).
 
