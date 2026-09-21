@@ -858,6 +858,17 @@ function HotelDialog({
 // Tabs
 // ---------------------------------------------------------------------------
 
+/** Compact summary of a hotel's rate validity bands, Excel "Remark" style. */
+function validitySummary(rates: RateView[]): string {
+  const bands = new Set<string>();
+  for (const r of rates) {
+    bands.add(`${r.validFrom ?? "…"} → ${r.validTo ?? "…"}`);
+  }
+  if (bands.size === 0) return "No rates";
+  const list = Array.from(bands);
+  return list.length <= 2 ? list.join(" · ") : `${list[0]} · ${list[1]} +${list.length - 2}`;
+}
+
 function HotelsTab() {
   const { toast } = useToast();
   const [hotels, setHotels] = useState<HotelProductView[]>([]);
@@ -906,9 +917,11 @@ function HotelsTab() {
               <tr>
                 <th className="pb-2 font-medium">Name</th>
                 <th className="pb-2 font-medium">City</th>
+                <th className="pb-2 font-medium">Country</th>
                 <th className="pb-2 font-medium">Kind</th>
                 <th className="pb-2 font-medium">Capacity</th>
                 <th className="pb-2 font-medium">Boards</th>
+                <th className="pb-2 font-medium">Price validity</th>
                 <th className="pb-2 font-medium">Supplier</th>
                 <th className="pb-2 font-medium">Status</th>
                 <th className="pb-2 font-medium">Actions</th>
@@ -923,12 +936,14 @@ function HotelsTab() {
                       {h.stars ? <span className="text-muted-foreground"> ({h.stars}★)</span> : null}
                     </td>
                     <td className="py-2">{h.city ?? "—"}</td>
+                    <td className="py-2">{h.country}</td>
                     <td className="py-2">{h.kind}</td>
                     <td className="py-2">
                       {h.capacityAdults}A/{h.capacityChildren}C (max {h.capacityTotal})
                       {h.extraBedAllowed ? " +EB" : ""}
                     </td>
                     <td className="py-2">{parseJson<string[]>(h.boardOptions, []).join(", ") || "—"}</td>
+                    <td className="py-2 text-xs whitespace-nowrap">{validitySummary(h.rates)}</td>
                     <td className="py-2">{h.supplier?.name ?? "—"}</td>
                     <td className="py-2 text-xs">{h.active ? "Active" : "Inactive"}</td>
                     <td className="py-2">
@@ -948,7 +963,7 @@ function HotelsTab() {
                   </tr>
                   {expandedId === h.id && (
                     <tr>
-                      <td colSpan={8} className="bg-muted/30 px-4 py-3">
+                      <td colSpan={10} className="bg-muted/30 px-4 py-3">
                         <div className="mb-2 flex items-center justify-between">
                           <p className="text-xs font-medium text-muted-foreground">
                             Price brackets — {h.name}
@@ -973,7 +988,7 @@ function HotelsTab() {
               ))}
               {hotels.length === 0 && (
                 <tr>
-                  <td colSpan={8} className="py-6 text-center text-muted-foreground">
+                  <td colSpan={10} className="py-6 text-center text-muted-foreground">
                     No hotels found.
                   </td>
                 </tr>

@@ -38,7 +38,7 @@ export async function GET(req: NextRequest) {
     const hotels = await prisma.hotelProduct.findMany({
       where: {
         ...(includeInactive ? {} : { active: true }),
-        ...(q ? { name: { contains: q } } : {}),
+        ...(q ? { OR: [{ name: { contains: q } }, { city: { contains: q } }] } : {}),
       },
       orderBy: { name: "asc" },
       include: {

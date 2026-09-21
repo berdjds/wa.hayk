@@ -808,8 +808,9 @@ function StayEditor({
               <SelectContent>
                 {hotels.map((h) => (
                   <SelectItem key={h.id} value={h.id}>
+                    {h.stars ? `${h.stars}★ ` : ""}
                     {h.name}
-                    {h.city ? ` (${h.city})` : ""}
+                    {h.city ? ` (${h.city}, ${h.country})` : ` (${h.country})`}
                   </SelectItem>
                 ))}
               </SelectContent>
