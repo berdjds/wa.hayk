@@ -15,6 +15,12 @@ services:
       - ADMIN_EMAIL=${WACONTROL_ADMIN_EMAIL}
       - ADMIN_PASSWORD=${WACONTROL_ADMIN_PASSWORD}
       - PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
+      # Travel module email notifications (optional; unset = deliveries flagged FAILED)
+      - SMTP_HOST=${WACONTROL_SMTP_HOST:-}
+      - SMTP_PORT=${WACONTROL_SMTP_PORT:-}
+      - SMTP_USER=${WACONTROL_SMTP_USER:-}
+      - SMTP_PASS=${WACONTROL_SMTP_PASS:-}
+      - SMTP_FROM=${WACONTROL_SMTP_FROM:-}
     volumes:
       - ./wacontrol-data:/app/data
       - ./wacontrol-uploads:/app/public/uploads

@@ -37,6 +37,17 @@ The app already runs Chromium with `--no-sandbox`, which helps in containerized 
 - If the QR code expires before scanning, click **Reconnect** to generate a new one.
 - Check that the server clock is accurate.
 
+## WhatsApp state is stuck at `authenticated` or `initializing`
+
+- Check the server logs. The client logs `qr`, `authenticated`, and `disconnected` events,
+  and a warning is logged if the client stays in `authenticated` for more than 120 seconds.
+- The session is most likely stale or unpaired. In the admin panel, click **Reconnect**
+  (this destroys the stuck client and starts a fresh one). If no QR code appears, click
+  **Logout** and then **Reconnect**, and scan the QR code with your phone.
+- If the state never reaches `ready` even after a fresh QR scan, this may be the upstream
+  `whatsapp-web.js` ready-event stall (see `doc/current-issues.md`). Try restarting the
+  server, or consider upgrading `whatsapp-web.js`.
+
 ## Messages are not received
 
 - Verify the WhatsApp state is `ready` on the admin dashboard.

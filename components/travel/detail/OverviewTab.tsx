@@ -1,0 +1,225 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import axios from "axios";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { useToast } from "@/components/ui/toast";
+import { apiError, formatDateTime, parseJson } from "../utils";
+import type { TravelerSetupView } from "../types";
+import type { DetailContext } from "./RequestDetail";
+
+const TRAVELER_KEYS = ["adults", "children", "infants", "paying", "complimentary", "leaders", "staff"] as const;
+
+export default function OverviewTab({ ctx }: { ctx: DetailContext }) {
+  const { toast } = useToast();
+  const { detail } = ctx;
+  const [editing, setEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [form, setForm] = useState({
+    title: detail.title,
+    destinations: parseJson<string[]>(detail.destinations, []).join(", "),
+    startDate: detail.startDate,
+    endDate: detail.endDate,
+    agencyRef: detail.agencyRef ?? "",
+    roomPrefs: detail.roomPrefs ?? "",
+    flightDetails: detail.flightDetails ?? "",
+    notes: detail.notes ?? "",
+    travelers: parseJson<TravelerSetupView>(detail.travelers, {
+      adults: 0,
+      children: 0,
+      infants: 0,
+      paying: 0,
+      complimentary: 0,
+      leaders: 0,
+      staff: 0,
+    }),
+  });
+
+  // Re-hydrate the form when the detail reloads underneath us.
+  useEffect(() => {
+    if (!editing) {
+      setForm({
+        title: detail.title,
+        destinations: parseJson<string[]>(detail.destinations, []).join(", "),
+        startDate: detail.startDate,
+        endDate: detail.endDate,
+        agencyRef: detail.agencyRef ?? "",
+        roomPrefs: detail.roomPrefs ?? "",
+        flightDetails: detail.flightDetails ?? "",
+        notes: detail.notes ?? "",
+        travelers: parseJson(detail.travelers, form.travelers),
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [detail]);
+
+  async function handleSave(e: React.FormEvent) {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      await axios.patch(`/api/travel/requests/${detail.id}`, {
+        expectedRevision: detail.revision,
+        patch: {
+          title: form.title,
+          destinations: form.destinations
+            .split(",")
+            .map((d) => d.trim())
+            .filter(Boolean),
+          startDate: form.startDate,
+          endDate: form.endDate,
+          agencyRef: form.agencyRef || null,
+          roomPrefs: form.roomPrefs || null,
+          flightDetails: form.flightDetails || null,
+          notes: form.notes || null,
+          travelers: form.travelers,
+        },
+      });
+      toast("Request updated", "success");
+      setEditing(false);
+      ctx.refresh();
+    } catch (err: any) {
+      if (err?.response?.status === 409) {
+        toast("This request was edited elsewhere — refreshed the latest data. Review and save again.", "error");
+        setEditing(false);
+        ctx.refresh();
+      } else {
+        toast(apiError(err, "Failed to update request"), "error");
+      }
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const travelers = parseJson<TravelerSetupView>(detail.travelers, form.travelers);
+  const destinations = parseJson<string[]>(detail.destinations, []);
+  const invalidDates = !(form.endDate > form.startDate);
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center justify-between">
+          <div>
+            <CardTitle>Request details</CardTitle>
+            <CardDescription>
+              Revision {detail.revision} · created {formatDateTime(detail.createdAt)}
+            </CardDescription>
+          </div>
+          {ctx.canEditRequest && !editing && (
+            <Button variant="outline" size="sm" onClick={() => setEditing(true)}>
+              Edit
+            </Button>
+          )}
+        </div>
+      </CardHeader>
+      <CardContent>
+        {!editing ? (
+          <dl className="grid gap-x-8 gap-y-3 text-sm sm:grid-cols-2">
+            <Field label="Title" value={detail.title} />
+            <Field label="Agency ref" value={detail.agencyRef} />
+            <Field label="Destinations" value={destinations.length ? destinations.join(", ") : null} />
+            <Field label="Dates" value={`${detail.startDate} → ${detail.endDate}`} />
+            <Field
+              label="Travelers"
+              value={TRAVELER_KEYS.map((k) => `${k}: ${travelers[k]}`).join(" · ")}
+            />
+            <Field label="Room preferences" value={detail.roomPrefs} />
+            <Field label="Flight details" value={detail.flightDetails} />
+            <Field label="Notes" value={detail.notes} />
+            <Field label="Agency contact" value={
+              [detail.agency.contactName, detail.agency.contactEmail, detail.agency.contactPhone]
+                .filter(Boolean)
+                .join(" · ") || null
+            } />
+          </dl>
+        ) : (
+          <form onSubmit={handleSave} className="space-y-4">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div>
+                <Label>Title</Label>
+                <Input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} required />
+              </div>
+              <div>
+                <Label>Agency ref</Label>
+                <Input value={form.agencyRef} onChange={(e) => setForm({ ...form, agencyRef: e.target.value })} />
+              </div>
+              <div>
+                <Label>Destinations (comma separated)</Label>
+                <Input value={form.destinations} onChange={(e) => setForm({ ...form, destinations: e.target.value })} />
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <Label>Start</Label>
+                  <Input type="date" value={form.startDate} onChange={(e) => setForm({ ...form, startDate: e.target.value })} required />
+                </div>
+                <div>
+                  <Label>End</Label>
+                  <Input type="date" value={form.endDate} onChange={(e) => setForm({ ...form, endDate: e.target.value })} required />
+                </div>
+              </div>
+            </div>
+            {invalidDates && <p className="text-xs text-red-600">End date must be after the start date.</p>}
+            <div>
+              <Label>Travelers</Label>
+              <div className="grid grid-cols-3 gap-2 sm:grid-cols-7">
+                {TRAVELER_KEYS.map((k) => (
+                  <div key={k}>
+                    <span className="text-xs text-muted-foreground">{k}</span>
+                    <Input
+                      type="number"
+                      min={0}
+                      value={form.travelers[k]}
+                      onChange={(e) =>
+                        setForm({
+                          ...form,
+                          travelers: {
+                            ...form.travelers,
+                            [k]: Math.max(0, Number.parseInt(e.target.value || "0", 10) || 0),
+                          },
+                        })
+                      }
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div>
+                <Label>Room preferences</Label>
+                <Textarea rows={2} value={form.roomPrefs} onChange={(e) => setForm({ ...form, roomPrefs: e.target.value })} />
+              </div>
+              <div>
+                <Label>Flight details</Label>
+                <Textarea rows={2} value={form.flightDetails} onChange={(e) => setForm({ ...form, flightDetails: e.target.value })} />
+              </div>
+            </div>
+            <div>
+              <Label>Notes</Label>
+              <Textarea rows={2} value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
+            </div>
+            <div className="flex gap-2">
+              <Button type="submit" disabled={saving || invalidDates}>
+                {saving ? "Saving..." : "Save changes"}
+              </Button>
+              <Button type="button" variant="outline" onClick={() => setEditing(false)}>
+                Cancel
+              </Button>
+            </div>
+          </form>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function Field({ label, value }: { label: string; value: string | null }) {
+  return (
+    <div>
+      <dt className="text-xs font-medium text-muted-foreground">{label}</dt>
+      <dd className="whitespace-pre-wrap">{value || "—"}</dd>
+    </div>
+  );
+}

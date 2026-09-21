@@ -10,6 +10,12 @@ dev.db
 public/uploads
 Dockerfile
 .dockerignore
-doc
+
+# Exclude all of doc/ except the calculator HTML used by the app
+doc/*
+!doc/temp/
+doc/temp/*
+!doc/temp/Hello_Armenia_Package_Calculator_2026_v3.html
+
 *.md
 *.tar.gz

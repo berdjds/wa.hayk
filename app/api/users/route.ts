@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { writeAuditLog } from "@/lib/audit";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
 
@@ -63,9 +64,7 @@ export async function POST(req: NextRequest) {
       select: { id: true, email: true, name: true, role: true, active: true, createdAt: true },
     });
 
-    await prisma.log.create({
-      data: { action: "USER_CREATED", userId: session.user.id, details: `Created ${user.email}` },
-    });
+    await writeAuditLog("USER_CREATED", session.user.id, `Created ${user.email}`);
 
     return NextResponse.json(user);
   } catch (err: any) {
@@ -96,9 +95,7 @@ export async function PATCH(req: NextRequest) {
       select: { id: true, email: true, name: true, role: true, active: true, createdAt: true },
     });
 
-    await prisma.log.create({
-      data: { action: "USER_UPDATED", userId: session.user.id, details: `Updated ${user.email}` },
-    });
+    await writeAuditLog("USER_UPDATED", session.user.id, `Updated ${user.email}`);
 
     return NextResponse.json(user);
   } catch (err: any) {
@@ -125,9 +122,7 @@ export async function DELETE(req: NextRequest) {
 
   try {
     await prisma.user.delete({ where: { id } });
-    await prisma.log.create({
-      data: { action: "USER_DELETED", userId: session.user.id, details: `Deleted user ${id}` },
-    });
+    await writeAuditLog("USER_DELETED", session.user.id, `Deleted user ${id}`);
     return NextResponse.json({ ok: true });
   } catch (err: any) {
     return NextResponse.json({ error: err?.message || "Failed to delete user" }, { status: 500 });

@@ -1,0 +1,492 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import axios from "axios";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { useToast } from "@/components/ui/toast";
+import { versionLabel, type EngineIssue, type ScenarioResult } from "@/lib/travel/contracts";
+import { StateBadge, StatusBadge, apiError, formatDateTime, money, parseJson, shortHash } from "../utils";
+import type { TravelUser } from "../types";
+import type { DetailContext } from "./RequestDetail";
+
+export default function ReviewTab({ ctx }: { ctx: DetailContext }) {
+  const { toast } = useToast();
+  const { detail, version } = ctx;
+  const [busy, setBusy] = useState(false);
+  const [assignOpen, setAssignOpen] = useState(false);
+  const [reassignOpen, setReassignOpen] = useState(false);
+  const [issueOpen, setIssueOpen] = useState(false);
+  const [belowFloorReason, setBelowFloorReason] = useState("");
+  const [reviewAction, setReviewAction] = useState<"APPROVE" | "REQUEST_CHANGES" | "REJECT" | null>(null);
+  const [reviewReason, setReviewReason] = useState("");
+  const [outcomeAction, setOutcomeAction] = useState<"ACCEPTED" | "DECLINED" | "EXPIRED" | null>(null);
+  const [outcomeScenarioId, setOutcomeScenarioId] = useState("");
+
+  const isAssignedValidator = detail.currentValidatorId === ctx.userId;
+  const canSubmit =
+    (ctx.isOwner || ctx.isAdmin) && ctx.isLatestVersion && ["DRAFT", "CHANGES_REQUESTED"].includes(version.status);
+  // No self-approval: the submitter cannot review their own version.
+  const canReview =
+    version.status === "PENDING_VALIDATION" && isAssignedValidator && version.submittedById !== ctx.userId;
+  const canIssue = (ctx.isOwner || ctx.isAdmin) && version.status === "APPROVED";
+  const canOutcome = (ctx.isOwner || ctx.isAdmin) && version.status === "ISSUED";
+  const canAssign = (ctx.isOwner || ctx.isAdmin) && ["DRAFT", "CHANGES_REQUESTED"].includes(detail.status);
+
+  const results: ScenarioResult[] = version.scenarios
+    .map((sc) => parseJson<ScenarioResult | null>(sc.resultJson, null))
+    .filter((r): r is ScenarioResult => !!r);
+  const allIssues: (EngineIssue & { scenarioLabel?: string })[] = results.flatMap((r) =>
+    r.issues.map((i) => ({ ...i, scenarioLabel: r.label })),
+  );
+  const belowFloor = allIssues.some((i) => i.code === "BELOW_FLOOR");
+
+  async function run(fn: () => Promise<void>) {
+    setBusy(true);
+    try {
+      await fn();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleSubmit() {
+    await run(async () => {
+      try {
+        const res = await axios.post(`/api/travel/requests/${detail.id}/submit`);
+        toast(`Submitted — snapshot ${shortHash(res.data.hash)}`, "success");
+        ctx.refresh();
+      } catch (err: any) {
+        if (err?.response?.data?.code === "VALIDATOR_NOT_ASSIGNED") {
+          toast("Assign a validator before submitting", "error");
+          setAssignOpen(true);
+        } else {
+          toast(apiError(err, "Submit failed"), "error");
+        }
+      }
+    });
+  }
+
+  async function handleReview() {
+    if (!reviewAction || !version.snapshot) return;
+    await run(async () => {
+      try {
+        await axios.post(`/api/travel/versions/${version.id}/review`, {
+          action: reviewAction,
+          reason: reviewReason || null,
+          snapshotHash: version.snapshot!.hash,
+        });
+        toast(`Decision recorded: ${reviewAction.replace(/_/g, " ")}`, "success");
+        setReviewAction(null);
+        setReviewReason("");
+        ctx.refresh();
+      } catch (err: any) {
+        if (err?.response?.data?.code === "SNAPSHOT_STALE") {
+          toast("The version changed since this page loaded — refreshed. Review again.", "error");
+          setReviewAction(null);
+          ctx.refresh();
+        } else {
+          toast(apiError(err, "Review failed"), "error");
+        }
+      }
+    });
+  }
+
+  async function handleIssue() {
+    await run(async () => {
+      try {
+        const res = await axios.post(`/api/travel/versions/${version.id}/issue`, {
+          belowFloorExceptionReason: belowFloorReason || null,
+        });
+        const renderState: string | undefined = res.data.document?.renderState;
+        if (renderState === "FAILED") {
+          toast("Issued, but PDF generation failed — see Documents tab", "error");
+        } else if (res.data.idempotent) {
+          toast("Already issued — showing existing document", "success");
+        } else {
+          toast("Quotation issued", "success");
+        }
+        setIssueOpen(false);
+        ctx.refresh();
+      } catch (err) {
+        toast(apiError(err, "Issue failed"), "error");
+      }
+    });
+  }
+
+  async function handleOutcome() {
+    if (!outcomeAction) return;
+    await run(async () => {
+      try {
+        await axios.post(`/api/travel/versions/${version.id}/outcome`, {
+          outcome: outcomeAction,
+          scenarioId: outcomeAction === "ACCEPTED" ? outcomeScenarioId : null,
+        });
+        toast(`Outcome recorded: ${outcomeAction}`, "success");
+        setOutcomeAction(null);
+        ctx.refresh();
+      } catch (err) {
+        toast(apiError(err, "Failed to record outcome"), "error");
+      }
+    });
+  }
+
+  return (
+    <div className="space-y-4">
+      <Card>
+        <CardHeader>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <CardTitle>
+                {versionLabel(version.versionNo)} — <StatusBadge status={version.status} />
+              </CardTitle>
+              <CardDescription>
+                {version.submittedAt && <>Submitted {formatDateTime(version.submittedAt)} · </>}
+                {version.decidedAt && (
+                  <>
+                    Decided {formatDateTime(version.decidedAt)}
+                    {version.decisionReason ? ` — ${version.decisionReason}` : ""} ·{" "}
+                  </>
+                )}
+                Snapshot: <span className="font-mono">{shortHash(version.snapshot?.hash)}</span>
+                {version.snapshot && <> · engine {version.snapshot.engineVersion}</>}
+              </CardDescription>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {results.length > 0 && (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="border-b text-left">
+                  <tr>
+                    <th className="pb-2 font-medium">Scenario</th>
+                    <th className="pb-2 font-medium">Valid</th>
+                    <th className="pb-2 font-medium">Sell</th>
+                    <th className="pb-2 font-medium">Per paying person</th>
+                    <th className="pb-2 font-medium">Issues</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y">
+                  {results.map((r) => (
+                    <tr key={r.ref}>
+                      <td className="py-2">{r.label}</td>
+                      <td className="py-2">{r.valid ? "yes" : "no"}</td>
+                      <td className="py-2 font-medium">{money(r.sell, ctx.resultCurrency)}</td>
+                      <td className="py-2">{money(r.perPayingPerson, ctx.resultCurrency)}</td>
+                      <td className="py-2">{r.issues.length}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          {allIssues.length > 0 && (
+            <ul className="space-y-1">
+              {allIssues.map((iss, i) => (
+                <li key={i} className="flex items-start gap-2 text-xs">
+                  <StateBadge value={iss.severity} />
+                  <span className="font-mono">{iss.code}</span>
+                  {iss.scenarioLabel && <span className="text-muted-foreground">[{iss.scenarioLabel}]</span>}
+                  <span>{iss.message}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+          {!version.snapshot && (
+            <p className="text-sm text-muted-foreground">No calculation snapshot yet — submit to calculate and bind one.</p>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Actions</CardTitle>
+          <CardDescription>
+            Validator: {detail.validator ? detail.validator.name || detail.validator.email : "not assigned"}
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-wrap gap-2">
+          {canAssign && (
+            <Button variant="outline" onClick={() => setAssignOpen(true)}>
+              {detail.validator ? "Change validator" : "Assign validator"}
+            </Button>
+          )}
+          {ctx.isAdmin && detail.validator && (
+            <Button variant="outline" onClick={() => setReassignOpen(true)}>
+              Reassign (admin)
+            </Button>
+          )}
+          {canSubmit && (
+            <Button onClick={handleSubmit} disabled={busy}>
+              {version.status === "CHANGES_REQUESTED" ? "Resubmit for validation" : "Submit for validation"}
+            </Button>
+          )}
+          {canReview && (
+            <>
+              <Button onClick={() => setReviewAction("APPROVE")} disabled={busy}>
+                Approve
+              </Button>
+              <Button variant="outline" onClick={() => setReviewAction("REQUEST_CHANGES")} disabled={busy}>
+                Request changes
+              </Button>
+              <Button variant="destructive" onClick={() => setReviewAction("REJECT")} disabled={busy}>
+                Reject
+              </Button>
+            </>
+          )}
+          {canIssue && (
+            <Button onClick={() => setIssueOpen(true)} disabled={busy}>
+              Issue quotation
+            </Button>
+          )}
+          {canOutcome && (
+            <>
+              <Button onClick={() => setOutcomeAction("ACCEPTED")} disabled={busy}>
+                Client accepted
+              </Button>
+              <Button variant="outline" onClick={() => setOutcomeAction("DECLINED")} disabled={busy}>
+                Client declined
+              </Button>
+              <Button variant="outline" onClick={() => setOutcomeAction("EXPIRED")} disabled={busy}>
+                Expired
+              </Button>
+            </>
+          )}
+          {!canSubmit && !canReview && !canIssue && !canOutcome && !canAssign && (
+            <p className="text-sm text-muted-foreground">No actions available for your role in the current status.</p>
+          )}
+        </CardContent>
+      </Card>
+
+      <AssignValidatorDialog
+        open={assignOpen}
+        onClose={() => setAssignOpen(false)}
+        title={detail.validator ? "Change validator" : "Assign validator"}
+        endpoint={`/api/travel/requests/${detail.id}/assignments`}
+        selfId={ctx.userId}
+        isAdmin={ctx.isAdmin}
+        onDone={() => {
+          setAssignOpen(false);
+          ctx.refresh();
+        }}
+      />
+      <AssignValidatorDialog
+        open={reassignOpen}
+        onClose={() => setReassignOpen(false)}
+        title="Reassign validator"
+        endpoint={`/api/travel/requests/${detail.id}/reassign`}
+        selfId={ctx.userId}
+        isAdmin={ctx.isAdmin}
+        onDone={() => {
+          setReassignOpen(false);
+          ctx.refresh();
+        }}
+      />
+
+      {/* review decision dialog */}
+      <Dialog open={reviewAction !== null} onOpenChange={(open) => !open && setReviewAction(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{reviewAction?.replace(/_/g, " ")}</DialogTitle>
+            <DialogDescription>
+              The decision binds to snapshot <span className="font-mono">{shortHash(version.snapshot?.hash)}</span>.
+            </DialogDescription>
+          </DialogHeader>
+          {reviewAction !== "APPROVE" && (
+            <div>
+              <Label>Reason (required)</Label>
+              <Textarea rows={3} value={reviewReason} onChange={(e) => setReviewReason(e.target.value)} />
+            </div>
+          )}
+          <DialogFooter>
+            <Button
+              onClick={handleReview}
+              disabled={busy || (reviewAction !== "APPROVE" && !reviewReason.trim())}
+              variant={reviewAction === "REJECT" ? "destructive" : "default"}
+            >
+              Confirm {reviewAction?.replace(/_/g, " ").toLowerCase()}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* issue dialog */}
+      <Dialog open={issueOpen} onOpenChange={setIssueOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Issue quotation</DialogTitle>
+            <DialogDescription>
+              Generates the client PDF and moves {versionLabel(version.versionNo)} to ISSUED. Issuing is
+              idempotent — repeating it returns the same document.
+            </DialogDescription>
+          </DialogHeader>
+          {belowFloor && (
+            <div className="space-y-2">
+              <p className="text-sm text-amber-700">
+                The snapshot is below the pricing floor. Issuing requires a manager (ADMIN) and a recorded
+                exception reason.
+              </p>
+              <Label>Below-floor exception reason</Label>
+              <Textarea rows={2} value={belowFloorReason} onChange={(e) => setBelowFloorReason(e.target.value)} />
+            </div>
+          )}
+          <DialogFooter>
+            <Button onClick={handleIssue} disabled={busy || (belowFloor && !belowFloorReason.trim())}>
+              Confirm issue
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* outcome dialog */}
+      <Dialog open={outcomeAction !== null} onOpenChange={(open) => !open && setOutcomeAction(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Record outcome: {outcomeAction}</DialogTitle>
+            <DialogDescription>This is final for {versionLabel(version.versionNo)}.</DialogDescription>
+          </DialogHeader>
+          {outcomeAction === "ACCEPTED" && (
+            <div>
+              <Label>Accepted scenario</Label>
+              <Select value={outcomeScenarioId} onValueChange={setOutcomeScenarioId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select scenario" />
+                </SelectTrigger>
+                <SelectContent>
+                  {version.scenarios.map((sc) => (
+                    <SelectItem key={sc.id} value={sc.id}>
+                      {sc.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+          <DialogFooter>
+            <Button onClick={handleOutcome} disabled={busy || (outcomeAction === "ACCEPTED" && !outcomeScenarioId)}>
+              Confirm
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+
+/**
+ * Validator picker. The assignments API takes a validatorId; only ADMINs can
+ * list users (/api/users), so other roles get a manual id entry instead.
+ */
+function AssignValidatorDialog({
+  open,
+  onClose,
+  title,
+  endpoint,
+  selfId,
+  isAdmin,
+  onDone,
+}: {
+  open: boolean;
+  onClose: () => void;
+  title: string;
+  endpoint: string;
+  selfId: string;
+  isAdmin: boolean;
+  onDone: () => void;
+}) {
+  const { toast } = useToast();
+  const [users, setUsers] = useState<TravelUser[] | null>(null);
+  const [validatorId, setValidatorId] = useState("");
+  const [dueAt, setDueAt] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+    setValidatorId("");
+    setDueAt("");
+    axios
+      .get("/api/users")
+      .then((res) =>
+        setUsers(
+          (res.data as TravelUser[]).filter(
+            (u) => (u.role === "VALIDATOR" || u.role === "ADMIN") && u.id !== selfId,
+          ),
+        ),
+      )
+      .catch(() => setUsers(null));
+  }, [open, selfId]);
+
+  async function handleAssign() {
+    if (!validatorId) return;
+    setBusy(true);
+    try {
+      await axios.post(endpoint, {
+        validatorId,
+        dueAt: dueAt ? new Date(dueAt).toISOString() : null,
+      });
+      toast("Validator assigned", "success");
+      onDone();
+    } catch (err) {
+      toast(apiError(err, "Assignment failed"), "error");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>{title}</DialogTitle>
+          <DialogDescription>Only VALIDATOR or ADMIN users can be assigned.</DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3">
+          {users ? (
+            <div>
+              <Label>Validator</Label>
+              <Select value={validatorId} onValueChange={setValidatorId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select validator" />
+                </SelectTrigger>
+                <SelectContent>
+                  {users.map((u) => (
+                    <SelectItem key={u.id} value={u.id}>
+                      {u.name || u.email} ({u.role})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          ) : (
+            <div>
+              <Label>Validator user id</Label>
+              <Input value={validatorId} onChange={(e) => setValidatorId(e.target.value)} placeholder="cuid…" />
+              <p className="mt-1 text-xs text-muted-foreground">
+                {isAdmin
+                  ? "Could not load the user list."
+                  : "Only admins can list users — paste the validator's user id, or ask an admin to assign."}
+              </p>
+            </div>
+          )}
+          <div>
+            <Label>Due date (optional)</Label>
+            <Input type="datetime-local" value={dueAt} onChange={(e) => setDueAt(e.target.value)} />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button onClick={handleAssign} disabled={busy || !validatorId}>
+            Assign
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}

@@ -2,6 +2,7 @@ import { createServer } from "http";
 import next from "next";
 import { Server } from "socket.io";
 import { initializeWhatsApp, setSocketServer } from "./lib/whatsapp";
+import { startNotificationWorker, sweepOverdueValidations } from "./lib/travel/notifications";
 
 const dev = process.env.NODE_ENV !== "production";
 const hostname = process.env.HOSTNAME || "0.0.0.0";
@@ -27,6 +28,16 @@ app.prepare().then(async () => {
       console.error("[WhatsApp] initialization error:", err);
     });
   }, 2000);
+
+  // Travel module: async delivery of queued workflow notifications (email +
+  // WhatsApp). DB-backed outbox, so the Next.js bundle and this server share
+  // state through SQLite, not process memory.
+  startNotificationWorker();
+  setInterval(() => {
+    sweepOverdueValidations().catch((err) => {
+      console.error("[Travel] overdue sweep error:", err);
+    });
+  }, 60 * 60 * 1000);
 
   httpServer
     .once("error", (err) => {

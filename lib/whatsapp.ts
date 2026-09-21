@@ -1,6 +1,7 @@
 import { Client, LocalAuth, MessageMedia } from "whatsapp-web.js";
 import type { Socket as ServerSocket, Server as SocketServer } from "socket.io";
 import { prisma } from "@/lib/prisma";
+import { writeAuditLog } from "@/lib/audit";
 import QRCode from "qrcode";
 import fs from "fs/promises";
 import path from "path";
@@ -21,15 +22,37 @@ interface WhatsAppServiceState {
   qrSvg: string | null;
   info: string;
   io: SocketServer | null;
+  readyWatchdog: NodeJS.Timeout | null;
+  initPromise: Promise<Client> | null;
+  startedAt: string;
+  ownPushname: string | null;
 }
 
-const state: WhatsAppServiceState = {
+// The custom server (server.ts via tsx) and the Next.js API routes load this
+// module through different bundlers, which would otherwise create two separate
+// module instances with two independent state objects. The real WhatsApp client
+// lives in the custom-server instance, so API routes like /api/send and
+// /api/whatsapp/status would always see the initial "initializing" state.
+// Anchoring the state on globalThis makes both instances share one state.
+const globalForWhatsApp = globalThis as unknown as {
+  __waControlState?: WhatsAppServiceState;
+};
+
+const state: WhatsAppServiceState = (globalForWhatsApp.__waControlState ??= {
   client: null,
   state: "initializing",
   qrSvg: null,
   info: "Initializing WhatsApp client...",
   io: null,
-};
+  readyWatchdog: null,
+  initPromise: null,
+  startedAt: new Date().toISOString(),
+  ownPushname: null,
+});
+
+// App version, surfaced in the admin panel so the deployed build can be verified.
+import pkg from "../package.json";
+export const APP_VERSION: string = pkg.version;
 
 const UPLOAD_DIR = path.join(process.cwd(), "public", "uploads");
 
@@ -41,15 +64,22 @@ async function ensureUploadDir() {
   }
 }
 
-async function upsertChat(remoteJid: string, name?: string | null, profilePicUrl?: string | null) {
+async function upsertChat(
+  remoteJid: string,
+  name?: string | null,
+  profilePicUrl?: string | null,
+  lastMessageAt?: Date,
+  phone?: string | null
+) {
   const existing = await prisma.chat.findUnique({
     where: { remoteJid },
   });
 
   if (existing) {
-    const updateData: any = { lastMessageAt: new Date() };
+    const updateData: any = { lastMessageAt: lastMessageAt || new Date() };
     if (name && !existing.name) updateData.name = name;
     if (profilePicUrl) updateData.profilePicUrl = profilePicUrl;
+    if (phone && !existing.phone) updateData.phone = phone;
     return prisma.chat.update({ where: { remoteJid }, data: updateData });
   }
 
@@ -57,33 +87,76 @@ async function upsertChat(remoteJid: string, name?: string | null, profilePicUrl
     data: {
       remoteJid,
       name: name || remoteJid.split("@")[0],
+      phone: phone || null,
       profilePicUrl,
+      lastMessageAt: lastMessageAt || new Date(),
     },
   });
 }
 
-async function persistMessage(msg: any, fromMe: boolean) {
-  console.log("[WhatsApp] persistMessage start", msg.id?._serialized, msg.type);
+// On WhatsApp Web 2.3000.1043x+ the serialized message id property was renamed
+// from `_serialized` to `$1`. Support both so message dedupe and persistence
+// keep working across WhatsApp Web versions.
+function getMessageId(msg: any): string | null {
+  return msg?.id?._serialized || msg?.id?.$1 || null;
+}
+
+async function persistMessage(msg: any, fromMe: boolean, opts: { emit?: boolean } = {}) {
+  const emit = opts.emit !== false;
+  const msgId = getMessageId(msg);
+  // Protocol/system noise (encryption notices, group events, call logs,
+  // revoked-message shells) is not chat content — persisting it creates junk
+  // chats and empty bubbles.
+  const NOISE_TYPES = new Set(["e2e_notification", "notification_template", "gp2", "call_log", "revoked"]);
+  if (NOISE_TYPES.has(msg.type)) return;
+  console.log("[WhatsApp] persistMessage start", msgId, msg.type);
   try {
-    const chat = await msg.getChat();
-    const remoteJid = chat.id._serialized;
+    // Avoid msg.getChat() — it goes through client.getChatById(), which crashes
+    // with a minified "r: r" error on recent WhatsApp Web versions. Derive the
+    // chat id from the message addressing fields instead.
+    const rawJid: string = (msg.fromMe ? msg.to : msg.from) || "";
+    if (!rawJid || rawJid.includes("broadcast")) return;
+    const remoteJid = rawJid.includes("@") ? rawJid : `${rawJid}@c.us`;
+
+    // Best-effort display name and phone number; all of these can fail on
+    // newer WA Web versions. For @c.us chats the number is the jid user part.
+    // For @lid chats we can't trust contact.number — under the LID system it
+    // returns the LID itself, not the real phone number — so phone stays null.
     let name: string | undefined;
+    const phone: string | undefined = remoteJid.endsWith("@c.us")
+      ? remoteJid.split("@")[0]
+      : undefined;
     try {
-      const contact = msg.fromMe ? await chat.getContact() : await msg.getContact();
-      name = contact?.pushname || contact?.name || chat.name || undefined;
+      const contact = await msg.getContact();
+      name = contact?.pushname || contact?.name || undefined;
     } catch {
-      name = chat.name || remoteJid.split("@")[0];
+      // ignore
+    }
+    // For outgoing messages msg.getContact() can resolve to OUR OWN contact,
+    // which stamped the account's pushname (e.g. the business name) onto
+    // dozens of outgoing-only chats. Discard it when it matches.
+    if (name && state.ownPushname && name === state.ownPushname) {
+      name = undefined;
+    }
+    if (!name) {
+      try {
+        const chat = await msg.getChat();
+        name = chat?.name || undefined;
+      } catch {
+        // ignore
+      }
     }
 
     // Try to fetch profile picture for the chat once in a while
     let profilePicUrl: string | null = null;
     try {
-      profilePicUrl = await state.client?.getProfilePicUrl(remoteJid) || null;
+      profilePicUrl = (await state.client?.getProfilePicUrl(remoteJid)) || null;
     } catch {
       profilePicUrl = null;
     }
 
-    const chatRecord = await upsertChat(remoteJid, name, profilePicUrl);
+    const msgTimestamp = msg.timestamp ? new Date(msg.timestamp * 1000) : new Date();
+    const chatRecord = await upsertChat(remoteJid, name, profilePicUrl, msgTimestamp, phone);
 
     const type = getTypeMessageType(msg);
     let mediaUrl: string | null = null;
@@ -91,26 +164,29 @@ async function persistMessage(msg: any, fromMe: boolean) {
     let mediaCaption: string | null = msg.body || null;
 
     if (msg.hasMedia) {
-      const media = await msg.downloadMedia();
-      if (media && media.data) {
-        await ensureUploadDir();
-        const ext = mime.extension(media.mimetype) || "bin";
-        const filename = `${randomUUID()}.${ext}`;
-        const filepath = path.join(UPLOAD_DIR, filename);
-        await fs.writeFile(filepath, Buffer.from(media.data, "base64"));
-        mediaUrl = `/uploads/${filename}`;
-        mediaMimeType = media.mimetype;
-        if (!mediaCaption && media.filename) mediaCaption = media.filename;
+      try {
+        const media = await msg.downloadMedia();
+        if (media && media.data) {
+          await ensureUploadDir();
+          const ext = mime.extension(media.mimetype) || "bin";
+          const filename = `${randomUUID()}.${ext}`;
+          const filepath = path.join(UPLOAD_DIR, filename);
+          await fs.writeFile(filepath, Buffer.from(media.data, "base64"));
+          mediaUrl = `/uploads/${filename}`;
+          mediaMimeType = media.mimetype;
+          if (!mediaCaption && media.filename) mediaCaption = media.filename;
+        }
+      } catch (mediaErr) {
+        console.error("[WhatsApp] downloadMedia failed:", mediaErr);
       }
     }
 
     const body = msg.body || (type !== "text" ? mediaCaption : null) || "";
 
     // Avoid duplicate messages when both sendMessage() and the message_create event fire
-    const existingId = msg.id?._serialized;
-    if (existingId) {
+    if (msgId) {
       const existing = await prisma.message.findUnique({
-        where: { whatsappMessageId: existingId },
+        where: { whatsappMessageId: msgId },
       });
       if (existing) return;
     }
@@ -119,25 +195,37 @@ async function persistMessage(msg: any, fromMe: boolean) {
       data: {
         chatId: chatRecord.id,
         remoteJid,
-        whatsappMessageId: msg.id?._serialized || null,
+        whatsappMessageId: msgId,
         fromMe,
         body,
         type,
         mediaUrl,
         mediaMimeType,
         mediaCaption,
-        timestamp: new Date(msg.timestamp * 1000),
+        timestamp: msgTimestamp,
       },
     });
 
-    state.io?.emit("message", {
-      ...messageRecord,
-      chat: chatRecord,
-    });
+    if (emit) {
+      state.io?.emit("message", {
+        ...messageRecord,
+        chat: chatRecord,
+      });
 
-    state.io?.emit("chat_update", chatRecord);
+      state.io?.emit("chat_update", chatRecord);
+
+      // Audit incoming messages (outgoing dashboard sends are already logged
+      // as SEND_MESSAGE by /api/send; backfill batches are not logged).
+      if (!fromMe) {
+        const snippet = (body || `[${type}]`).slice(0, 120);
+        writeAuditLog("MESSAGE_RECEIVED", null, `From ${name || phone || remoteJid}: ${snippet}`);
+      }
+    }
     console.log("[WhatsApp] persistMessage saved", messageRecord.id, remoteJid);
-  } catch (err) {
+  } catch (err: any) {
+    // P2002 = duplicate whatsappMessageId from the message_create + message
+    // events racing each other; the message is already persisted, so benign.
+    if (err?.code === "P2002") return;
     console.error("[WhatsApp] persistMessage error:", err);
   }
 }
@@ -167,16 +255,103 @@ export function setSocketServer(io: SocketServer) {
 }
 
 export function getWhatsAppState() {
-  return { state: state.state, qrSvg: state.qrSvg, info: state.info };
+  return {
+    state: state.state,
+    qrSvg: state.qrSvg,
+    info: state.info,
+    version: APP_VERSION,
+    startedAt: state.startedAt,
+  };
 }
 
-export async function initializeWhatsApp() {
+// Backfills recent chats and their last messages into the database after the
+// client becomes ready. Fully guarded: if getChats()/fetchMessages() fail
+// (known headless instability), real-time events keep working regardless.
+const BACKFILL_CHAT_LIMIT = 20;
+const BACKFILL_MESSAGE_LIMIT = 50;
+
+async function backfillChats(client: Client) {
+  let chats;
+  try {
+    chats = await client.getChats();
+  } catch (e) {
+    console.warn("[WhatsApp] backfill skipped: getChats() failed:", e);
+    return;
+  }
+
+  const recent = chats
+    .filter((c: any) => c?.id?._serialized && !c.id._serialized.includes("broadcast"))
+    .sort((a: any, b: any) => (b.timestamp || 0) - (a.timestamp || 0))
+    .slice(0, BACKFILL_CHAT_LIMIT);
+
+  console.log(`[WhatsApp] backfill: syncing up to ${BACKFILL_MESSAGE_LIMIT} messages for ${recent.length} chats...`);
+  let synced = 0;
+  for (const chat of recent) {
+    try {
+      const messages = await chat.fetchMessages({ limit: BACKFILL_MESSAGE_LIMIT });
+      for (const m of messages) {
+        await persistMessage(m, m.fromMe, { emit: false });
+      }
+      synced++;
+    } catch (e) {
+      console.error("[WhatsApp] backfill: failed for chat", chat.id?._serialized, e);
+    }
+  }
+  console.log(`[WhatsApp] backfill complete: ${synced}/${recent.length} chats synced.`);
+  // Notify dashboards to refetch the chat list once, instead of per message.
+  state.io?.emit("chat_update", { backfill: true });
+}
+
+// client.initialize() can fail transiently — most notably when the page
+// reloads mid-injection and puppeteer reports "Execution context was
+// destroyed". Retry with a fresh client each time instead of leaving the
+// service dead until manual Reconnect.
+const MAX_INIT_ATTEMPTS = 5;
+const INIT_RETRY_DELAY_MS = 10_000;
+
+export function initializeWhatsApp(): Promise<Client> {
+  if (state.client) return Promise.resolve(state.client);
+  // Server boot, the logout re-init timer, and the admin Reconnect action can
+  // all trigger initialization concurrently — share one in-flight attempt
+  // loop so they don't spawn competing browsers for the same profile.
+  state.initPromise ??= (async () => {
+    let lastError: unknown;
+    for (let attempt = 1; attempt <= MAX_INIT_ATTEMPTS; attempt++) {
+      try {
+        return await initializeOnce();
+      } catch (e) {
+        lastError = e;
+        console.error(`[WhatsApp] initialize attempt ${attempt}/${MAX_INIT_ATTEMPTS} failed:`, e);
+        if (attempt < MAX_INIT_ATTEMPTS) {
+          state.info = `Initialization failed (attempt ${attempt}/${MAX_INIT_ATTEMPTS}). Retrying...`;
+          state.io?.emit("whatsapp_state", getWhatsAppState());
+          await new Promise((r) => setTimeout(r, INIT_RETRY_DELAY_MS));
+        }
+      }
+    }
+
+    state.state = "disconnected";
+    state.info = "Initialization failed after repeated attempts. Use Reconnect to try again.";
+    state.io?.emit("whatsapp_state", getWhatsAppState());
+    throw lastError;
+  })().finally(() => {
+    state.initPromise = null;
+  });
+  return state.initPromise;
+}
+
+async function initializeOnce() {
   if (state.client) return state.client;
 
   state.info = "Initializing WhatsApp client...";
 
   const client = new Client({
     authStrategy: new LocalAuth({ dataPath: path.join(process.cwd(), ".wwebjs_auth") }),
+    // NOTE: pinning webVersion via wa-version snapshots was tried (upstream
+    // workaround for the 2.3000.1043x breakage), but every alpha snapshot
+    // stalls at app-state sync ("authenticated" never reaches "ready").
+    // Instead we run the live version and patch the library's injected
+    // getChats() at container start (scripts/patch-wwebjs.js).
     puppeteer: {
       headless: true,
       executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
@@ -190,6 +365,8 @@ export async function initializeWhatsApp() {
   });
 
   client.on("qr", async (qr: string) => {
+    console.log("[WhatsApp] QR code received — scan it with WhatsApp on your phone.");
+    writeAuditLog("WA_QR", null, "QR code issued — waiting for phone scan.");
     state.state = "qr";
     try {
       const svg = await QRCode.toString(qr, { type: "svg", margin: 2, width: 256 });
@@ -203,19 +380,47 @@ export async function initializeWhatsApp() {
   });
 
   client.on("authenticated", () => {
+    console.log("[WhatsApp] authenticated. Waiting for client to become ready...");
     state.state = "authenticated";
     state.qrSvg = null;
     state.info = "Authenticated. Loading chats...";
     state.io?.emit("whatsapp_state", getWhatsAppState());
+
+    // If the client stays in "authenticated" without reaching "ready", the
+    // WhatsApp Web app-state sync has stalled — common after a plain restart
+    // (a fresh QR pairing always syncs; a resumed session often hangs).
+    // Reloading the page usually kicks the sync back into gear, so try that
+    // once before telling the user to re-pair.
+    if (state.readyWatchdog) clearTimeout(state.readyWatchdog);
+    state.readyWatchdog = setTimeout(() => {
+      if (state.state !== "authenticated") return;
+      console.warn("[WhatsApp] not ready 90s after authentication — reloading the WhatsApp Web page to restart app-state sync...");
+      (state.client as any)?.pupPage
+        ?.reload({ timeout: 60_000 })
+        .catch((e: unknown) => console.error("[WhatsApp] page reload failed:", e));
+      state.readyWatchdog = setTimeout(() => {
+        if (state.state === "authenticated") {
+          console.warn(
+            "[WhatsApp] still not ready after page reload. " +
+              "The session may be stale — use Logout + Reconnect in the admin panel and scan the QR code again."
+          );
+        }
+      }, 150_000);
+    }, 90_000);
   });
 
   client.on("auth_failure", (msg: string) => {
     state.state = "auth_failure";
     state.info = `Authentication failure: ${msg}`;
+    writeAuditLog("WA_AUTH_FAILURE", null, String(msg).slice(0, 200));
     state.io?.emit("whatsapp_state", getWhatsAppState());
   });
 
   client.on("ready", async () => {
+    if (state.readyWatchdog) {
+      clearTimeout(state.readyWatchdog);
+      state.readyWatchdog = null;
+    }
     state.state = "ready";
     state.info = "WhatsApp client is ready.";
     state.qrSvg = null;
@@ -225,13 +430,27 @@ export async function initializeWhatsApp() {
       create: { sessionId: "default", connected: true, info: state.info },
     });
     state.io?.emit("whatsapp_state", getWhatsAppState());
+    state.ownPushname = (client.info as any)?.pushname || null;
+    if (state.ownPushname) console.log("[WhatsApp] own pushname:", state.ownPushname);
+    let waVersion = "unknown";
+    try {
+      waVersion = await client.getWWebVersion();
+      console.log("[WhatsApp] running WhatsApp Web version:", waVersion);
+    } catch {
+      // ignore
+    }
+    writeAuditLog("WA_READY", null, `Client ready (WhatsApp Web ${waVersion}).`);
     console.log("[WhatsApp] client ready. Listening for new messages.");
-    // Note: historical chat loading via client.getChats() is unreliable in headless/Docker
-    // environments with this version of whatsapp-web.js, so we rely on real-time message_create
-    // events. Existing messages that arrived before the session connected will not sync.
+    backfillChats(client).catch((e) => console.error("[WhatsApp] backfill error:", e));
   });
 
   client.on("disconnected", async (reason: any) => {
+    console.log("[WhatsApp] disconnected:", reason);
+    writeAuditLog("WA_DISCONNECTED", null, String(reason).slice(0, 200));
+    if (state.readyWatchdog) {
+      clearTimeout(state.readyWatchdog);
+      state.readyWatchdog = null;
+    }
     state.state = "disconnected";
     state.info = `Disconnected: ${reason}`;
     state.qrSvg = null;
@@ -245,13 +464,13 @@ export async function initializeWhatsApp() {
 
   client.on("message_create", async (msg: any) => {
     // Fires for both incoming and outgoing messages
-    console.log("[WhatsApp] message_create fired", msg.id?._serialized, msg.fromMe);
+    console.log("[WhatsApp] message_create fired", getMessageId(msg), msg.fromMe);
     await persistMessage(msg, msg.fromMe);
   });
 
   client.on("message", async (msg: any) => {
     // Incoming messages backup
-    console.log("[WhatsApp] message event fired", msg.id?._serialized, msg.fromMe);
+    console.log("[WhatsApp] message event fired", getMessageId(msg), msg.fromMe);
     await persistMessage(msg, msg.fromMe);
   });
 
@@ -260,7 +479,18 @@ export async function initializeWhatsApp() {
   });
 
   state.client = client;
-  await client.initialize();
+  try {
+    await client.initialize();
+  } catch (e) {
+    // Tear down the half-initialized client so the next attempt starts clean.
+    try {
+      await client.destroy();
+    } catch {
+      // ignore
+    }
+    state.client = null;
+    throw e;
+  }
   return client;
 }
 
@@ -277,6 +507,29 @@ export async function logoutWhatsApp() {
   state.qrSvg = null;
   state.info = "Logged out. Re-initializing...";
   state.io?.emit("whatsapp_state", getWhatsAppState());
+}
+
+// Tears down the current client (without logging out of WhatsApp) and
+// re-initializes. Used by the admin "Reconnect" action — calling
+// initializeWhatsApp() alone is a no-op while a client instance exists.
+export async function restartWhatsApp() {
+  if (state.readyWatchdog) {
+    clearTimeout(state.readyWatchdog);
+    state.readyWatchdog = null;
+  }
+  if (state.client) {
+    try {
+      await state.client.destroy();
+    } catch (e) {
+      console.error("[WhatsApp] destroy error:", e);
+    }
+    state.client = null;
+  }
+  state.state = "initializing";
+  state.qrSvg = null;
+  state.info = "Re-initializing WhatsApp client...";
+  state.io?.emit("whatsapp_state", getWhatsAppState());
+  return initializeWhatsApp();
 }
 
 export async function sendWhatsAppMessage({
@@ -325,8 +578,37 @@ export async function sendWhatsAppMessage({
     message = await state.client.sendMessage(finalChatId, body || "");
   }
 
-  console.log("[WhatsApp] sendWhatsAppMessage sent message id:", message?.id?._serialized);
-  return message;
+  // On newer WhatsApp Web versions sendMessage() can resolve to undefined even
+  // though the message was delivered (the message_create event still fires and
+  // persists it). Treat a missing return value as success.
+  const sentId = getMessageId(message);
+  console.log("[WhatsApp] sendWhatsAppMessage sent message id:", sentId);
+
+  // When we dial a real phone number, WhatsApp may map it to an opaque @lid
+  // jid (see finalChatId / message.to). We know the number we dialed, so
+  // record it on every jid this send touched — the chat then displays
+  // "+<number>" instead of "Number hidden by WhatsApp".
+  const dialed = chatId.endsWith("@c.us") ? chatId.split("@")[0] : null;
+  if (dialed) {
+    const jids = new Set<string>([chatId, finalChatId]);
+    const actualTo = message?.to;
+    if (typeof actualTo === "string" && actualTo.includes("@")) jids.add(actualTo);
+    for (const jid of Array.from(jids)) {
+      if (jid.endsWith("@g.us")) continue;
+      try {
+        await prisma.chat.upsert({
+          where: { remoteJid: jid },
+          update: { phone: dialed },
+          create: { remoteJid: jid, phone: dialed, name: null },
+        });
+        console.log("[WhatsApp] recorded dialed number", dialed, "for", jid);
+      } catch (e) {
+        console.error("[WhatsApp] failed to record dialed number for", jid, e);
+      }
+    }
+  }
+
+  return message || { id: sentId };
 }
 
 export async function markChatAsRead(remoteJid: string) {

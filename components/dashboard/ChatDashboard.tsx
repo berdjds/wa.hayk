@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import axios from "axios";
-import { Send, Paperclip, Phone, RefreshCw, LogOut, MessageSquarePlus } from "lucide-react";
+import { Send, Paperclip, Phone, RefreshCw, LogOut, MessageSquarePlus, ArrowLeft, Calculator, Plane } from "lucide-react";
 import { signOut } from "next-auth/react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,6 +18,7 @@ interface Chat {
   id: string;
   remoteJid: string;
   name: string;
+  phone: string | null;
   profilePicUrl: string | null;
   lastMessageAt: string;
   messages: {
@@ -55,6 +56,23 @@ export default function ChatDashboard({ isAdmin }: { isAdmin: boolean }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
+
+  // Prefer the phone number (we trust it — either it is the jid user part or
+  // a number we dialed ourselves), then the contact name. Opaque @lid jids are
+  // never shown raw in the UI.
+  function chatDisplayName(chat: Chat) {
+    if (chat.phone) return `+${chat.phone}`;
+    if (chat.name) return chat.name;
+    if (chat.remoteJid.endsWith("@c.us")) return `+${chat.remoteJid.split("@")[0]}`;
+    return "Unknown contact";
+  }
+
+  // Secondary line under the header title: when the number leads, show the
+  // contact name (if any); for @lid chats note that WhatsApp hides the number.
+  function chatSubtitle(chat: Chat) {
+    if (chat.phone || chat.remoteJid.endsWith("@c.us")) return chat.name || "";
+    return "Number hidden by WhatsApp";
+  }
 
   async function fetchChats() {
     try {
@@ -204,24 +222,36 @@ export default function ChatDashboard({ isAdmin }: { isAdmin: boolean }) {
   }
 
   return (
-    <div className="flex h-screen flex-col bg-background">
+    <div className="flex h-screen h-dvh flex-col bg-background">
       {/* Header */}
-      <header className="flex items-center justify-between border-b px-4 py-3">
-        <div className="flex items-center gap-3">
-          <div className="h-8 w-8 rounded-full bg-primary" />
-          <h1 className="font-semibold">WAControl</h1>
+      <header className="flex items-center justify-between gap-2 border-b px-3 py-2 sm:px-4 sm:py-3">
+        <div className="flex items-center gap-2 sm:gap-3">
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-emerald-400 to-green-700 text-xs font-bold text-white shadow-sm">
+            WA
+          </div>
+          <h1 className="hidden font-semibold min-[400px]:inline">WAControl</h1>
           {isAdmin && (
             <Button variant="outline" size="sm" onClick={() => (window.location.href = "/admin")}>
               Admin
             </Button>
           )}
+          <Button variant="outline" size="sm" onClick={() => (window.location.href = "/calculator")}>
+            <Calculator className="h-4 w-4 sm:mr-1" />
+            <span className="hidden sm:inline">Calculator</span>
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => (window.location.href = "/travel")}>
+            <Plane className="h-4 w-4 sm:mr-1" />
+            <span className="hidden sm:inline">Travel</span>
+          </Button>
           <Button variant="outline" size="sm" onClick={() => setNewChatOpen(true)}>
-            <MessageSquarePlus className="mr-1 h-4 w-4" />
-            New message
+            <MessageSquarePlus className="h-4 w-4 sm:mr-1" />
+            <span className="hidden sm:inline">New message</span>
           </Button>
         </div>
-        <div className="flex items-center gap-3">
-          <Badge variant={connected ? "default" : "destructive"}>{connected ? "Socket connected" : "Socket offline"}</Badge>
+        <div className="flex items-center gap-2 sm:gap-3">
+          <Badge className="hidden sm:inline-flex" variant={connected ? "default" : "destructive"}>
+            {connected ? "Socket connected" : "Socket offline"}
+          </Badge>
           <Badge variant={whatsAppState?.state === "ready" ? "default" : "outline"}>
             {whatsAppState?.state || "initializing"}
           </Badge>
@@ -232,12 +262,12 @@ export default function ChatDashboard({ isAdmin }: { isAdmin: boolean }) {
       </header>
 
       <div className="flex flex-1 overflow-hidden">
-        {/* Chat list */}
-        <aside className="w-full max-w-sm border-r bg-card">
+        {/* Chat list: full-width on mobile, sidebar on md+ */}
+        <aside className={`${selectedChat ? "hidden" : "flex"} w-full flex-col border-r bg-card md:flex md:max-w-sm`}>
           <div className="border-b p-3">
             <Input placeholder="Search chats..." />
           </div>
-          <div className="overflow-y-auto" style={{ height: "calc(100vh - 130px)" }}>
+          <div className="flex-1 overflow-y-auto">
             {chats.map((chat) => (
               <button
                 key={chat.id}
@@ -246,40 +276,53 @@ export default function ChatDashboard({ isAdmin }: { isAdmin: boolean }) {
               >
                 <Avatar>
                   <AvatarImage src={chat.profilePicUrl || undefined} />
-                  <AvatarFallback>{(chat.name || chat.remoteJid).slice(0, 2).toUpperCase()}</AvatarFallback>
+                  <AvatarFallback>{chatDisplayName(chat).slice(0, 2).toUpperCase()}</AvatarFallback>
                 </Avatar>
                 <div className="flex-1 overflow-hidden">
                   <div className="flex items-center justify-between">
-                    <p className="truncate font-medium">{chat.name || chat.remoteJid}</p>
+                    <p className="truncate font-medium">{chatDisplayName(chat)}</p>
                     <span className="text-xs text-muted-foreground">{chat.lastMessageAt ? new Date(chat.lastMessageAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : ""}</span>
                   </div>
                   <p className="truncate text-sm text-muted-foreground">
-                    {chat.messages[0]?.fromMe ? "You: " : ""}
-                    {chat.messages[0]?.type !== "text" ? `[${chat.messages[0]?.type}]` : chat.messages[0]?.body}
+                    {chat.messages[0]
+                      ? `${chat.messages[0].fromMe ? "You: " : ""}${
+                          chat.messages[0].type !== "text"
+                            ? `[${chat.messages[0].type}]`
+                            : chat.messages[0].body || ""
+                        }`
+                      : ""}
                   </p>
                 </div>
               </button>
             ))}
             {chats.length === 0 && <p className="p-4 text-sm text-muted-foreground">No chats yet.</p>}
           </div>
+          <div className="border-t px-3 py-2 text-center text-[11px] text-muted-foreground">
+            Developed by <span className="font-medium text-foreground/70">Hayk FZC</span>
+          </div>
         </aside>
 
-        {/* Conversation */}
-        <main className="flex flex-1 flex-col bg-background">
+        {/* Conversation: full-screen on mobile when a chat is selected */}
+        <main className={`${selectedChat ? "flex" : "hidden"} flex-1 flex-col bg-background md:flex`}>
           {selectedChat ? (
             <>
-              <div className="flex items-center justify-between border-b px-4 py-3">
-                <div className="flex items-center gap-3">
+              <div className="flex items-center justify-between border-b px-3 py-2 sm:px-4 sm:py-3">
+                <div className="flex min-w-0 items-center gap-2 sm:gap-3">
+                  <Button variant="ghost" size="icon" className="shrink-0 md:hidden" onClick={() => setSelectedChat(null)}>
+                    <ArrowLeft className="h-4 w-4" />
+                  </Button>
                   <Avatar>
                     <AvatarImage src={selectedChat.profilePicUrl || undefined} />
-                    <AvatarFallback>{(selectedChat.name || selectedChat.remoteJid).slice(0, 2).toUpperCase()}</AvatarFallback>
+                    <AvatarFallback>{chatDisplayName(selectedChat).slice(0, 2).toUpperCase()}</AvatarFallback>
                   </Avatar>
-                  <div>
-                    <p className="font-medium">{selectedChat.name || selectedChat.remoteJid}</p>
-                    <p className="text-xs text-muted-foreground">{selectedChat.remoteJid}</p>
+                  <div className="min-w-0">
+                    <p className="truncate font-medium">{chatDisplayName(selectedChat)}</p>
+                    <p className="truncate text-xs text-muted-foreground">
+                      {chatSubtitle(selectedChat)}
+                    </p>
                   </div>
                 </div>
-                <Button variant="ghost" size="icon" onClick={() => fetchMessages(selectedChat)}>
+                <Button variant="ghost" size="icon" className="shrink-0" onClick={() => fetchMessages(selectedChat)}>
                   <RefreshCw className="h-4 w-4" />
                 </Button>
               </div>

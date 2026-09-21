@@ -85,3 +85,13 @@ export function cn(...inputs: ClassValue[]): string;
 ```
 
 Merges Tailwind classes using `clsx` and `tailwind-merge`.
+
+## Travel module components
+
+`components/travel/` holds the client components for `app/travel/` pages: requests list and
+detail workspace (itinerary, scenarios with split-stay preview, review actions, documents,
+history), review queue, templates, catalog/settings administration and notification delivery
+status. They follow the existing conventions (axios + useToast + Card/Tabs/Dialog, light
+theme). The client quotation PDF is generated server-side (`lib/travel/pdf/`); the UI only
+links to the authorized download route. Nav buttons to `/travel` were added to both existing
+dashboards.

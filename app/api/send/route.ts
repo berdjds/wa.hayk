@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { sendWhatsAppMessage, getWhatsAppState } from "@/lib/whatsapp";
-import { prisma } from "@/lib/prisma";
+import { writeAuditLog } from "@/lib/audit";
 import { z } from "zod";
 
 const sendSchema = z.object({
@@ -35,13 +35,7 @@ export async function POST(req: NextRequest) {
     const result = await sendWhatsAppMessage(parsed.data);
     console.log("[API /send] sendWhatsAppMessage result:", result);
 
-    await prisma.log.create({
-      data: {
-        action: "SEND_MESSAGE",
-        userId: session.user.id,
-        details: `Sent ${parsed.data.type} to ${parsed.data.remoteJid}`,
-      },
-    });
+    await writeAuditLog("SEND_MESSAGE", session.user.id, `Sent ${parsed.data.type} to ${parsed.data.remoteJid}`);
 
     return NextResponse.json({ ok: true });
   } catch (err: any) {

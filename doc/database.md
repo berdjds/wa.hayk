@@ -107,3 +107,16 @@ The Prisma client is exported as a singleton from `lib/prisma.ts` to prevent mul
 ```typescript
 import { prisma } from "@/lib/prisma";
 ```
+
+## Travel module tables (additive)
+
+Agency, PackageCodeCounter (transactional package-code sequences), TravelRequest (immutable
+`packageCode`), QuoteVersion, Scenario, StaySegment, ItineraryDay, ServiceLine, Supplier,
+HotelProduct, VehicleType, ServiceProduct, RateVersion (verification lifecycle
+NEEDS_REVIEW → VERIFIED → ARCHIVED), FXRateVersion, PricingPolicyVersion, CalculationSnapshot
+(immutable inputs/results + sha256 hash), ValidationAssignment, ReviewDecision, WorkflowEvent,
+NotificationDelivery (outbox, unique dedupKey), QuoteDocument (hash-recorded PDFs on disk),
+ImportBatch/ImportRow (workbook staging), BatchRun, PackageTemplate/TemplateVersion,
+TravelSettings (singleton). `User` gained a nullable `phone` (WhatsApp notification
+destination) and role values ADVISOR/VALIDATOR. Money and FX values are decimal strings; JSON
+payloads are String columns. See `prisma/schema.prisma` comments and `lib/travel/contracts.ts`.

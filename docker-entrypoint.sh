@@ -8,4 +8,8 @@ npm run db:push -- --accept-data-loss
 find /app/.wwebjs_auth -type f \( -name "SingletonLock" -o -name "SingletonSocket" -o -name "SingletonCookie" \) -delete 2>/dev/null || true
 find /app/.wwebjs_auth -type l -name "SingletonLock" -delete 2>/dev/null || true
 
+# Patch whatsapp-web.js injected getChats() so one unserializable chat model
+# doesn't reject the whole evaluation (upstream "r: r" breakage).
+node scripts/patch-wwebjs.js || true
+
 exec "$@"

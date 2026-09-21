@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
-import { getWhatsAppState, logoutWhatsApp, initializeWhatsApp } from "@/lib/whatsapp";
+import { getWhatsAppState, logoutWhatsApp, initializeWhatsApp, restartWhatsApp } from "@/lib/whatsapp";
 
 export async function GET() {
   const session = await getServerSession(authOptions);
@@ -24,7 +24,7 @@ export async function POST(req: NextRequest) {
   }
 
   if (body.action === "reconnect") {
-    setTimeout(() => initializeWhatsApp().catch(() => null), 1000);
+    setTimeout(() => restartWhatsApp().catch((e) => console.error("[API /whatsapp/status] reconnect error:", e)), 1000);
     return NextResponse.json({ ok: true, ...getWhatsAppState() });
   }
 

@@ -1,0 +1,1240 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="Hello Armenia Package Calculator - package pricing calculator based on the 2026 Excel model." />
+  <title>Hello Armenia Package Calculator 2026</title>
+
+  <style>
+    :root {
+      --bg: #f4f7fb;
+      --surface: #ffffff;
+      --surface-2: #f8fafc;
+      --text: #172033;
+      --muted: #667085;
+      --border: #dfe5ee;
+      --primary: #315efb;
+      --primary-dark: #2449c7;
+      --accent: #f7b500;
+      --success: #16865c;
+      --danger: #cc3d3d;
+      --input: #fffbea;
+      --shadow: 0 14px 40px rgba(22, 34, 58, 0.09);
+      --radius: 18px;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background:
+        radial-gradient(circle at top left, rgba(49, 94, 251, 0.09), transparent 34%),
+        linear-gradient(180deg, #f8faff 0%, var(--bg) 100%);
+      color: var(--text);
+      font-family: Inter, "Segoe UI", Arial, sans-serif;
+      line-height: 1.45;
+    }
+
+    button,
+    input {
+      font: inherit;
+    }
+
+    .page {
+      width: min(1450px, calc(100% - 32px));
+      margin: 28px auto 50px;
+    }
+
+    .hero {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 24px;
+      padding: 26px 28px;
+      border: 1px solid rgba(49, 94, 251, 0.13);
+      border-radius: 24px;
+      background: linear-gradient(135deg, #ffffff 0%, #f5f8ff 100%);
+      box-shadow: var(--shadow);
+      margin-bottom: 22px;
+    }
+
+    .hero-copy {
+      min-width: 0;
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 8px;
+      color: var(--primary);
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+
+    .eyebrow-dot {
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      background: var(--accent);
+      box-shadow: 0 0 0 5px rgba(247, 181, 0, 0.15);
+    }
+
+    h1 {
+      margin: 0;
+      font-size: clamp(27px, 3vw, 42px);
+      line-height: 1.05;
+      letter-spacing: -0.035em;
+    }
+
+    .subtitle {
+      margin: 9px 0 0;
+      color: var(--muted);
+      font-size: 15px;
+    }
+
+    .hero-badge {
+      flex: 0 0 auto;
+      padding: 12px 16px;
+      border-radius: 999px;
+      background: #eef3ff;
+      color: var(--primary-dark);
+      font-size: 13px;
+      font-weight: 800;
+      border: 1px solid #d9e3ff;
+      white-space: nowrap;
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1.05fr) minmax(390px, 0.95fr);
+      gap: 22px;
+      align-items: start;
+    }
+
+    .left-column,
+    .right-column {
+      display: grid;
+      gap: 22px;
+    }
+
+    .logic-flow {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 22px;
+    }
+
+    .logic-flow > .card {
+      width: 100%;
+    }
+
+
+    .input-wrap.locked input {
+      background: #eef2f7;
+      color: #667085;
+      border-color: #d8dee8;
+      cursor: not-allowed;
+      padding-right: 76px;
+    }
+
+    .input-wrap.locked::after {
+      content: "LOCKED";
+      position: absolute;
+      right: 10px;
+      top: 7px;
+      transform: none;
+      padding: 3px 6px;
+      border-radius: 6px;
+      background: #dfe5ee;
+      color: #5f6b7c;
+      font-size: 8px;
+      font-weight: 900;
+      letter-spacing: .07em;
+      pointer-events: none;
+    }
+
+    .input-wrap.locked .suffix {
+      top: auto;
+      bottom: 7px;
+      transform: none;
+      right: 11px;
+      font-size: 10px;
+    }
+
+    .settings-note {
+      margin-top: 14px;
+      padding: 11px 13px;
+      border-radius: 10px;
+      background: #f7f9fc;
+      border: 1px solid #e2e7ef;
+      color: #667085;
+      font-size: 11px;
+    }
+
+    .variables-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 18px;
+      align-items: start;
+    }
+
+    .variable-group {
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 16px;
+    }
+
+    .variable-group h3 {
+      margin: 0 0 15px;
+      font-size: 14px;
+      font-weight: 900;
+      color: #27354e;
+    }
+
+    .variable-breakdown {
+      margin-top: 18px;
+    }
+
+    .secondary-price {
+      margin-top: 7px;
+      color: #4d5a71;
+      font-size: 14px;
+    }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: 0 8px 28px rgba(22, 34, 58, 0.055);
+      overflow: hidden;
+    }
+
+    .card-header {
+      padding: 18px 20px 14px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+    }
+
+    .card-title {
+      margin: 0;
+      font-size: 16px;
+      font-weight: 800;
+    }
+
+    .card-hint {
+      margin-top: 3px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .card-body {
+      padding: 20px;
+    }
+
+    .currency-switch {
+      display: inline-flex;
+      background: #edf1f7;
+      padding: 4px;
+      border-radius: 12px;
+      gap: 4px;
+    }
+
+    .currency-switch button {
+      border: 0;
+      border-radius: 9px;
+      background: transparent;
+      padding: 8px 15px;
+      font-size: 13px;
+      font-weight: 800;
+      color: #677185;
+      cursor: pointer;
+      transition: 0.18s ease;
+    }
+
+    .currency-switch button.active {
+      color: #fff;
+      background: var(--primary);
+      box-shadow: 0 4px 12px rgba(49, 94, 251, 0.25);
+    }
+
+    .form-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+    }
+
+    .field {
+      min-width: 0;
+    }
+
+    .field.full {
+      grid-column: 1 / -1;
+    }
+
+    label {
+      display: block;
+      margin-bottom: 7px;
+      font-size: 12px;
+      font-weight: 800;
+      color: #465066;
+    }
+
+    .input-wrap {
+      position: relative;
+    }
+
+    .input-wrap input {
+      width: 100%;
+      height: 46px;
+      border: 1px solid #d6ddea;
+      border-radius: 11px;
+      background: var(--input);
+      color: var(--text);
+      outline: none;
+      padding: 0 58px 0 13px;
+      font-size: 15px;
+      font-weight: 700;
+      transition: border-color .18s ease, box-shadow .18s ease, background .18s ease;
+    }
+
+    .input-wrap input:focus {
+      border-color: var(--primary);
+      background: #fff;
+      box-shadow: 0 0 0 4px rgba(49, 94, 251, 0.10);
+    }
+
+    .suffix {
+      position: absolute;
+      right: 12px;
+      top: 50%;
+      transform: translateY(-50%);
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 800;
+      pointer-events: none;
+    }
+
+    .mini-note {
+      margin-top: 7px;
+      color: var(--muted);
+      font-size: 11px;
+    }
+
+    .derived-line {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 12px 14px;
+      margin-top: 14px;
+      border-radius: 12px;
+      background: #f4f7fd;
+      border: 1px solid #e3e9f4;
+      font-size: 13px;
+    }
+
+    .derived-line strong {
+      color: var(--primary-dark);
+    }
+
+    .summary-card {
+      background:
+        linear-gradient(135deg, rgba(49, 94, 251, .98), rgba(26, 67, 190, .98));
+      color: white;
+      border: none;
+      box-shadow: 0 18px 45px rgba(31, 76, 198, 0.23);
+    }
+
+    .summary-card .card-header {
+      border-color: rgba(255,255,255,.16);
+    }
+
+    .summary-card .card-hint {
+      color: rgba(255,255,255,.72);
+    }
+
+    .summary-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .metric {
+      padding: 16px;
+      background: rgba(255,255,255,.105);
+      border: 1px solid rgba(255,255,255,.15);
+      border-radius: 14px;
+      min-width: 0;
+    }
+
+    .metric.primary {
+      grid-column: 1 / -1;
+      background: rgba(255,255,255,.16);
+    }
+
+    .metric-label {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: .075em;
+      color: rgba(255,255,255,.72);
+      font-weight: 800;
+    }
+
+    .metric-value {
+      margin-top: 5px;
+      font-size: clamp(21px, 2.1vw, 31px);
+      font-weight: 900;
+      letter-spacing: -0.025em;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .metric.primary .metric-value {
+      font-size: clamp(30px, 3vw, 44px);
+    }
+
+    .metric-sub {
+      margin-top: 4px;
+      font-size: 11px;
+      color: rgba(255,255,255,.7);
+    }
+
+    .quote-box {
+      display: grid;
+      gap: 12px;
+    }
+
+    .quote-line {
+      padding: 15px 16px;
+      border-radius: 12px;
+      border: 1px solid #e1e7f0;
+      background: #fafbfd;
+    }
+
+    .quote-label {
+      font-size: 11px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: .07em;
+      color: var(--muted);
+      margin-bottom: 5px;
+    }
+
+    .quote-text {
+      font-size: 15px;
+      font-weight: 800;
+      color: #1f2937;
+    }
+
+    .quote-text.rtl {
+      direction: rtl;
+      text-align: right;
+      font-size: 17px;
+    }
+
+    .breakdown {
+      display: grid;
+      gap: 1px;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+      background: var(--border);
+    }
+
+    .breakdown-row {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 18px;
+      align-items: center;
+      padding: 11px 13px;
+      background: #fff;
+      font-size: 13px;
+    }
+
+    .breakdown-row.total {
+      background: #f0f4fb;
+      font-weight: 900;
+    }
+
+    .breakdown-row .amount {
+      font-weight: 800;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 18px;
+    }
+
+    .btn {
+      appearance: none;
+      border: 1px solid transparent;
+      border-radius: 11px;
+      padding: 10px 14px;
+      font-size: 13px;
+      font-weight: 800;
+      cursor: pointer;
+      transition: .18s ease;
+    }
+
+    .btn-primary {
+      background: var(--primary);
+      color: white;
+    }
+
+    .btn-primary:hover {
+      background: var(--primary-dark);
+    }
+
+    .btn-light {
+      background: #fff;
+      color: #334155;
+      border-color: #dce3ed;
+    }
+
+    .btn-light:hover {
+      background: #f7f9fc;
+    }
+
+    .btn-danger {
+      background: #fff5f5;
+      color: var(--danger);
+      border-color: #f2d5d5;
+    }
+
+    .formula-note {
+      margin-top: 16px;
+      padding: 12px 14px;
+      border-left: 4px solid var(--primary);
+      background: #f4f7fd;
+      border-radius: 8px;
+      color: #596579;
+      font-size: 12px;
+    }
+
+    .footer {
+      margin-top: 18px;
+      text-align: center;
+      color: #8a94a6;
+      font-size: 11px;
+    }
+
+    .toast {
+      position: fixed;
+      right: 20px;
+      bottom: 20px;
+      padding: 11px 15px;
+      background: #13223b;
+      color: #fff;
+      border-radius: 10px;
+      font-size: 13px;
+      font-weight: 700;
+      box-shadow: 0 10px 28px rgba(0,0,0,.16);
+      opacity: 0;
+      transform: translateY(12px);
+      pointer-events: none;
+      transition: .2s ease;
+      z-index: 1000;
+    }
+
+    .toast.show {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    @media (max-width: 980px) {
+      .layout {
+        grid-template-columns: 1fr;
+      }
+
+      .right-column {
+        grid-row: 1;
+      }
+    }
+
+    @media (max-width: 620px) {
+      .page {
+        width: min(100% - 18px, 1450px);
+        margin-top: 10px;
+      }
+
+      .hero {
+        padding: 20px;
+        border-radius: 18px;
+        align-items: flex-start;
+        flex-direction: column;
+      }
+
+      .form-grid,
+      .summary-grid,
+  
+    .input-wrap.locked input {
+      background: #eef2f7;
+      color: #667085;
+      border-color: #d8dee8;
+      cursor: not-allowed;
+      padding-right: 76px;
+    }
+
+    .input-wrap.locked::after {
+      content: "LOCKED";
+      position: absolute;
+      right: 10px;
+      top: 7px;
+      transform: none;
+      padding: 3px 6px;
+      border-radius: 6px;
+      background: #dfe5ee;
+      color: #5f6b7c;
+      font-size: 8px;
+      font-weight: 900;
+      letter-spacing: .07em;
+      pointer-events: none;
+    }
+
+    .input-wrap.locked .suffix {
+      top: auto;
+      bottom: 7px;
+      transform: none;
+      right: 11px;
+      font-size: 10px;
+    }
+
+    .settings-note {
+      margin-top: 14px;
+      padding: 11px 13px;
+      border-radius: 10px;
+      background: #f7f9fc;
+      border: 1px solid #e2e7ef;
+      color: #667085;
+      font-size: 11px;
+    }
+
+    .variables-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .metric.primary {
+        grid-column: auto;
+      }
+
+      .card-header,
+      .card-body {
+        padding-left: 15px;
+        padding-right: 15px;
+      }
+
+      .currency-switch {
+        width: 100%;
+      }
+
+      .currency-switch button {
+        flex: 1;
+      }
+    }
+
+    @media print {
+      body {
+        background: white;
+      }
+
+      .page {
+        width: 100%;
+        margin: 0;
+      }
+
+      .hero,
+      .card {
+        box-shadow: none;
+      }
+
+      .logic-flow > .card:nth-child(1),
+      .logic-flow > .card:nth-child(3),
+      .actions,
+      .footer,
+      .hero-badge {
+        display: none !important;
+      }
+
+      .logic-flow {
+        display: grid;
+        gap: 14px;
+      }
+
+      .summary-card {
+        print-color-adjust: exact;
+        -webkit-print-color-adjust: exact;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <main class="page">
+    <section class="hero">
+      <div class="hero-copy">
+        <div class="eyebrow"><span class="eyebrow-dot"></span>Hello Armenia</div>
+        <h1>Package Calculator 2026</h1>
+        <p class="subtitle">Enter the net cost, review the result, adjust the variables, then copy the final customer price.</p>
+      </div>
+      <div class="hero-badge">USD / AMD → USD / AED</div>
+    </section>
+
+    <section class="logic-flow">
+
+      <!-- 1. NET PRICE INPUT -->
+      <article class="card">
+        <div class="card-header">
+          <div>
+            <h2 class="card-title">1. Package Net Cost</h2>
+            <div class="card-hint">Start by entering the supplier/net package cost.</div>
+          </div>
+
+          <div class="currency-switch" aria-label="Net price currency selector">
+            <button type="button" id="usdModeBtn" class="active" onclick="setMode('USD')">USD</button>
+            <button type="button" id="amdModeBtn" onclick="setMode('AMD')">AMD</button>
+          </div>
+        </div>
+
+        <div class="card-body">
+          <div class="form-grid">
+            <div class="field full">
+              <label id="netPriceLabel" for="netPrice">Net Price USD</label>
+              <div class="input-wrap">
+                <input id="netPrice" type="number" min="0" step="0.01" value="860" oninput="calculate()" />
+                <span class="suffix" id="netPriceSuffix">USD</span>
+              </div>
+              <div class="mini-note" id="netPriceHelp">Enter the net package cost in USD.</div>
+            </div>
+          </div>
+
+          <div class="derived-line" id="conversionLine" style="display:none;">
+            <span>Converted Net Price USD</span>
+            <strong id="convertedNetUsd">USD 0.00</strong>
+          </div>
+        </div>
+      </article>
+
+      <!-- 2. RESULT -->
+      <article class="card summary-card">
+        <div class="card-header">
+          <div>
+            <h2 class="card-title">2. Pricing Result</h2>
+            <div class="card-hint">The selling price updates automatically as you change the inputs.</div>
+          </div>
+        </div>
+
+        <div class="card-body">
+          <div class="summary-grid">
+            <div class="metric primary">
+              <div class="metric-label">Selling Price USD — After Discount</div>
+              <div class="metric-value" id="sellingUsd">USD 0.00</div>
+              <div class="metric-sub">Final selling price after the configured discount.</div>
+            </div>
+
+            <div class="metric">
+              <div class="metric-label">Original Price USD</div>
+              <div class="metric-value" id="originalUsd">USD 0.00</div>
+              <div class="metric-sub">Price before offer discount.</div>
+            </div>
+
+            <div class="metric">
+              <div class="metric-label">Profit Before Tax & Transfer Fees</div>
+              <div class="metric-value" id="profitUsd">USD 0.00</div>
+              <div class="metric-sub">Selling Price − Net Price.</div>
+            </div>
+
+            <div class="metric">
+              <div class="metric-label">After Discount AED</div>
+              <div class="metric-value" id="sellingAed">AED 0</div>
+              <div class="metric-sub">Rounded down, matching the workbook.</div>
+            </div>
+
+            <div class="metric">
+              <div class="metric-label">Original Price AED</div>
+              <div class="metric-value" id="originalAed">AED 0</div>
+              <div class="metric-sub">Rounded up, matching the workbook.</div>
+            </div>
+          </div>
+        </div>
+      </article>
+
+      <!-- 3. VARIABLES -->
+      <article class="card">
+        <div class="card-header">
+          <div>
+            <h2 class="card-title">3. Pricing Variables</h2>
+            <div class="card-hint">Fixed pricing rules are locked. Only operational variables can be changed.</div>
+          </div>
+        </div>
+
+        <div class="card-body">
+          <div class="variables-grid">
+
+            <!-- PRICING SETTINGS -->
+            <section class="variable-group">
+              <h3>Pricing Settings</h3>
+
+              <div class="form-grid">
+                <div class="field">
+                  <label for="revenuePct">Desired Revenue Percentage</label>
+                  <div class="input-wrap locked">
+                    <input id="revenuePct" type="number" value="30" readonly aria-readonly="true" />
+                    <span class="suffix">%</span>
+                  </div>
+                </div>
+
+                <div class="field">
+                  <label for="discountPct">Offer Discount Percentage</label>
+                  <div class="input-wrap locked">
+                    <input id="discountPct" type="number" value="20" readonly aria-readonly="true" />
+                    <span class="suffix">%</span>
+                  </div>
+                </div>
+
+                <div class="field">
+                  <label for="usdAedRate">Exchange Rate USD × AED</label>
+                  <div class="input-wrap locked">
+                    <input id="usdAedRate" type="number" value="3.69" readonly aria-readonly="true" />
+                    <span class="suffix">AED</span>
+                  </div>
+                </div>
+
+                <div class="field">
+                  <label for="usdAmdRate">Exchange Rate USD × AMD</label>
+                  <div class="input-wrap">
+                    <input id="usdAmdRate" type="number" min="0.01" step="0.01" value="355" oninput="calculate()" />
+                    <span class="suffix">AMD</span>
+                  </div>
+                  <div class="mini-note">Editable when the package net cost is entered in AMD.</div>
+                </div>
+              </div>
+
+              <div class="settings-note">
+                Revenue %, discount %, and USD × AED exchange rate are fixed business settings and cannot be edited from the calculator.
+              </div>
+            </section>
+
+            <!-- ADDITIONAL COSTS -->
+            <section class="variable-group">
+              <h3>Additional Costs</h3>
+
+              <div class="form-grid">
+                <div class="field">
+                  <label for="extraAddition">Extra Addition</label>
+                  <div class="input-wrap">
+                    <input id="extraAddition" type="number" min="0" step="0.01" value="200" oninput="calculate()" />
+                    <span class="suffix">USD</span>
+                  </div>
+                </div>
+
+                <div class="field">
+                  <label for="eVisa">eVisa</label>
+                  <div class="input-wrap">
+                    <input id="eVisa" type="number" min="0" step="0.01" value="0" oninput="calculate()" />
+                    <span class="suffix">USD</span>
+                  </div>
+                </div>
+
+                <div class="field">
+                  <label for="internetCard">Internet Card</label>
+                  <div class="input-wrap">
+                    <input id="internetCard" type="number" min="0" step="0.01" value="0" oninput="calculate()" />
+                    <span class="suffix">USD</span>
+                  </div>
+                </div>
+
+                <div class="field">
+                  <label for="transferFees">Payment Transfer Fees</label>
+                  <div class="input-wrap locked">
+                    <input id="transferFees" type="number" value="30" readonly aria-readonly="true" />
+                    <span class="suffix">USD</span>
+                  </div>
+                </div>
+
+                <div class="field full">
+                  <label for="onlineProvisionPct">Online Payment Provision</label>
+                  <div class="input-wrap locked">
+                    <input id="onlineProvisionPct" type="number" value="8" readonly aria-readonly="true" />
+                    <span class="suffix">% of Net</span>
+                  </div>
+                </div>
+              </div>
+
+              <div class="settings-note">
+                Extra Addition, eVisa, and Internet Card are variable. Payment Transfer Fees and Online Payment Provision are fixed and locked.
+              </div>
+            </section>
+
+          </div>
+
+          <div class="breakdown variable-breakdown">
+            <div class="breakdown-row">
+              <span>Extra Addition</span>
+              <span class="amount" id="bdExtra">USD 0.00</span>
+            </div>
+            <div class="breakdown-row">
+              <span>eVisa</span>
+              <span class="amount" id="bdVisa">USD 0.00</span>
+            </div>
+            <div class="breakdown-row">
+              <span>Internet Card</span>
+              <span class="amount" id="bdInternet">USD 0.00</span>
+            </div>
+            <div class="breakdown-row">
+              <span>Payment Transfer Fees</span>
+              <span class="amount" id="bdTransfer">USD 0.00</span>
+            </div>
+            <div class="breakdown-row">
+              <span id="bdProvisionLabel">Online Payment Provision — 8% of Net</span>
+              <span class="amount" id="bdProvision">USD 0.00</span>
+            </div>
+            <div class="breakdown-row total">
+              <span>Total Addition</span>
+              <span class="amount" id="bdTotal">USD 0.00</span>
+            </div>
+          </div>
+
+          <div class="formula-note">
+            Selling Price = (Net Price USD + Total Addition) × (1 + Desired Revenue %)<br>
+            Original Price = Selling Price ÷ (1 − Offer Discount %)
+          </div>
+        </div>
+      </article>
+
+      <!-- 4. CUSTOMER SUMMARY -->
+      <article class="card">
+        <div class="card-header">
+          <div>
+            <h2 class="card-title">4. Customer Price Summary</h2>
+            <div class="card-hint">Copy only the final pricing line in English or Arabic.</div>
+          </div>
+        </div>
+
+        <div class="card-body">
+          <div class="quote-box">
+            <div class="quote-line">
+              <div class="quote-label">English Pricing Line — AED</div>
+              <div class="quote-text" id="aedEnglishQuote">Original Price AED 0 | After Discount AED 0</div>
+              <div id="usdQuote" style="display:none;"></div>
+            </div>
+
+            <div class="quote-line">
+              <div class="quote-label">Arabic Pricing Line</div>
+              <div class="quote-text rtl" id="aedQuote">السعر الأساسي 0 د.إ | السعر بعد الخصم 0 د.إ</div>
+            </div>
+          </div>
+
+          <div class="actions">
+            <button class="btn btn-primary" type="button" onclick="copyEnglishPrice()">Copy English</button>
+            <button class="btn btn-primary" type="button" onclick="copyArabicPrice()">Copy Arabic</button>
+            <button class="btn btn-light" type="button" onclick="window.print()">Print / Save PDF</button>
+            <button class="btn btn-danger" type="button" onclick="resetCalculator()">Reset Defaults</button>
+          </div>
+        </div>
+      </article>
+
+    </section>
+
+    <div class="footer">
+      Hello Armenia Package Calculator 2026 • Fixed pricing rules protected • Standalone HTML
+    </div>
+  </main>
+
+  <div class="toast" id="toast">Copied</div>
+
+  <script>
+    let inputMode = "USD";
+
+    const defaults = {
+      mode: "USD",
+      netPriceUSD: 860,
+      netPriceAMD: 305000,
+      revenuePct: 30,
+      discountPct: 20,
+      usdAedRate: 3.69,
+      usdAmdRate: 355,
+      onlineProvisionPct: 8,
+      extraAddition: 200,
+      eVisa: 0,
+      internetCard: 0,
+      transferFees: 30
+    };
+
+    function numberValue(id) {
+      const value = parseFloat(document.getElementById(id).value);
+      return Number.isFinite(value) ? value : 0;
+    }
+
+    function money(value, currency = "USD", decimals = 2) {
+      const safe = Number.isFinite(value) ? value : 0;
+      return `${currency} ${safe.toLocaleString("en-US", {
+        minimumFractionDigits: decimals,
+        maximumFractionDigits: decimals
+      })}`;
+    }
+
+    function wholeMoney(value, currency = "AED") {
+      const safe = Number.isFinite(value) ? value : 0;
+      return `${currency} ${Math.trunc(safe).toLocaleString("en-US")}`;
+    }
+
+    function formatNumber(value, decimals = 2) {
+      const safe = Number.isFinite(value) ? value : 0;
+      return safe.toLocaleString("en-US", {
+        minimumFractionDigits: decimals,
+        maximumFractionDigits: decimals
+      });
+    }
+
+    function setMode(mode) {
+      if (mode === inputMode) return;
+
+      const currentNet = numberValue("netPrice");
+      const amdRate = Math.max(numberValue("usdAmdRate"), 0.000001);
+
+      if (mode === "AMD" && inputMode === "USD") {
+        document.getElementById("netPrice").value = Math.round(currentNet * amdRate);
+      } else if (mode === "USD" && inputMode === "AMD") {
+        document.getElementById("netPrice").value = (currentNet / amdRate).toFixed(2);
+      }
+
+      inputMode = mode;
+      updateModeUI();
+      calculate();
+    }
+
+    function updateModeUI() {
+      const usdBtn = document.getElementById("usdModeBtn");
+      const amdBtn = document.getElementById("amdModeBtn");
+      const label = document.getElementById("netPriceLabel");
+      const suffix = document.getElementById("netPriceSuffix");
+      const help = document.getElementById("netPriceHelp");
+      const conversion = document.getElementById("conversionLine");
+
+      usdBtn.classList.toggle("active", inputMode === "USD");
+      amdBtn.classList.toggle("active", inputMode === "AMD");
+
+      if (inputMode === "USD") {
+        label.textContent = "Net Price USD";
+        suffix.textContent = "USD";
+        help.textContent = "Enter the net package cost in USD.";
+        conversion.style.display = "none";
+      } else {
+        label.textContent = "Net Price AMD";
+        suffix.textContent = "AMD";
+        help.textContent = "The calculator converts AMD to USD using the USD × AMD exchange rate.";
+        conversion.style.display = "flex";
+      }
+    }
+
+    function calculate() {
+      const rawNetPrice = numberValue("netPrice");
+      const revenuePct = numberValue("revenuePct") / 100;
+      const discountPct = numberValue("discountPct") / 100;
+      const usdAedRate = numberValue("usdAedRate");
+      const usdAmdRate = numberValue("usdAmdRate");
+      const onlineProvisionPct = numberValue("onlineProvisionPct") / 100;
+
+      const extraAddition = numberValue("extraAddition");
+      const eVisa = numberValue("eVisa");
+      const internetCard = numberValue("internetCard");
+      const transferFees = numberValue("transferFees");
+
+      let netUsd = 0;
+
+      if (inputMode === "AMD") {
+        netUsd = usdAmdRate > 0 ? rawNetPrice / usdAmdRate : 0;
+      } else {
+        netUsd = rawNetPrice;
+      }
+
+      const onlineProvision = netUsd * onlineProvisionPct;
+      const totalAddition =
+        extraAddition +
+        eVisa +
+        internetCard +
+        transferFees +
+        onlineProvision;
+
+      // Exact workbook logic:
+      // Selling Price USD = (Net USD + Total Addition) * (1 + Desired Revenue %)
+      const sellingUsd = (netUsd + totalAddition) * (1 + revenuePct);
+
+      // Profit workbook formula = Selling Price USD - Net Price USD
+      const profitUsd = sellingUsd - netUsd;
+
+      // Original price before discount
+      const originalUsd = discountPct < 1
+        ? sellingUsd / (1 - discountPct)
+        : 0;
+
+      // Exact workbook rounding behavior
+      const originalAed = Math.ceil(originalUsd * usdAedRate);
+      const sellingAed = Math.floor(sellingUsd * usdAedRate);
+
+      document.getElementById("convertedNetUsd").textContent = money(netUsd);
+      document.getElementById("sellingUsd").textContent = money(sellingUsd);
+      document.getElementById("originalUsd").textContent = money(originalUsd);
+      document.getElementById("profitUsd").textContent = money(profitUsd);
+      document.getElementById("sellingAed").textContent = wholeMoney(sellingAed, "AED");
+      document.getElementById("originalAed").textContent = wholeMoney(originalAed, "AED");
+
+      document.getElementById("usdQuote").textContent =
+        `Original Price USD ${formatNumber(originalUsd)}  /  After Discount USD ${formatNumber(sellingUsd)}`;
+
+      document.getElementById("aedEnglishQuote").textContent =
+        `Original Price AED ${originalAed.toLocaleString("en-US")} | After Discount AED ${sellingAed.toLocaleString("en-US")}`;
+
+      document.getElementById("aedQuote").textContent =
+        `السعر الأساسي ${originalAed.toLocaleString("en-US")} د.إ | السعر بعد الخصم ${sellingAed.toLocaleString("en-US")} د.إ`;
+
+      document.getElementById("bdExtra").textContent = money(extraAddition);
+      document.getElementById("bdVisa").textContent = money(eVisa);
+      document.getElementById("bdInternet").textContent = money(internetCard);
+      document.getElementById("bdTransfer").textContent = money(transferFees);
+      document.getElementById("bdProvision").textContent = money(onlineProvision);
+      document.getElementById("bdTotal").textContent = money(totalAddition);
+      document.getElementById("bdProvisionLabel").textContent =
+        `Online Payment Provision — ${formatNumber(onlineProvisionPct * 100, 1).replace(".0","")}% of Net`;
+
+      // Save current state locally in the browser.
+      saveState();
+    }
+
+    function saveState() {
+      try {
+        const state = {
+          mode: inputMode,
+          netPrice: document.getElementById("netPrice").value,
+          usdAmdRate: document.getElementById("usdAmdRate").value,
+          extraAddition: document.getElementById("extraAddition").value,
+          eVisa: document.getElementById("eVisa").value,
+          internetCard: document.getElementById("internetCard").value
+        };
+        localStorage.setItem("helloArmeniaPackageCalculator2026", JSON.stringify(state));
+      } catch (_) {}
+    }
+
+    function loadState() {
+      try {
+        const raw = localStorage.getItem("helloArmeniaPackageCalculator2026");
+        if (!raw) return false;
+
+        const state = JSON.parse(raw);
+        if (!state || typeof state !== "object") return false;
+
+        inputMode = state.mode === "AMD" ? "AMD" : "USD";
+
+        const ids = [
+          "netPrice",
+          "usdAmdRate",
+          "extraAddition",
+          "eVisa",
+          "internetCard"
+        ];
+
+        ids.forEach(id => {
+          if (state[id] !== undefined && state[id] !== null) {
+            document.getElementById(id).value = state[id];
+          }
+        });
+
+        return true;
+      } catch (_) {
+        return false;
+      }
+    }
+
+    function resetCalculator() {
+      inputMode = defaults.mode;
+      document.getElementById("netPrice").value = defaults.netPriceUSD;
+      document.getElementById("revenuePct").value = defaults.revenuePct;
+      document.getElementById("discountPct").value = defaults.discountPct;
+      document.getElementById("usdAedRate").value = defaults.usdAedRate;
+      document.getElementById("usdAmdRate").value = defaults.usdAmdRate;
+      document.getElementById("onlineProvisionPct").value = defaults.onlineProvisionPct;
+      document.getElementById("extraAddition").value = defaults.extraAddition;
+      document.getElementById("eVisa").value = defaults.eVisa;
+      document.getElementById("internetCard").value = defaults.internetCard;
+      document.getElementById("transferFees").value = defaults.transferFees;
+
+      try {
+        localStorage.removeItem("helloArmeniaPackageCalculator2026");
+      } catch (_) {}
+
+      updateModeUI();
+      calculate();
+      showToast("Defaults restored");
+    }
+
+    function copyText(text, successMessage) {
+      if (navigator.clipboard && window.isSecureContext) {
+        navigator.clipboard.writeText(text)
+          .then(() => showToast(successMessage))
+          .catch(() => fallbackCopy(text, successMessage));
+      } else {
+        fallbackCopy(text, successMessage);
+      }
+    }
+
+    function fallbackCopy(text, successMessage) {
+      const temp = document.createElement("textarea");
+      temp.value = text;
+      temp.style.position = "fixed";
+      temp.style.opacity = "0";
+      document.body.appendChild(temp);
+      temp.focus();
+      temp.select();
+
+      try {
+        document.execCommand("copy");
+        showToast(successMessage);
+      } catch (_) {
+        showToast("Unable to copy");
+      }
+
+      temp.remove();
+    }
+
+    function copyEnglishPrice() {
+      const text = document.getElementById("aedEnglishQuote").textContent;
+      copyText(text, "English AED pricing line copied");
+    }
+
+    function copyArabicPrice() {
+      const text = document.getElementById("aedQuote").textContent;
+      copyText(text, "Arabic pricing line copied");
+    }
+
+    function showToast(message) {
+      const toast = document.getElementById("toast");
+      toast.textContent = message;
+      toast.classList.add("show");
+      clearTimeout(showToast.timer);
+      showToast.timer = setTimeout(() => toast.classList.remove("show"), 1800);
+    }
+
+    // Initialize
+    loadState();
+    updateModeUI();
+    calculate();
+  </script>
+</body>
+</html>

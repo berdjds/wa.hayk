@@ -1,0 +1,118 @@
+name: CI/CD
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Serialize deployments: never run two VPS deploys concurrently.
+concurrency:
+  group: deploy-main
+  cancel-in-progress: false
+
+jobs:
+  test:
+    name: Typecheck, test, build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+      - run: npx prisma generate
+      - run: npx tsc --noEmit
+      - name: Unit and integration tests
+        # DB-backed suites push the Prisma schema to throwaway /tmp SQLite files.
+        run: npx vitest run
+        env:
+          PUPPETEER_SKIP_CHROMIUM_DOWNLOAD: "true"
+      - run: npm run build
+
+  deploy:
+    name: Deploy to VPS
+    needs: test
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    env:
+      VPS_HOST: ${{ secrets.VPS_HOST }}
+      VPS_USER: ${{ secrets.VPS_USER }}
+      VPS_PATH: /root/productionapp
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Package source
+        run: |
+          tar \
+            --exclude='node_modules' \
+            --exclude='.next' \
+            --exclude='.git' \
+            --exclude='.wwebjs_auth' \
+            --exclude='.wwebjs_cache' \
+            --exclude='public/uploads' \
+            --exclude='prisma/dev.db' \
+            --exclude='data/documents' \
+            --exclude='*.tar.gz' \
+            --exclude='*.db-journal' \
+            -czf wacontrol-source.tar.gz .
+          du -h wacontrol-source.tar.gz
+
+      - name: Install SSH key
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          echo "${{ secrets.VPS_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "${VPS_HOST}" >> ~/.ssh/known_hosts
+
+      - name: Upload source
+        run: scp -i ~/.ssh/deploy_key wacontrol-source.tar.gz "${VPS_USER}@${VPS_HOST}:/tmp/"
+
+      - name: Build and restart on VPS
+        run: |
+          ssh -i ~/.ssh/deploy_key "${VPS_USER}@${VPS_HOST}" bash -s <<'ENDSSH'
+          set -e
+          cd /root/productionapp
+
+          mkdir -p wacontrol-src
+          rm -rf wacontrol-src/*
+          tar -xzf /tmp/wacontrol-source.tar.gz -C wacontrol-src
+          rm -f /tmp/wacontrol-source.tar.gz
+
+          # Keep the compose file in sync with the repo, backing up any local variant.
+          if ! cmp -s wacontrol-src/docker-compose.yml docker-compose.yml 2>/dev/null; then
+            cp docker-compose.yml "docker-compose.yml.bak-$(date +%Y%m%d%H%M%S)" 2>/dev/null || true
+            cp wacontrol-src/docker-compose.yml docker-compose.yml
+          fi
+
+          cd wacontrol-src
+          docker build -t wacontrol:latest .
+
+          cd /root/productionapp
+          mkdir -p wacontrol-data wacontrol-uploads wacontrol-auth
+
+          docker stop wacontrol-app 2>/dev/null || true
+          docker rm wacontrol-app 2>/dev/null || true
+          docker compose up -d wacontrol_app
+
+          # db push happens in docker-entrypoint.sh at container start.
+          docker compose exec -T wacontrol_app npm run db:seed || true
+          # Travel module master data (idempotent; demo users skipped in production).
+          docker compose exec -T wacontrol_app npx tsx scripts/import-workbook.ts || true
+          docker compose exec -T wacontrol_app npx tsx scripts/seed-travel-catalog.ts || true
+
+          docker ps | grep wacontrol-app
+          ENDSSH
+
+      - name: Health check
+        run: |
+          for i in $(seq 1 12); do
+            code=$(curl -s -o /dev/null -w "%{http_code}" https://wa.hayk.ae/login || true)
+            echo "attempt $i: HTTP $code"
+            if [ "$code" = "200" ]; then exit 0; fi
+            sleep 10
+          done
+          echo "Site did not return 200 on /login"
+          exit 1

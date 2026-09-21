@@ -39,9 +39,12 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-muted/40 p-4">
+    <div className="flex min-h-screen flex-col items-center justify-center bg-muted/40 p-4">
       <Card className="w-full max-w-sm">
         <CardHeader className="text-center">
+          <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-gradient-to-br from-emerald-400 to-green-700 text-sm font-bold text-white shadow-sm">
+            WA
+          </div>
           <CardTitle>WAControl</CardTitle>
           <CardDescription>Sign in to manage WhatsApp messages.</CardDescription>
         </CardHeader>
@@ -75,6 +78,9 @@ export default function LoginPage() {
           </form>
         </CardContent>
       </Card>
+      <p className="mt-6 text-xs text-muted-foreground">
+        Developed by <span className="font-medium text-foreground/70">Hayk FZC</span>
+      </p>
     </div>
   );
 }

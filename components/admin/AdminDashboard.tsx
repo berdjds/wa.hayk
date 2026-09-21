@@ -38,6 +38,7 @@ export default function AdminDashboard() {
   const [users, setUsers] = useState<User[]>([]);
   const [logs, setLogs] = useState<Log[]>([]);
   const [loading, setLoading] = useState(false);
+  const [buildInfo, setBuildInfo] = useState<{ version?: string; startedAt?: string } | null>(null);
 
   const [newUser, setNewUser] = useState({ email: "", name: "", password: "", role: "USER" as "ADMIN" | "USER" });
   const [editingUser, setEditingUser] = useState<User | null>(null);
@@ -66,6 +67,10 @@ export default function AdminDashboard() {
   useEffect(() => {
     fetchUsers();
     fetchLogs();
+    axios
+      .get("/api/whatsapp/status")
+      .then((res) => setBuildInfo({ version: res.data.version, startedAt: res.data.startedAt }))
+      .catch(() => null);
   }, []);
 
   async function handleCreateUser(e: React.FormEvent) {
@@ -129,10 +134,24 @@ export default function AdminDashboard() {
         <div>
           <h1 className="text-2xl font-bold">Admin Panel</h1>
           <p className="text-sm text-muted-foreground">Manage WhatsApp connection, users, and logs.</p>
+          {buildInfo?.version && (
+            <p className="mt-1 text-xs text-muted-foreground">
+              Build: <Badge variant="outline">v{buildInfo.version}</Badge>{" "}
+              {buildInfo.startedAt && (
+                <span>· server up since {new Date(buildInfo.startedAt).toLocaleString()}</span>
+              )}
+            </p>
+          )}
         </div>
         <div className="flex items-center gap-2">
           <Button variant="outline" onClick={() => (window.location.href = "/dashboard")}>
             Dashboard
+          </Button>
+          <Button variant="outline" onClick={() => (window.location.href = "/calculator")}>
+            Calculator
+          </Button>
+          <Button variant="outline" onClick={() => (window.location.href = "/travel")}>
+            Travel
           </Button>
           <Button variant="outline" onClick={() => signOut({ callbackUrl: "/login" })}>
             Sign out

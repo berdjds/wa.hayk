@@ -12,19 +12,27 @@ model User {
   email     String   @unique
   name      String?
   password  String
-  role      String   @default("USER") // ADMIN | USER
+  role      String   @default("USER") // ADMIN | USER | ADVISOR | VALIDATOR
   active    Boolean  @default(true)
+  phone     String? // WhatsApp notification destination (international format, no +)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   logs      Log[]
   messages  Message[] @relation("SentBy")
+
+  travelRequestsOwned      TravelRequest[]        @relation("TravelOwner")
+  travelRequestsValidating TravelRequest[]        @relation("TravelValidator")
+  validationAssignments    ValidationAssignment[] @relation("AssignmentValidator")
+  reviewDecisions          ReviewDecision[]
+  notificationDeliveries   NotificationDelivery[]
 }
 
 model Chat {
   id            String   @id @default(cuid())
   remoteJid     String   @unique
   name          String?
+  phone         String?
   profilePicUrl String?
   lastMessageAt DateTime @default(now())
   createdAt     DateTime @default(now())
@@ -77,4 +85,467 @@ model WhatsAppSession {
   info      String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+// =============================================================================
+// B2B Travel Package Costing & Quotation module (additive)
+// Money and FX values are stored as decimal strings (SQLite has no decimal
+// type); JSON payloads are stored as String. See lib/travel/contracts.ts.
+// =============================================================================
+
+model Agency {
+  id           String   @id @default(cuid())
+  shortCode    String   @unique // uppercase, admin-maintained, e.g. ACME
+  name         String
+  contactName  String?
+  contactEmail String?
+  contactPhone String?
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  requests     TravelRequest[]
+  codeCounters PackageCodeCounter[]
+}
+
+// Transactional per-agency-per-day sequence for package codes (never count+1).
+model PackageCodeCounter {
+  id       String @id @default(cuid())
+  agencyId String
+  dateKey  String // YYYY-MM-DD in company timezone
+  lastSeq  Int    @default(0)
+
+  agency Agency @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+
+  @@unique([agencyId, dateKey])
+}
+
+model TravelRequest {
+  id                 String   @id @default(cuid())
+  packageCode        String   @unique // CLIENTSHORT-YYYY-MM-DD-NNNN, immutable
+  agencyId           String
+  agencyRef          String?
+  ownerId            String
+  title              String
+  destinations       String? // JSON array of strings
+  startDate          String // YYYY-MM-DD local
+  endDate            String // YYYY-MM-DD local
+  travelers          String // JSON TravelerSetup (contracts.ts)
+  roomPrefs          String?
+  flightDetails      String?
+  notes              String?
+  status             String   @default("DRAFT") // QuoteStatus of latest version
+  revision           Int      @default(0) // optimistic locking
+  currentValidatorId String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  agency      Agency                @relation(fields: [agencyId], references: [id])
+  owner       User                  @relation("TravelOwner", fields: [ownerId], references: [id])
+  validator   User?                 @relation("TravelValidator", fields: [currentValidatorId], references: [id])
+  versions    QuoteVersion[]
+  assignments ValidationAssignment[]
+  events      WorkflowEvent[]
+
+  @@index([status])
+  @@index([agencyId])
+}
+
+model QuoteVersion {
+  id                String    @id @default(cuid())
+  requestId         String
+  versionNo         Int
+  status            String    @default("DRAFT") // QuoteStatus
+  terms             String?
+  validUntil        String? // YYYY-MM-DD
+  templateVersionId String?
+  submittedById     String?
+  submittedAt       DateTime?
+  decidedById       String?
+  decidedAt         DateTime?
+  decisionReason    String?
+  outcomeScenarioId String? // accepted scenario, when outcome = ACCEPTED
+  createdAt         DateTime  @default(now())
+
+  request       TravelRequest       @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  scenarios     Scenario[]
+  itineraryDays ItineraryDay[]
+  serviceLines  ServiceLine[]
+  snapshot      CalculationSnapshot?
+  decisions     ReviewDecision[]
+  documents     QuoteDocument[]
+
+  @@unique([requestId, versionNo])
+}
+
+model Scenario {
+  id         String  @id @default(cuid())
+  versionId  String
+  label      String
+  valid      Boolean @default(false)
+  resultJson String? // ScenarioResult JSON from the engine
+
+  version QuoteVersion @relation(fields: [versionId], references: [id], onDelete: Cascade)
+  stays   StaySegment[]
+}
+
+model StaySegment {
+  id             String  @id @default(cuid())
+  scenarioId     String
+  hotelProductId String?
+  hotelName      String // frozen display name
+  city           String?
+  checkIn        String // inclusive, YYYY-MM-DD
+  checkOut       String // exclusive, YYYY-MM-DD
+  board          String?
+  allocations    String // JSON RoomAllocationInput[]
+  rateOverrides  String? // JSON: per-roomType override {rate, reason, actorId}
+
+  scenario     Scenario      @relation(fields: [scenarioId], references: [id], onDelete: Cascade)
+  hotelProduct HotelProduct? @relation(fields: [hotelProductId], references: [id])
+}
+
+model ItineraryDay {
+  id            String  @id @default(cuid())
+  versionId     String
+  dayOffset     Int // 0-based
+  date          String // YYYY-MM-DD
+  narrative     String?
+  overnightCity String?
+  services      String? // JSON array of ServiceLine refs included this day
+
+  version QuoteVersion @relation(fields: [versionId], references: [id], onDelete: Cascade)
+
+  @@unique([versionId, dayOffset])
+}
+
+model ServiceLine {
+  id               String   @id @default(cuid())
+  versionId        String
+  scenarioId       String? // null = shared across scenarios
+  category         String // CostCategory
+  label            String
+  basis            String // PricingBasis
+  currency         String   @default("AMD")
+  unitRate         String? // decimal string; null = missing
+  quantity         String   @default("1")
+  participants     Int?
+  capacity         Int?
+  includedElsewhere Boolean @default(false)
+  isStaffCost      Boolean  @default(false)
+  overrideRate     String?
+  overrideReason   String?
+  overrideById     String?
+  sourceRef        String? // provenance, e.g. "Tour Calculator!C58"
+
+  version QuoteVersion @relation(fields: [versionId], references: [id], onDelete: Cascade)
+}
+
+// ---------------------------------------------------------------------------
+// Catalog
+// ---------------------------------------------------------------------------
+
+model Supplier {
+  id          String   @id @default(cuid())
+  name        String
+  contactJson String?
+  notes       String?
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  hotels   HotelProduct[]
+  services ServiceProduct[]
+}
+
+model HotelProduct {
+  id               String   @id @default(cuid())
+  supplierId       String?
+  name             String
+  city             String?
+  country          String   @default("AM")
+  stars            Int?
+  kind             String   @default("ROOM") // ROOM | COTTAGE_UNIT
+  roomType         String? // physical category, e.g. Standard / Cottage 2BR
+  capacityAdults   Int      @default(2)
+  capacityChildren Int      @default(0)
+  capacityTotal    Int      @default(2)
+  beds             String?
+  extraBedAllowed  Boolean  @default(false)
+  cotAllowed       Boolean  @default(false)
+  boardOptions     String? // JSON array, e.g. ["BB","HB","FB"]
+  active           Boolean  @default(true)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  supplier Supplier?    @relation(fields: [supplierId], references: [id])
+  rates    RateVersion[]
+  stays    StaySegment[]
+}
+
+model VehicleType {
+  id        String   @id @default(cuid())
+  name      String // sedan | van | minibus | large bus
+  seats     Int // usable passenger seats (driver excluded)
+  luggage   Int?
+  notes     String?
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  rates RateVersion[]
+}
+
+model ServiceProduct {
+  id                 String   @id @default(cuid())
+  supplierId         String?
+  name               String
+  category           String // CostCategory
+  basis              String // PricingBasis
+  capacity           Int? // for CAPACITY_BLOCK / group capacity notes
+  weekdays           String? // JSON array of ISO weekdays [1..7] for shared departures
+  includedComponents String? // JSON array of included ticket/meal keys
+  language           String?
+  durationVariant    String? // half_day | full_day | transfer
+  active             Boolean  @default(true)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  supplier Supplier?    @relation(fields: [supplierId], references: [id])
+  rates    RateVersion[]
+}
+
+model RateVersion {
+  id               String   @id @default(cuid())
+  productType      String // HOTEL | VEHICLE | SERVICE
+  hotelProductId   String?
+  vehicleTypeId    String?
+  serviceProductId String?
+  amount           String? // decimal string; null = TBC/unknown
+  currency         String   @default("AMD")
+  occupancy        String? // SGL | DBL | TPL | EXTRA_BED | UNIT (whole cottage)
+  board            String? // BB | HB | FB | ...
+  validFrom        String? // YYYY-MM-DD
+  validTo          String? // YYYY-MM-DD exclusive
+  weekdays         String? // JSON array [1..7]; weekend definitions differ per contract
+  minStay          Int?
+  stopSales        String? // JSON array of {from,to,reason}
+  quoteOnRequest   Boolean  @default(false)
+  priority         Int      @default(0)
+  status           String   @default("NEEDS_REVIEW") // NEEDS_REVIEW | VERIFIED | ARCHIVED
+  evidenceRef      String? // e.g. "Hotels and Agreements!IS2"
+  notes            String?
+  importRowId      String?
+  createdById      String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  hotelProduct   HotelProduct?   @relation(fields: [hotelProductId], references: [id])
+  vehicleType    VehicleType?    @relation(fields: [vehicleTypeId], references: [id])
+  serviceProduct ServiceProduct? @relation(fields: [serviceProductId], references: [id])
+
+  @@index([productType, status])
+}
+
+model FXRateVersion {
+  id             String   @id @default(cuid())
+  currency       String // e.g. USD; value = AMD per 1 unit
+  amdPerUnit     String
+  effectiveFrom  String // YYYY-MM-DD
+  createdById    String?
+  createdAt      DateTime @default(now())
+
+  @@unique([currency, effectiveFrom])
+}
+
+model PricingPolicyVersion {
+  id                       String   @id @default(cuid())
+  name                     String
+  type                     String // MARKUP_ON_COST | GROSS_MARGIN_ON_SALES
+  rate                     String? // decimal fraction
+  minProfit                String?
+  minProfitCurrency        String?
+  feeFraction              String?
+  roundingIncrement        String   @default("1")
+  quoteCurrency            String   @default("USD")
+  allowBelowFloorException Boolean  @default(false)
+  active                   Boolean  @default(false)
+  createdById              String?
+  createdAt                DateTime @default(now())
+}
+
+// ---------------------------------------------------------------------------
+// Snapshots, review, documents
+// ---------------------------------------------------------------------------
+
+model CalculationSnapshot {
+  id            String   @id @default(cuid())
+  versionId     String   @unique
+  inputsJson    String // canonical EngineInput JSON
+  resultJson    String // EngineOutput JSON
+  displayJson   String? // frozen client-facing display data (agency, title, dates, travelers)
+  engineVersion String
+  hash          String   @unique // sha256 of canonical inputs JSON
+  createdById   String?
+  createdAt     DateTime @default(now())
+
+  version QuoteVersion @relation(fields: [versionId], references: [id], onDelete: Cascade)
+}
+
+model ValidationAssignment {
+  id            String    @id @default(cuid())
+  requestId     String
+  validatorId   String
+  assignedById  String
+  dueAt         DateTime?
+  active        Boolean   @default(true)
+  createdAt     DateTime  @default(now())
+  deactivatedAt DateTime?
+
+  request   TravelRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  validator User          @relation("AssignmentValidator", fields: [validatorId], references: [id])
+}
+
+model ReviewDecision {
+  id           String   @id @default(cuid())
+  versionId    String
+  snapshotHash String // approval binds to the exact snapshot hash
+  action       String // APPROVE | REQUEST_CHANGES | REJECT
+  reason       String? // required for REQUEST_CHANGES / REJECT
+  actorId      String
+  createdAt    DateTime @default(now())
+
+  version QuoteVersion @relation(fields: [versionId], references: [id], onDelete: Cascade)
+  actor   User         @relation(fields: [actorId], references: [id])
+}
+
+model WorkflowEvent {
+  id          String   @id @default(cuid())
+  requestId   String
+  versionId   String?
+  type        String // WorkflowEventType
+  actorId     String?
+  payloadJson String // NotificationPayload JSON
+  createdAt   DateTime @default(now())
+
+  request    TravelRequest          @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  deliveries NotificationDelivery[]
+}
+
+// Transactional outbox: one row per event+recipient+channel, dedupKey unique.
+model NotificationDelivery {
+  id          String    @id @default(cuid())
+  eventId     String
+  recipientId String
+  channel     String // EMAIL | WHATSAPP
+  destination String? // email or phone snapshot at queue time
+  dedupKey    String    @unique // eventId:recipientId:channel
+  status      String    @default("QUEUED") // QUEUED | SENT | FAILED | SKIPPED_NO_DESTINATION
+  providerId  String?
+  attempts    Int       @default(0)
+  lastError   String?
+  body        String
+  sentAt      DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  event     WorkflowEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  recipient User          @relation(fields: [recipientId], references: [id])
+
+  @@index([status])
+}
+
+model QuoteDocument {
+  id              String   @id @default(cuid())
+  versionId       String
+  snapshotHash    String
+  kind            String // CLIENT | INTERNAL
+  templateVersion String
+  filePath        String // under data/documents/, never public/uploads
+  sha256          String
+  idempotencyKey  String   @unique
+  issuedAt        DateTime?
+  createdById     String?
+  createdAt       DateTime @default(now())
+
+  version QuoteVersion @relation(fields: [versionId], references: [id], onDelete: Cascade)
+}
+
+// ---------------------------------------------------------------------------
+// Import staging, batch pricing, settings
+// ---------------------------------------------------------------------------
+
+model ImportBatch {
+  id             String   @id @default(cuid())
+  sourceHash     String // sha256 of source evidence file
+  fileName       String
+  status         String   @default("STAGED") // STAGED | PARTIALLY_ACTIVATED | ACTIVATED
+  idempotencyKey String   @unique
+  createdById    String?
+  createdAt      DateTime @default(now())
+
+  rows ImportRow[]
+}
+
+model ImportRow {
+  id             String  @id @default(cuid())
+  batchId        String
+  entityType     String // HOTEL | RATE | SERVICE | TEMPLATE | GEORGIA_BAND | ...
+  sourceRef      String // e.g. "Tour Calculator!B5"
+  rawJson        String
+  normalizedJson String?
+  status         String  @default("STAGED") // STAGED | VERIFIED | ACTIVATED | REJECTED | ERROR
+  issueText      String?
+
+  batch ImportBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+
+  @@unique([batchId, entityType, sourceRef])
+}
+
+model BatchRun {
+  id                String   @id @default(cuid())
+  templateVersionId String
+  paramsJson        String // PAX bands, start dates, hotel/room/vehicle configs
+  resultsJson       String // per-combination EngineOutput summaries + invalid reasons
+  createdById       String?
+  createdAt         DateTime @default(now())
+}
+
+model PackageTemplate {
+  id        String   @id @default(cuid())
+  code      String   @unique // e.g. ARM-S26-0405A (kept verbatim, incl. ARMGG)
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  versions TemplateVersion[]
+}
+
+model TemplateVersion {
+  id          String   @id @default(cuid())
+  templateId  String
+  versionNo   Int      @default(1)
+  nights      Int
+  days        Int
+  daysJson    String // ordered [{dayOffset, narrative, overnightCity, services}]
+  legacyMarkup String? // imported legacy markup fraction, labelled as markup
+  provenance  String? // e.g. "Mass Calculation row 35"
+  status      String   @default("ACTIVE") // ACTIVE | ARCHIVED
+  createdAt   DateTime @default(now())
+
+  template PackageTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  @@unique([templateId, versionNo])
+}
+
+// Singleton row (id = "default") with module configuration.
+model TravelSettings {
+  id                      String  @id @default("default")
+  companyTz               String  @default("Asia/Yerevan")
+  defaultPolicyId         String?
+  requireSettingsForIssue Boolean @default(true)
+  overdueReminderHours    Int?
+  escalationUserId        String?
+  documentsDir            String  @default("data/documents")
+  updatedAt               DateTime @updatedAt
 }

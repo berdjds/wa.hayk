@@ -46,3 +46,6 @@ public/uploads/
 # deployment artifacts
 *.tar.gz
 tsconfig.tsbuildinfo
+
+# travel module generated documents (issued PDFs)
+/data/documents/

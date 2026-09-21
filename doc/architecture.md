@@ -82,3 +82,23 @@ HTTP Server
 2. The UI calls `POST /api/send`.
 3. The server validates the session, checks the WhatsApp client is ready, and calls `sendWhatsAppMessage`.
 4. `message_create` fires, and the message is persisted like any other message.
+
+## Travel module (B2B costing & quotations)
+
+Added 2026-09-21. See `doc/travel/IMPLEMENTATION.md` for the full decision record and
+`doc/travel/OPERATOR-GUIDE.md` for run instructions.
+
+- `lib/travel/` — module domain layer: `contracts.ts` (frozen shared types; money = decimal
+  strings, dates = local `YYYY-MM-DD`), `engine/` (pure deterministic pricing engine,
+  decimal.js), `workflow.ts` (quote state machine with hash-bound approvals), `resolve.ts`
+  (DB → engine DTO), `codes.ts` (transactional package codes), `snapshots.ts` (canonical JSON +
+  sha256), `notifications.ts` (transactional outbox; email via `lib/email.ts`/nodemailer,
+  WhatsApp via the existing client), `pdf/` (HTML→PDF via a dedicated puppeteer browser),
+  `import.ts` (workbook evidence staging), `settings.ts`.
+- `app/api/travel/` — route handlers following existing session/zod/audit conventions.
+- `app/travel/`, `components/travel/` — UI (requests workspace, review queue, templates,
+  catalog, notifications).
+- `server.ts` additionally starts the notification worker and hourly overdue-validation sweep.
+- Tests: `tests/` (vitest): engine, travel-db, workflow, pdf, qa suites. `npm test`.
+- Documents are stored under `data/documents/` (not `public/uploads/`) and served through an
+  authorized route.
