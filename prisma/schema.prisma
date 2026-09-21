@@ -551,5 +551,13 @@ model TravelSettings {
   overdueReminderHours    Int?
   escalationUserId        String?
   documentsDir            String  @default("data/documents")
+  // Company branding for the client quotation PDF cover/footer. Frozen into
+  // the snapshot displayJson at submit time (see workflow.ts).
+  companyName             String?
+  companyPhone            String?
+  companyEmail            String?
+  companyAddress          String?
+  companyWebsite          String?
+  brandColor              String?
   updatedAt               DateTime @updatedAt
 }

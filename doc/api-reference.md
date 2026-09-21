@@ -318,7 +318,7 @@ status (409 for stale snapshot/revision conflicts). Money values are decimal str
 | `/api/travel/catalog/rates/[id]` | PATCH | ADMIN | Edit amount/validity/priority/minStay/weekdays/notes; status transitions NEEDS_REVIEW → VERIFIED → ARCHIVED (never delete) |
 | `/api/travel/catalog/suppliers` | GET | travel roles | Supplier directory for catalog products |
 | `/api/travel/templates`, `/templates/[id]/instantiate` | GET, POST | travel roles | Package templates (ARM/GEO/COM codes); instantiate into a new request |
-| `/api/travel/settings` | GET, PUT | GET: travel roles; PUT: ADMIN | Company timezone, reminders, escalation, policy activation |
+| `/api/travel/settings` | GET, PUT | GET: travel roles; PUT: ADMIN | Company timezone, reminders, escalation, policy activation, and company branding (`companyName`, `companyPhone`, `companyEmail`, `companyAddress`, `companyWebsite`, `brandColor` as `#rrggbb` or null) for the quotation PDF |
 | `/api/travel/policies`, `/api/travel/fx` | GET, POST | ADMIN | Pricing policy versions and effective-dated FX rates |
 | `/api/travel/imports`, `/imports/[id]`, `/imports/[id]/verify` | GET, POST | ADMIN | Workbook import staging batches and row verification |
 | `/api/travel/documents/[id]` | GET | travel roles (INTERNAL: ADMIN/VALIDATOR) | Authorized PDF download |

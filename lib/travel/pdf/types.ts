@@ -45,6 +45,17 @@ export interface QuotationPdfItineraryDay {
   services: DayServiceItem[];
 }
 
+/** Company branding frozen into the snapshot at submit time (from TravelSettings). */
+export interface QuotationPdfBranding {
+  companyName?: string | null;
+  companyPhone?: string | null;
+  companyEmail?: string | null;
+  companyAddress?: string | null;
+  companyWebsite?: string | null;
+  /** "#rrggbb"; invalid/unset values fall back to the default navy. */
+  brandColor?: string | null;
+}
+
 export interface QuotationPdfInput {
   /** SHA-256 hex of the immutable snapshot; the footer shows the first 12 chars. */
   snapshotHash: string;
@@ -70,4 +81,9 @@ export interface QuotationPdfInput {
    * document renders exactly as before (stay-segment tables only).
    */
   itineraryDays?: QuotationPdfItineraryDay[];
+  /**
+   * Frozen company branding (from displayJson). Absent → the cover falls back
+   * to the agency name/contacts and the default brand color.
+   */
+  branding?: QuotationPdfBranding | null;
 }

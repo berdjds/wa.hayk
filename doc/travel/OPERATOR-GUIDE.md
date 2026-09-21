@@ -36,7 +36,11 @@ Verification: `npx tsc --noEmit`, `npm test` (vitest), `npm run build`.
    Jermuk July/August limits, Cozy House extra beds — see RECONCILIATION.md).
 6. **Vehicle types**: confirm seats/luggage against the actual fleet (defaults are
    placeholders: sedan 3, van 5, minibus 12, bus 48).
-7. Docker: mount a volume for `data/documents/` alongside the existing data volume.
+7. **Company branding**: Travel → Settings → "Company branding" card sets the company name,
+   phone, email, website, address and brand color used on the client quotation PDF cover and
+   footer. Branding is frozen into each quotation at submit time, so editing it later never
+   restyles already-issued documents.
+8. Docker: mount a volume for `data/documents/` alongside the existing data volume.
 
 ## Operator workflow
 

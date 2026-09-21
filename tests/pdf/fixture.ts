@@ -18,7 +18,17 @@ import {
   makeService,
   makeStay,
 } from "../engine/helpers";
-import type { QuotationPdfInput, QuotationPdfItineraryDay } from "@/lib/travel/pdf/types";
+import type { QuotationPdfBranding, QuotationPdfInput, QuotationPdfItineraryDay } from "@/lib/travel/pdf/types";
+
+/** Company branding as frozen into displayJson at submit time. */
+export const FIXTURE_BRANDING: QuotationPdfBranding = {
+  companyName: "Nare Travel & Tours",
+  companyPhone: "+374 10 530053",
+  companyEmail: "info@naretravel.am",
+  companyAddress: "15 Abovyan St, Yerevan, Armenia",
+  companyWebsite: "www.naretravel.am",
+  brandColor: "#0d4f8b",
+};
 
 /** Day-by-day itinerary as frozen into displayJson at submit time. */
 export const FIXTURE_ITINERARY_DAYS: QuotationPdfItineraryDay[] = [

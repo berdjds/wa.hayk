@@ -21,7 +21,16 @@ export default function SettingsPanel({ role, userId }: SettingsPanelProps) {
   const [settings, setSettings] = useState<TravelSettingsView | null>(null);
   const [activePolicy, setActivePolicy] = useState<PolicyView | null>(null);
   const [form, setForm] = useState({ companyTz: "", overdueReminderHours: "", requireSettingsForIssue: true });
+  const [branding, setBranding] = useState({
+    companyName: "",
+    companyPhone: "",
+    companyEmail: "",
+    companyAddress: "",
+    companyWebsite: "",
+    brandColor: "",
+  });
   const [saving, setSaving] = useState(false);
+  const [savingBranding, setSavingBranding] = useState(false);
 
   const load = useCallback(() => {
     axios
@@ -34,6 +43,14 @@ export default function SettingsPanel({ role, userId }: SettingsPanelProps) {
           overdueReminderHours:
             res.data.settings.overdueReminderHours == null ? "" : String(res.data.settings.overdueReminderHours),
           requireSettingsForIssue: res.data.settings.requireSettingsForIssue,
+        });
+        setBranding({
+          companyName: res.data.settings.companyName ?? "",
+          companyPhone: res.data.settings.companyPhone ?? "",
+          companyEmail: res.data.settings.companyEmail ?? "",
+          companyAddress: res.data.settings.companyAddress ?? "",
+          companyWebsite: res.data.settings.companyWebsite ?? "",
+          brandColor: res.data.settings.brandColor ?? "",
         });
       })
       .catch((err) => toast(apiError(err, "Failed to load settings"), "error"));
@@ -56,6 +73,28 @@ export default function SettingsPanel({ role, userId }: SettingsPanelProps) {
       toast(apiError(err, "Failed to save settings"), "error");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handleSaveBranding(e: React.FormEvent) {
+    e.preventDefault();
+    setSavingBranding(true);
+    try {
+      const blankToNull = (v: string) => (v.trim() === "" ? null : v.trim());
+      await axios.put("/api/travel/settings", {
+        companyName: blankToNull(branding.companyName),
+        companyPhone: blankToNull(branding.companyPhone),
+        companyEmail: blankToNull(branding.companyEmail),
+        companyAddress: blankToNull(branding.companyAddress),
+        companyWebsite: blankToNull(branding.companyWebsite),
+        brandColor: blankToNull(branding.brandColor),
+      });
+      toast("Branding saved", "success");
+      load();
+    } catch (err) {
+      toast(apiError(err, "Failed to save branding"), "error");
+    } finally {
+      setSavingBranding(false);
     }
   }
 
@@ -97,6 +136,93 @@ export default function SettingsPanel({ role, userId }: SettingsPanelProps) {
                 </label>
                 <Button type="submit" disabled={saving}>
                   {saving ? "Saving..." : "Save settings"}
+                </Button>
+              </form>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Company branding</CardTitle>
+            <CardDescription>
+              Shown on the client quotation PDF cover and footer. Frozen into each issued document.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {settings && (
+              <form onSubmit={handleSaveBranding} className="space-y-4">
+                <div>
+                  <Label>Company name</Label>
+                  <Input
+                    value={branding.companyName}
+                    onChange={(e) => setBranding({ ...branding, companyName: e.target.value })}
+                    placeholder="defaults to the client agency name"
+                  />
+                </div>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div>
+                    <Label>Phone</Label>
+                    <Input
+                      value={branding.companyPhone}
+                      onChange={(e) => setBranding({ ...branding, companyPhone: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <Label>Email</Label>
+                    <Input
+                      type="email"
+                      value={branding.companyEmail}
+                      onChange={(e) => setBranding({ ...branding, companyEmail: e.target.value })}
+                    />
+                  </div>
+                </div>
+                <div>
+                  <Label>Website</Label>
+                  <Input
+                    value={branding.companyWebsite}
+                    onChange={(e) => setBranding({ ...branding, companyWebsite: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <Label>Address</Label>
+                  <Input
+                    value={branding.companyAddress}
+                    onChange={(e) => setBranding({ ...branding, companyAddress: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <Label>Brand color</Label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="color"
+                      className="h-9 w-12 cursor-pointer rounded border"
+                      value={branding.brandColor || "#16305b"}
+                      onChange={(e) => setBranding({ ...branding, brandColor: e.target.value })}
+                    />
+                    <Input
+                      className="w-28 font-mono"
+                      placeholder="#16305b"
+                      value={branding.brandColor}
+                      onChange={(e) => setBranding({ ...branding, brandColor: e.target.value })}
+                    />
+                    {branding.brandColor && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setBranding({ ...branding, brandColor: "" })}
+                      >
+                        Clear
+                      </Button>
+                    )}
+                  </div>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Hex #rrggbb; defaults to navy #16305b on the PDF when unset.
+                  </p>
+                </div>
+                <Button type="submit" disabled={savingBranding}>
+                  {savingBranding ? "Saving..." : "Save branding"}
                 </Button>
               </form>
             )}

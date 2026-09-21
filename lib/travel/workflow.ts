@@ -41,9 +41,9 @@ import { calculate } from "@/lib/travel/engine";
 import { buildEngineInputForVersion } from "@/lib/travel/resolve";
 import { canonicalize, snapshotHash } from "@/lib/travel/snapshots";
 import { generatePackageCode } from "@/lib/travel/codes";
-import { getActivePolicy, getFxMap, getTravelSettings } from "@/lib/travel/settings";
+import { getActivePolicy, getCompanyBranding, getFxMap, getTravelSettings } from "@/lib/travel/settings";
 import { queueWorkflowEvent } from "@/lib/travel/notifications";
-import type { QuotationPdfItineraryDay } from "@/lib/travel/pdf/types";
+import type { QuotationPdfBranding, QuotationPdfItineraryDay } from "@/lib/travel/pdf/types";
 
 // ---------------------------------------------------------------------------
 // Errors and actor
@@ -794,6 +794,9 @@ export async function submit(actor: WorkflowActor, requestId: string) {
     where: { versionId: version.id },
     orderBy: { dayOffset: "asc" },
   });
+  // Company branding is frozen the same way: editing TravelSettings later must
+  // not retroactively restyle an issued document.
+  const branding = await getCompanyBranding();
 
   const inputsJson = canonicalize(input);
   // The engine version is part of the hashed identity so a rule change
@@ -829,6 +832,7 @@ export async function submit(actor: WorkflowActor, requestId: string) {
       overnightCity: day.overnightCity,
       services: normalizeDayServices(day.services),
     })),
+    branding,
   });
 
   try {
@@ -1066,6 +1070,9 @@ async function renderDocumentPdf(documentId: string): Promise<{ ok: boolean; err
         overnightCity: day.overnightCity,
         services: normalizeDayServices(day.services),
       }));
+    // Branding joined displayJson with the PDF redesign; pre-freeze snapshots
+    // fall back to the live settings (same pattern as itineraryDays above).
+    const branding: QuotationPdfBranding = frozen?.branding ?? (await getCompanyBranding());
     // The renderer consumes parsed snapshot JSON verbatim — it never
     // recomputes prices (see lib/travel/pdf/types.ts).
     const buf = await renderQuotationPdf({
@@ -1092,6 +1099,7 @@ async function renderDocumentPdf(documentId: string): Promise<{ ok: boolean; err
       snapshot: JSON.parse(snapshotRow.resultJson),
       inputs: JSON.parse(snapshotRow.inputsJson),
       itineraryDays,
+      branding,
     });
     const settings = await getTravelSettings();
     await mkdir(settings.documentsDir, { recursive: true });

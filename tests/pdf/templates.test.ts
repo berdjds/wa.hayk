@@ -5,6 +5,7 @@ import {
   buildInternalCostingHtml,
 } from "@/lib/travel/pdf/templates";
 import {
+  FIXTURE_BRANDING,
   FIXTURE_ITINERARY_DAYS,
   FIXTURE_NIGHTLY_RATE,
   FIXTURE_SELL_A,
@@ -99,6 +100,140 @@ describe("client quotation HTML", () => {
 
   it("footer carries the short snapshot hash", () => {
     expect(html).toContain("snapshot abcdef012345");
+  });
+});
+
+describe("client quotation branding and cover", () => {
+  const branded = buildClientQuotationHtml(makeFixture({ branding: FIXTURE_BRANDING }));
+  const unbranded = buildClientQuotationHtml(makeFixture());
+
+  it("cover shows the company name, contact block and quotation number", () => {
+    expect(branded).toContain("Nare Travel &amp; Tours");
+    expect(branded).toContain("+374 10 530053");
+    expect(branded).toContain("info@naretravel.am");
+    expect(branded).toContain("www.naretravel.am");
+    expect(branded).toContain("15 Abovyan St, Yerevan, Armenia");
+    expect(branded).toContain("#ACME-2026-09-21-0001");
+    // The client agency name moves out of the cover headline when a company
+    // name is configured (it is only the fallback).
+    expect(branded).not.toContain("ACME Travel LLC");
+  });
+
+  it("renders the display title, destination subtitle and stat pills", () => {
+    expect(branded).toContain("Armenia Autumn Group Tour");
+    expect(branded).toContain("Yerevan / Երևան · Dilijan / Դիլիջան");
+    expect(branded).toContain("Total pax: 23"); // 18 adults + 4 children + 1 infant
+    expect(branded).toContain("Adults: 18");
+    expect(branded).toContain("Children: 4");
+    expect(branded).toContain("Infants: 1");
+    expect(branded).toContain("Nights: 5");
+    expect(branded).toContain("Days: 6");
+    expect(branded).toContain('class="pill"');
+  });
+
+  it("applies the configured brand color to bars, pills and the title", () => {
+    expect(branded).toContain("#0d4f8b");
+    expect(branded).not.toContain("#16305b");
+    expect(unbranded).toContain("#16305b"); // default navy fallback
+  });
+
+  it("rejects a malformed brand color and falls back to the default", () => {
+    const evil = buildClientQuotationHtml(
+      makeFixture({ branding: { ...FIXTURE_BRANDING, brandColor: 'red;"><script>alert(1)</script>' } }),
+    );
+    expect(evil).toContain("#16305b");
+    expect(evil).not.toContain('red;"');
+  });
+
+  it("falls back to the agency name and contacts when branding is unset", () => {
+    expect(unbranded).toContain("ACME Travel LLC");
+    expect(unbranded).toContain("Ani Sargsyan · ani@acme-travel.am · +374 10 000000");
+  });
+
+  it("escapes injected markup in branding fields", () => {
+    const evil = buildClientQuotationHtml(
+      makeFixture({
+        branding: { ...FIXTURE_BRANDING, companyName: 'Nare <script>alert("x")</script>' },
+      }),
+    );
+    expect(evil).toContain("Nare &lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt;");
+    expect(evil).not.toContain('<script>alert("x")</script>');
+  });
+});
+
+describe("client quotation package offer structure", () => {
+  const html = buildClientQuotationHtml(
+    makeFixture({ branding: FIXTURE_BRANDING, itineraryDays: FIXTURE_ITINERARY_DAYS }),
+  );
+
+  it("uses branded section bars", () => {
+    expect(html).toContain('class="section-bar"');
+    expect(html).toContain("Travel Summary");
+    expect(html).toContain("Package Options");
+    expect(html).toContain("Inclusions");
+    expect(html).toContain("Exclusions");
+    expect(html).toContain("Terms &amp; Conditions");
+    expect(html).toContain("Important Notes");
+  });
+
+  it("renders day banner bars with the overnight city on the right", () => {
+    expect(html).toContain('class="day-bar"');
+    expect(html).toContain("Day 1 — 2026-10-01");
+    expect(html).toContain('class="overnight">Overnight: Yerevan / Երևան');
+  });
+
+  it("comparison table lists every scenario with hotels, rooms and totals", () => {
+    expect(html).toContain("Package Options");
+    expect(html).toContain("Per paying traveler");
+    expect(html).toContain("<strong>Option A</strong> — Yerevan City Stay");
+    expect(html).toContain("<strong>Option B</strong> — Yerevan–Dilijan Loop");
+    expect(html).toContain("Grand Hotel Yerevan / Գրանդ Հյուրանոց · Dilijan Forest Resort");
+    expect(html).toContain("8×STANDARD, 2×TRIPLE");
+    expect(html).toContain("10×STANDARD, 2×TRIPLE"); // max concurrent rooms across stays
+    expect(html).toContain(`<strong>${FIXTURE_SELL_A} AMD</strong>`);
+    expect(html).toContain(`<strong>${FIXTURE_SELL_B} AMD</strong>`);
+  });
+
+  it("keeps the per-scenario detail blocks after the comparison table", () => {
+    const options = html.indexOf("Package Options");
+    const detail = html.indexOf('class="scenario-block"');
+    expect(options).toBeGreaterThan(-1);
+    expect(detail).toBeGreaterThan(options);
+  });
+
+  it("renders inclusions and exclusions side by side", () => {
+    expect(html).toContain('class="borderless two-col"');
+  });
+
+  it("renders terms as a numbered list", () => {
+    expect(html).toContain("<ol>");
+    expect(html).toContain('<li class="keep-wrap">Rates are subject to availability at the time of booking.</li>');
+    expect(html).toContain('<li class="keep-wrap">A 30% deposit is required to confirm services.</li>');
+  });
+
+  it("carries the important-notes box with the offer-only disclaimers", () => {
+    expect(html).toContain('class="notes-box"');
+    expect(html).toContain("This is an offer only; no services have been booked at this stage.");
+    expect(html).toContain("Availability and rates are subject to change until confirmation.");
+    expect(html).toContain("Valid until 2026-10-15.");
+  });
+
+  it("closes with the thank-you banner and a contact line", () => {
+    expect(html).toContain('class="thanks-banner"');
+    expect(html).toContain("Thank you for choosing Nare Travel &amp; Tours!");
+    expect(html).toContain("+374 10 530053 · info@naretravel.am · www.naretravel.am");
+  });
+
+  it("thank-you banner falls back to 'us' without a company name", () => {
+    expect(buildClientQuotationHtml(makeFixture())).toContain("Thank you for choosing us!");
+  });
+
+  it("client HTML still contains no costing vocabulary (incl. the CSS)", () => {
+    expect(html).not.toContain("margin");
+    expect(html).not.toContain("Margin");
+    expect(html).not.toContain("profit");
+    expect(html).not.toContain("costQuote");
+    expect(html).not.toContain("trace");
   });
 });
 

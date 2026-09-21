@@ -478,4 +478,45 @@ describe("submit → document freeze", () => {
       },
     ]);
   });
+
+  it("freezes company branding into displayJson for the issued PDF", async () => {
+    await prisma.travelSettings.upsert({
+      where: { id: "default" },
+      update: {
+        companyName: "Nare Travel & Tours",
+        companyPhone: "+374 10 530053",
+        companyEmail: "info@naretravel.am",
+        companyAddress: "15 Abovyan St, Yerevan, Armenia",
+        companyWebsite: "www.naretravel.am",
+        brandColor: "#0d4f8b",
+      },
+      create: {
+        id: "default",
+        companyName: "Nare Travel & Tours",
+        companyPhone: "+374 10 530053",
+        companyEmail: "info@naretravel.am",
+        companyAddress: "15 Abovyan St, Yerevan, Armenia",
+        companyWebsite: "www.naretravel.am",
+        brandColor: "#0d4f8b",
+      },
+    });
+    const { request, version } = await draftRequest();
+
+    await saveContent(prisma, actorOf(fx.advisor), request.id, version.id, {
+      ...scenarioContent(fx.hotel.id, fx.hotel.name),
+    });
+    await workflow.assignValidator(actorOf(fx.advisor), request.id, { validatorId: fx.validator.id });
+    await workflow.submit(actorOf(fx.advisor), request.id);
+
+    const snap = await prisma.calculationSnapshot.findUnique({ where: { versionId: version.id } });
+    const frozen = JSON.parse(snap!.displayJson!);
+    expect(frozen.branding).toEqual({
+      companyName: "Nare Travel & Tours",
+      companyPhone: "+374 10 530053",
+      companyEmail: "info@naretravel.am",
+      companyAddress: "15 Abovyan St, Yerevan, Armenia",
+      companyWebsite: "www.naretravel.am",
+      brandColor: "#0d4f8b",
+    });
+  });
 });

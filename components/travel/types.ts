@@ -289,6 +289,12 @@ export interface TravelSettingsView {
   overdueReminderHours: number | null;
   escalationUserId: string | null;
   documentsDir: string;
+  companyName: string | null;
+  companyPhone: string | null;
+  companyEmail: string | null;
+  companyAddress: string | null;
+  companyWebsite: string | null;
+  brandColor: string | null;
   updatedAt: string;
 }
 

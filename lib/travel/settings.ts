@@ -8,6 +8,7 @@
 
 import { prisma } from "@/lib/prisma";
 import { BASE_CURRENCY, type ISODate, type Money } from "@/lib/travel/contracts";
+import type { QuotationPdfBranding } from "@/lib/travel/pdf/types";
 import type { PricingPolicyVersion, TravelSettings } from "@prisma/client";
 
 const SETTINGS_ID = "default";
@@ -33,6 +34,23 @@ export async function getActivePolicy(): Promise<PricingPolicyVersion | null> {
     where: { active: true },
     orderBy: { createdAt: "desc" },
   });
+}
+
+/**
+ * Company branding for the client quotation PDF, shaped as the renderer's
+ * QuotationPdfBranding. Frozen into the snapshot displayJson at submit time so
+ * issued documents never change when these settings are edited later.
+ */
+export async function getCompanyBranding(): Promise<QuotationPdfBranding> {
+  const s = await getTravelSettings();
+  return {
+    companyName: s.companyName,
+    companyPhone: s.companyPhone,
+    companyEmail: s.companyEmail,
+    companyAddress: s.companyAddress,
+    companyWebsite: s.companyWebsite,
+    brandColor: s.brandColor,
+  };
 }
 
 /**

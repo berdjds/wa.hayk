@@ -61,14 +61,68 @@ const BASE_CSS = `
   h3 { font-size: 12px; padding-top: 3mm; padding-bottom: 1mm; }
   p { padding-bottom: 1.5mm; }
   table { border-collapse: collapse; width: 100%; padding-top: 1mm; padding-bottom: 2mm; }
-  th, td { border: 1px solid #b5b5b5; padding: 1.2mm 1.8mm; text-align: left; vertical-align: top; }
+  th, td { border: 1px solid #d0d0d0; padding: 1.2mm 1.8mm; text-align: left; vertical-align: top; }
   th { background: #efefef; }
+  table:not(.borderless) tbody tr:nth-child(even) { background: #f7f7f7; }
+  .borderless th, .borderless td { border: none; }
+  .two-col td { width: 50%; padding: 0; }
+  .two-col td + td { padding-left: 3mm; }
   /* Repeat header rows when a table spans pages. */
   thead { display: table-header-group; }
   tr { break-inside: avoid; page-break-inside: avoid; }
   .scenario-block { break-inside: avoid; page-break-inside: avoid; padding-top: 2mm; }
-  .header-bar { border-bottom: 2px solid #1a1a1a; padding-bottom: 2mm; }
+  .header-bar { border-bottom: 2px solid #1a1a1a; padding-bottom: 2.5mm; }
   .header-meta { text-align: right; }
+  .company-name { padding-bottom: 1mm; }
+  .doc-title { font-size: 14px; font-weight: bold; text-transform: uppercase; letter-spacing: 1px; padding-bottom: 1mm; }
+  .display-title { font-size: 24px; font-weight: bold; padding-top: 3.5mm; padding-bottom: 0.8mm; line-height: 1.2; }
+  .display-subtitle { font-size: 12px; color: #555; padding-bottom: 2mm; }
+  .pill-row { padding-top: 0.5mm; }
+  .pill-wrap { display: inline-block; padding-right: 1.5mm; padding-bottom: 1mm; }
+  .pill {
+    display: inline-block;
+    border: 1px solid #c9c9c9;
+    border-radius: 3mm;
+    padding: 0.8mm 2.5mm;
+    font-size: 9px;
+    font-weight: bold;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    background: #ffffff;
+  }
+  .section-bar {
+    color: #ffffff;
+    font-weight: bold;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    font-size: 12px;
+    padding: 2mm 3mm;
+    break-inside: avoid;
+    break-after: avoid;
+  }
+  .day-block { padding-top: 1.5mm; padding-bottom: 1mm; }
+  .day-bar {
+    font-weight: bold;
+    padding: 1.5mm 3mm;
+    break-inside: avoid;
+    break-after: avoid;
+  }
+  .day-bar .overnight { float: right; font-weight: normal; }
+  .option-heading { border-bottom: 2px solid #1a1a1a; }
+  .notes-box { border: 1px solid #d0d0d0; background: #fafafa; padding: 2mm 3mm 1mm; }
+  .thanks-banner {
+    text-align: center;
+    font-size: 15px;
+    font-weight: bold;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    color: #ffffff;
+    padding: 4mm 3mm;
+  }
+  .footer-contact { text-align: center; color: #555; font-size: 10px; padding-top: 2mm; }
+  /* Closing block (notes + thanks + footer) stays on one page — an orphaned
+     thank-you banner on an otherwise empty page looks broken. */
+  .keep-together { break-inside: avoid; page-break-inside: avoid; }
   .muted { color: #555; }
   .price-box {
     border: 2px solid #1a1a1a;
@@ -108,10 +162,46 @@ const BASE_CSS = `
     z-index: 1000;
     pointer-events: none;
   }
-  ul { padding-left: 5mm; padding-bottom: 1.5mm; }
+  ul, ol { padding-left: 5mm; padding-bottom: 1.5mm; }
   li { padding-bottom: 0.6mm; }
   .keep-wrap { overflow-wrap: break-word; word-wrap: break-word; }
 `;
+
+/** Brand colors arrive from settings/snapshots — only a strict #rrggbb is ever
+ *  interpolated into CSS; anything else falls back to the default navy. */
+const DEFAULT_BRAND_COLOR = "#16305b";
+const BRAND_COLOR_RE = /^#[0-9a-fA-F]{6}$/;
+
+function brandColor(input: QuotationPdfInput): string {
+  const c = input.branding?.brandColor;
+  return c && BRAND_COLOR_RE.test(c) ? c : DEFAULT_BRAND_COLOR;
+}
+
+/** Mixes the brand color with white (ratio = white share) for tinted bars. */
+function tint(hex: string, ratio: number): string {
+  const n = parseInt(hex.slice(1), 16);
+  const mix = (v: number) => Math.round(v + (255 - v) * ratio);
+  const channels = [mix((n >> 16) & 255), mix((n >> 8) & 255), mix(n & 255)];
+  return `#${channels.map((v) => v.toString(16).padStart(2, "0")).join("")}`;
+}
+
+function brandCss(color: string): string {
+  const light = tint(color, 0.88);
+  return `
+  .section-bar { background: ${color}; }
+  .thanks-banner { background: ${color}; }
+  .display-title, .doc-title { color: ${color}; }
+  .option-heading { border-bottom-color: ${color}; }
+  .day-bar { background: ${light}; border-left: 1.2mm solid ${color}; }
+  .notes-box { border-left: 1.2mm solid ${color}; }
+  .pill { border-color: ${color}; color: ${color}; }
+`;
+}
+
+/** Full-width branded bar introducing a document section. */
+function sectionBar(titleHtml: string): string {
+  return `<div class="section-bar">${titleHtml}</div>`;
+}
 
 function watermarkHtml(draft: boolean): string {
   return draft ? `<div class="watermark">DRAFT — NOT APPROVED</div>` : "";
@@ -126,34 +216,70 @@ function travelerSummary(t: TravelerSetup): string {
   return escapeHtml(parts.join(", "));
 }
 
-function headerHtml(input: QuotationPdfInput, docTitle: string): string {
+function brandingContacts(input: QuotationPdfInput): string[] {
+  const b = input.branding;
+  const lines = [b?.companyPhone, b?.companyEmail, b?.companyWebsite, b?.companyAddress]
+    .map((v) => v?.trim())
+    .filter((v): v is string => !!v)
+    .map((v) => escapeHtml(v));
+  if (lines.length > 0) return lines;
+  // No branding contacts configured: fall back to the agency contact line.
   const a = input.agency;
-  const contacts = [
-    a.contactName,
-    a.contactEmail,
-    a.contactPhone,
-  ]
+  const agencyContacts = [a.contactName, a.contactEmail, a.contactPhone]
     .filter((v): v is string => !!v)
     .map((v) => escapeHtml(v))
     .join(" · ");
+  return agencyContacts ? [agencyContacts] : [];
+}
+
+function pillHtml(label: string, value: string | number): string {
+  return `<span class="pill-wrap"><span class="pill">${escapeHtml(label)}: ${escapeHtml(String(value))}</span></span>`;
+}
+
+function statPillsHtml(input: QuotationPdfInput): string {
+  const r = input.request;
+  const t = r.travelers;
+  const nights = daysBetween(r.startDate, r.endDate);
+  const pills = [
+    pillHtml("Total pax", t.adults + t.children + t.infants),
+    pillHtml("Adults", t.adults),
+    pillHtml("Children", t.children),
+  ];
+  if (t.infants > 0) pills.push(pillHtml("Infants", t.infants));
+  pills.push(pillHtml("Nights", nights), pillHtml("Days", nights + 1));
+  return `<div class="pill-row">${pills.join("")}</div>`;
+}
+
+function headerHtml(input: QuotationPdfInput, docTitle: string): string {
+  const a = input.agency;
+  const companyName = input.branding?.companyName?.trim() ? input.branding.companyName.trim() : a.name;
+  const contacts = brandingContacts(input)
+    .map((line) => `<p class="muted">${line}</p>`)
+    .join("");
   const issued = input.issuedAt ?? new Date().toISOString();
+  const destinations =
+    input.request.destinations && input.request.destinations.length > 0
+      ? `<p class="display-subtitle">${input.request.destinations.map(escapeHtml).join(" · ")}</p>`
+      : "";
   return `
     <div class="header-bar">
-      <table>
+      <table class="borderless">
         <tr>
-          <td style="border: none; width: 55%;">
-            <h1>${escapeHtml(a.name)}</h1>
-            ${contacts ? `<p class="muted">${contacts}</p>` : ""}
+          <td style="width: 55%;">
+            <h1 class="company-name">${escapeHtml(companyName)}</h1>
           </td>
-          <td style="border: none;" class="header-meta">
-            <h2 style="border: none; padding-top: 0;">${escapeHtml(docTitle)}</h2>
-            <p><strong>${escapeHtml(input.packageCode)}</strong> ${escapeHtml(input.versionLabel)}</p>
+          <td class="header-meta">
+            <div class="doc-title">${escapeHtml(docTitle)}</div>
+            <p><strong>#${escapeHtml(input.packageCode)}</strong> ${escapeHtml(input.versionLabel)}</p>
             <p class="muted">Issued: ${escapeHtml(issued)}</p>
             ${input.validUntil ? `<p class="muted">Valid until: ${escapeHtml(input.validUntil)}</p>` : ""}
+            ${contacts}
           </td>
         </tr>
       </table>
-      <h2 style="border: none;">${escapeHtml(input.request.title)}</h2>
+      <div class="display-title">${escapeHtml(input.request.title)}</div>
+      ${destinations}
+      ${statPillsHtml(input)}
     </div>`;
 }
 
@@ -166,7 +292,7 @@ function travelSummaryHtml(input: QuotationPdfInput): string {
       ? r.destinations.map(escapeHtml).join(", ")
       : "—";
   return `
-    <h2>Travel Summary</h2>
+    ${sectionBar("Travel Summary")}
     <table>
       <tbody>
         <tr><th>Travel dates</th><td>${escapeHtml(r.startDate)} → ${escapeHtml(r.endDate)}</td>
@@ -244,14 +370,18 @@ function dayByDayHtml(input: QuotationPdfInput): string {
         day.services.length > 0
           ? `<ul>${day.services.map((s) => `<li>${escapeHtml(s.label)}</li>`).join("")}</ul>`
           : "";
+      const overnight = day.overnightCity
+        ? `<span class="overnight">Overnight: ${escapeHtml(day.overnightCity)}</span>`
+        : "";
       return `
-        <h3>Day ${day.dayOffset + 1} — ${escapeHtml(day.date)}</h3>
-        ${day.narrative ? `<p class="keep-wrap">${escapeHtml(day.narrative)}</p>` : ""}
-        ${day.overnightCity ? `<p class="muted">Overnight: ${escapeHtml(day.overnightCity)}</p>` : ""}
-        ${services}`;
+        <div class="day-block">
+          <div class="day-bar">${overnight}Day ${day.dayOffset + 1} — ${escapeHtml(day.date)}</div>
+          ${day.narrative ? `<p class="keep-wrap">${escapeHtml(day.narrative)}</p>` : ""}
+          ${services}
+        </div>`;
     })
     .join("");
-  return `<h2>Day-by-Day Itinerary</h2>${blocks}`;
+  return `${sectionBar("Day-by-Day Itinerary")}${blocks}`;
 }
 
 /** Client-facing price box: selling totals only, never any cost detail. */
@@ -272,6 +402,61 @@ function scenarioInputByRef(inputs: EngineInput, ref: string): ScenarioEngineInp
   return inputs.scenarios.find((s) => s.ref === ref);
 }
 
+/**
+ * Compact room summary for the comparison table: rooms needed simultaneously,
+ * i.e. the max per room type across the sequential stays ("8×STANDARD, 2×TRIPLE").
+ */
+function roomSetupSummary(sc: ScenarioEngineInput): string {
+  const byType = new Map<string, number>();
+  for (const stay of sc.stays) {
+    const perStay = new Map<string, number>();
+    for (const ra of stay.roomAllocations) {
+      if (ra.rooms <= 0) continue;
+      perStay.set(ra.roomType, (perStay.get(ra.roomType) ?? 0) + ra.rooms);
+    }
+    perStay.forEach((rooms, type) => {
+      byType.set(type, Math.max(byType.get(type) ?? 0, rooms));
+    });
+  }
+  if (byType.size === 0) return "—";
+  return Array.from(byType.entries())
+    .map(([type, rooms]) => `${rooms}×${escapeHtml(type)}`)
+    .join(", ");
+}
+
+/**
+ * Comparison table of the scenario alternatives: one row per option with
+ * hotels, room summary and selling totals. Never a grand total — scenarios
+ * are alternatives, not additive.
+ */
+function packageOptionsHtml(input: QuotationPdfInput): string {
+  if (input.snapshot.scenarios.length === 0) return "";
+  const q = input.inputs.fx.quoteCurrency;
+  const rows = input.snapshot.scenarios
+    .map((res, i) => {
+      const sc = scenarioInputByRef(input.inputs, res.ref);
+      const hotels = sc
+        ? Array.from(new Set(sc.stays.map((s) => s.hotelName)))
+            .map((h) => escapeHtml(h))
+            .join(" · ") || "—"
+        : "—";
+      return `<tr>
+        <td><strong>${escapeHtml(optionLetter(i))}</strong> — ${escapeHtml(res.label)}</td>
+        <td>${hotels}</td>
+        <td>${sc ? roomSetupSummary(sc) : "—"}</td>
+        <td><strong>${money(res.sell, q)}</strong></td>
+        <td>${res.perPayingPerson !== null ? money(res.perPayingPerson, q) : "—"}</td>
+      </tr>`;
+    })
+    .join("");
+  return `
+    ${sectionBar("Package Options")}
+    <table>
+      <thead><tr><th>Option</th><th>Hotels</th><th>Room setup</th><th>Group total</th><th>Per paying traveler</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+}
+
 function clientScenarioHtml(
   input: QuotationPdfInput,
   res: ScenarioResult,
@@ -282,7 +467,7 @@ function clientScenarioHtml(
   const travelers = sc?.travelers ?? input.request.travelers;
   return `
     <section class="scenario-block">
-      <h2>${escapeHtml(optionLetter(index))} — ${escapeHtml(res.label)}</h2>
+      <h2 class="option-heading">${escapeHtml(optionLetter(index))} — ${escapeHtml(res.label)}</h2>
       ${sc ? roomSetupHtml(sc) : ""}
       ${sc ? itineraryHtml(sc) : ""}
       ${clientPriceHtml(res, travelers, quoteCurrency)}
@@ -306,7 +491,7 @@ function inclusionsHtml(input: QuotationPdfInput): string {
   for (const label of bundled) items.push(`${escapeHtml(label)} — included via bundle/board`);
   if (items.length === 0) items.push("Services as per itinerary above");
   return `
-    <h2>Inclusions</h2>
+    ${sectionBar("Inclusions")}
     <ul>${items.map((i) => `<li>${i}</li>`).join("")}</ul>`;
 }
 
@@ -317,19 +502,57 @@ function exclusionsHtml(input: QuotationPdfInput): string {
     "Visas and travel insurance",
   ];
   return `
-    <h2>Exclusions</h2>
+    ${sectionBar("Exclusions")}
     <ul>${items.map((i) => `<li>${escapeHtml(i)}</li>`).join("")}</ul>`;
+}
+
+/** Side-by-side Inclusions / Exclusions (50/50, borderless inner layout). */
+function inclusionsExclusionsHtml(input: QuotationPdfInput): string {
+  return `
+    <table class="borderless two-col">
+      <tbody><tr>
+        <td>${inclusionsHtml(input)}</td>
+        <td>${exclusionsHtml(input)}</td>
+      </tr></tbody>
+    </table>`;
 }
 
 function termsHtml(input: QuotationPdfInput): string {
   if (!input.terms) return "";
-  const paragraphs = input.terms
+  const items = input.terms
     .split(/\n+/)
     .map((p) => p.trim())
     .filter(Boolean)
-    .map((p) => `<p class="keep-wrap">${escapeHtml(p)}</p>`)
+    .map((p) => `<li class="keep-wrap">${escapeHtml(p)}</li>`)
     .join("");
-  return `<h2>Terms &amp; Conditions</h2>${paragraphs}`;
+  if (!items) return "";
+  return `${sectionBar("Terms &amp; Conditions")}<ol>${items}</ol>`;
+}
+
+/** Fixed "offer only" disclaimers every client document carries. */
+function importantNotesHtml(input: QuotationPdfInput): string {
+  const items = [
+    "This is an offer only; no services have been booked at this stage.",
+    "Availability and rates are subject to change until confirmation.",
+  ];
+  if (input.validUntil) items.push(`Valid until ${escapeHtml(input.validUntil)}.`);
+  return `
+    ${sectionBar("Important Notes")}
+    <div class="notes-box">
+      <ul>${items.map((i) => `<li>${i}</li>`).join("")}</ul>
+    </div>`;
+}
+
+function closingHtml(input: QuotationPdfInput): string {
+  const companyName = input.branding?.companyName?.trim();
+  const contact = [input.branding?.companyPhone, input.branding?.companyEmail, input.branding?.companyWebsite]
+    .map((v) => v?.trim())
+    .filter((v): v is string => !!v)
+    .map((v) => escapeHtml(v))
+    .join(" · ");
+  return `
+    <div class="thanks-banner">Thank you for choosing ${companyName ? escapeHtml(companyName) : "us"}!</div>
+    ${contact ? `<p class="footer-contact">${contact}</p>` : ""}`;
 }
 
 function footerHtml(input: QuotationPdfInput): string {
@@ -340,13 +563,13 @@ function footerHtml(input: QuotationPdfInput): string {
     </div>`;
 }
 
-function htmlDocument(title: string, body: string): string {
+function htmlDocument(title: string, body: string, extraCss = ""): string {
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <title>${escapeHtml(title)}</title>
-<style>${BASE_CSS}</style>
+<style>${BASE_CSS}${extraCss}</style>
 </head>
 <body>
 ${body}
@@ -363,12 +586,20 @@ export function buildClientQuotationHtml(input: QuotationPdfInput): string {
     ${headerHtml(input, "Quotation")}
     ${travelSummaryHtml(input)}
     ${dayByDayHtml(input)}
+    ${packageOptionsHtml(input)}
     ${scenarios}
-    ${inclusionsHtml(input)}
-    ${exclusionsHtml(input)}
+    ${inclusionsExclusionsHtml(input)}
     ${termsHtml(input)}
-    ${footerHtml(input)}`;
-  return htmlDocument(`${input.packageCode} ${input.versionLabel} — Quotation`, body);
+    <div class="keep-together">
+      ${importantNotesHtml(input)}
+      ${closingHtml(input)}
+      ${footerHtml(input)}
+    </div>`;
+  return htmlDocument(
+    `${input.packageCode} ${input.versionLabel} — Quotation`,
+    body,
+    brandCss(brandColor(input)),
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -577,6 +808,7 @@ export function buildInternalCostingHtml(input: QuotationPdfInput): string {
   return htmlDocument(
     `${input.packageCode} ${input.versionLabel} — Internal Costing`,
     body,
+    brandCss(brandColor(input)),
   );
 }
 

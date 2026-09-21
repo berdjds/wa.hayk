@@ -118,6 +118,19 @@ A versioned B2B travel package costing and quotation module inside WAControl:
     manual edits are preserved ("Sync cities from stays" reapplies derivation on demand).
     The frozen day list (normalized) also goes into `displayJson` at submit, so issued client
     PDFs render the day-by-day itinerary exactly as approved.
+18. **Company branding is frozen into `displayJson` at submit** (`branding` object:
+    companyName/phone/email/address/website/brandColor from the TravelSettings singleton).
+    Document regeneration prefers the frozen copy and falls back to live settings only for
+    pre-freeze snapshots — same pattern as `itineraryDays`. The client quotation PDF is a
+    branded package offer: cover block (company name, contact block, `#packageCode`, display
+    title, destination subtitle, stat pills), brand-color section bars, day-by-day banner bars
+    with overnight city, a Package Options comparison table (one row per scenario: hotels,
+    max-concurrent room summary, group total, per-paying price), side-by-side
+    Inclusions/Exclusions, numbered Terms, a fixed Important Notes box ("offer only", rates
+    subject to change, valid-until) and a thank-you closing banner. The shared print CSS still
+    avoids the `margin` property entirely (padding only) so the client document never contains
+    the substring "margin"; brand colors are interpolated into CSS only after a strict
+    `#rrggbb` validation, defaulting to navy `#16305b`.
 
 ## Known limitations
 

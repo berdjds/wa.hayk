@@ -13,6 +13,16 @@ const updateSettingsSchema = z.object({
   documentsDir: z.string().min(1).optional(),
   /** Activates this PricingPolicyVersion (deactivating all others). */
   activatePolicyId: z.string().nullish(),
+  // Company branding shown on the client quotation PDF (frozen per issue).
+  companyName: z.string().max(200).nullish(),
+  companyPhone: z.string().max(200).nullish(),
+  companyEmail: z.string().max(200).nullish(),
+  companyAddress: z.string().max(400).nullish(),
+  companyWebsite: z.string().max(200).nullish(),
+  brandColor: z
+    .string()
+    .regex(/^#[0-9a-fA-F]{6}$/, "expected a #rrggbb hex color")
+    .nullish(),
 });
 
 export async function GET() {
