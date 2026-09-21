@@ -15,9 +15,19 @@ import { makeFixture } from "./fixture";
 // found outside PUPPETEER_EXECUTABLE_PATH, we export it so render.ts's
 // launcher picks the same binary — this mirrors how Docker injects the
 // system Chromium path.
+// puppeteer.executablePath() THROWS when the bundled browser was never
+// downloaded (CI uses PUPPETEER_SKIP_CHROMIUM_DOWNLOAD) — probe safely.
+function bundledChromePath(): string | undefined {
+  try {
+    return puppeteer.executablePath();
+  } catch {
+    return undefined;
+  }
+}
+
 const CANDIDATE_BROWSERS = [
   process.env.PUPPETEER_EXECUTABLE_PATH,
-  puppeteer.executablePath(),
+  bundledChromePath(),
   "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
   "/usr/bin/chromium",
   "/usr/bin/chromium-browser",

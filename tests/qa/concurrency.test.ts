@@ -81,14 +81,14 @@ describe("parallel createRequest (item 19: unique codes under concurrency)", () 
       .map((r) => r.value.request);
     const rejected = results.filter((r): r is PromiseRejectedResult => r.status === "rejected");
 
-    // KNOWN LIMITATION (reported): under a 20-way burst on SQLite, most
-    // creations fail with lock/timeout errors. Those must be the ONLY failure
-    // mode — a failed creation must never produce a corrupt or duplicate code.
+    // createRequest retries SQLite lock-race errors (P1008/P2028) internally,
+    // so a 20-way burst should now fully succeed. Any residual rejection must
+    // still be a clean lock error — never a corrupt or duplicate code.
     for (const r of rejected) {
       expect(r.reason?.name).toBe("PrismaClientKnownRequestError");
       expect(["P1008", "P2028"]).toContain(r.reason?.code);
     }
-    expect(fulfilled.length).toBeGreaterThan(0);
+    expect(fulfilled.length).toBe(20);
 
     const codesSeen = fulfilled.map((r) => r.packageCode);
     expect(new Set(codesSeen).size).toBe(codesSeen.length);
@@ -105,7 +105,7 @@ describe("parallel createRequest (item 19: unique codes under concurrency)", () 
     const seqs = [...codesSeen, after.request.packageCode].map((c) => codes.parsePackageCode(c)!.seq);
     expect(new Set(seqs).size).toBe(seqs.length);
     expect(Math.max(...seqs)).toBeGreaterThanOrEqual(fulfilled.length);
-  }, 60000);
+  }, 180000);
 });
 
 describe("parallel double-issue (item 13)", () => {

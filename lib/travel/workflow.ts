@@ -15,7 +15,7 @@
  * something other than what was computed.
  */
 
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import { Prisma } from "@prisma/client";
 import type { User } from "@prisma/client";
@@ -64,6 +64,34 @@ export interface WorkflowActor {
   role: string;
   name?: string | null;
   email?: string | null;
+}
+
+/**
+ * Interactive SQLite transactions can lose the write-lock race under
+ * concurrency (P1008) or time out waiting for it (P2028). Every transaction
+ * body in this module is idempotent-by-guard (status updateMany checks,
+ * unique dedup keys), so retrying the whole transaction is safe and turns
+ * spurious lock errors into the correct domain outcome (e.g. 409
+ * INVALID_STATE for the loser of a race). WorkflowErrors are never retried.
+ */
+const TX_RETRYABLE = new Set(["P1008", "P2028"]);
+
+export async function tx<T>(fn: (tx: Prisma.TransactionClient) => Promise<T>): Promise<T> {
+  const MAX_ATTEMPTS = 6;
+  let lastErr: unknown;
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    try {
+      // Generous maxWait/timeout: SQLite serializes writers, so under a burst
+      // each transaction queues behind the others; the 5s defaults expire
+      // before the lock is even acquired.
+      return await prisma.$transaction(fn, { maxWait: 20000, timeout: 30000 });
+    } catch (err: any) {
+      lastErr = err;
+      if (!TX_RETRYABLE.has(err?.code) || attempt === MAX_ATTEMPTS) throw err;
+      await new Promise((r) => setTimeout(r, 100 * attempt));
+    }
+  }
+  throw lastErr;
 }
 
 function actorName(actor: WorkflowActor): string {
@@ -341,7 +369,7 @@ export async function createRequest(actor: WorkflowActor, data: CreateRequestInp
   // transaction can lose the lock race (P1008/P2028). Retry the whole creation
   // a few times — code generation is atomic per attempt, so retries only
   // leave harmless sequence gaps, never duplicate codes.
-  const MAX_ATTEMPTS = 4;
+  const MAX_ATTEMPTS = 6;
   let lastErr: unknown;
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     try {
@@ -351,7 +379,7 @@ export async function createRequest(actor: WorkflowActor, data: CreateRequestInp
       const code = err?.code;
       const retryable = code === "P1008" || code === "P2028";
       if (!retryable || attempt === MAX_ATTEMPTS) throw err;
-      await new Promise((r) => setTimeout(r, 50 * attempt));
+      await new Promise((r) => setTimeout(r, 100 * attempt));
     }
   }
   throw lastErr;
@@ -380,44 +408,51 @@ async function createRequestOnce(actor: WorkflowActor, parsed: CreateRequestInpu
     wholeUnit: false,
   };
 
-  const created = await prisma.$transaction(async (tx) => {
-    const request = await tx.travelRequest.create({
-      data: {
-        packageCode,
-        agencyId: parsed.agencyId,
-        agencyRef: parsed.agencyRef ?? null,
-        ownerId: actor.id,
-        title: parsed.title,
-        destinations: parsed.destinations ? JSON.stringify(parsed.destinations) : null,
-        startDate: parsed.startDate,
-        endDate: parsed.endDate,
-        travelers: JSON.stringify(parsed.travelers),
-        roomPrefs: parsed.roomPrefs ?? null,
-        flightDetails: parsed.flightDetails ?? null,
-        notes: parsed.notes ?? null,
-        status: "DRAFT",
-      },
-    });
-    const version = await tx.quoteVersion.create({
-      data: { requestId: request.id, versionNo: 1, status: "DRAFT" },
-    });
-    const scenario = await tx.scenario.create({
-      data: { versionId: version.id, label: "Option A" },
-    });
-    await tx.staySegment.create({
-      data: {
-        scenarioId: scenario.id,
-        hotelName: "TBD",
-        checkIn: parsed.startDate,
-        checkOut: parsed.endDate,
-        allocations: JSON.stringify([defaultAllocation]),
-      },
-    });
-    return { request, version };
-  });
+  // Batch transaction with pre-generated ids: no interactive transaction, so
+  // no SQLite write lock is held across query round-trips. This is what makes
+  // a concurrent creation burst reliable (lock hold ≈ one statement).
+  const requestId = randomUUID();
+  const versionId = randomUUID();
+  const scenarioId = randomUUID();
+  const [request, version] = await prisma.$transaction([
+      prisma.travelRequest.create({
+        data: {
+          id: requestId,
+          packageCode,
+          agencyId: parsed.agencyId,
+          agencyRef: parsed.agencyRef ?? null,
+          ownerId: actor.id,
+          title: parsed.title,
+          destinations: parsed.destinations ? JSON.stringify(parsed.destinations) : null,
+          startDate: parsed.startDate,
+          endDate: parsed.endDate,
+          travelers: JSON.stringify(parsed.travelers),
+          roomPrefs: parsed.roomPrefs ?? null,
+          flightDetails: parsed.flightDetails ?? null,
+          notes: parsed.notes ?? null,
+          status: "DRAFT",
+        },
+      }),
+      prisma.quoteVersion.create({
+        data: { id: versionId, requestId, versionNo: 1, status: "DRAFT" },
+      }),
+      prisma.scenario.create({
+        data: { id: scenarioId, versionId, label: "Option A" },
+      }),
+      prisma.staySegment.create({
+        data: {
+          scenarioId,
+          hotelName: "TBD",
+          checkIn: parsed.startDate,
+          checkOut: parsed.endDate,
+          allocations: JSON.stringify([defaultAllocation]),
+        },
+      }),
+    ],
+  );
 
   await writeAuditLog("REQUEST_CREATED", actor.id, `Created ${packageCode} "${parsed.title}"`);
-  return created;
+  return { request, version };
 }
 
 // ---------------------------------------------------------------------------
@@ -461,7 +496,7 @@ export async function updateDraft(
   if (parsed.notes !== undefined) data.notes = parsed.notes;
   if (parsed.agencyRef !== undefined) data.agencyRef = parsed.agencyRef;
 
-  await prisma.$transaction(async (tx) => {
+  await tx(async (tx) => {
     const res = await tx.travelRequest.updateMany({
       where: { id: requestId, revision: expectedRevision },
       data,
@@ -498,7 +533,7 @@ export async function saveVersionContent(
   assertOwnerOrAdmin(actor, version.request.ownerId);
   assertTransition(version.status, ["DRAFT", "CHANGES_REQUESTED"], "edit content of");
 
-  const result = await prisma.$transaction(async (tx) => {
+  const result = await tx(async (tx) => {
     const scenarioIdByKey = new Map<string, string>();
 
     if (parsed.scenarios) {
@@ -670,7 +705,7 @@ export async function submit(actor: WorkflowActor, requestId: string) {
   });
 
   try {
-    await prisma.$transaction(async (tx) => {
+    await tx(async (tx) => {
       await tx.calculationSnapshot.upsert({
         where: { versionId: version.id },
         update: { inputsJson, resultJson, displayJson, engineVersion: input.engineVersion, hash, createdById: actor.id },
@@ -796,7 +831,7 @@ export async function review(
   const eventType: WorkflowEventType =
     parsed.action === "APPROVE" ? "APPROVED" : parsed.action === "REQUEST_CHANGES" ? "CHANGES_REQUESTED" : "REJECTED";
 
-  await prisma.$transaction(async (tx) => {
+  await tx(async (tx) => {
     await tx.reviewDecision.create({
       data: {
         versionId,
@@ -999,7 +1034,7 @@ export async function issue(
 
   let documentId: string;
   try {
-    documentId = await prisma.$transaction(async (tx) => {
+    documentId = await tx(async (tx) => {
       const snap = await tx.calculationSnapshot.findUnique({ where: { versionId } });
       if (!snap || snap.hash !== hashBefore) {
         throw new WorkflowError("SNAPSHOT_STALE", "snapshot changed during issue", 409);
@@ -1122,7 +1157,7 @@ export async function recordOutcome(
     }
   }
 
-  await prisma.$transaction(async (tx) => {
+  await tx(async (tx) => {
     // Atomic guard (same pattern as submit/review/issue): two concurrent
     // outcome records both pass the read-time check; only the first flips.
     const guard = await tx.quoteVersion.updateMany({
@@ -1189,7 +1224,7 @@ async function setValidator(
 
   const previous = await activeAssignment(requestId);
 
-  await prisma.$transaction(async (tx) => {
+  await tx(async (tx) => {
     // Deactivating the old assignment immediately revokes its decision
     // rights: review() only honors the CURRENT active assignment.
     await tx.validationAssignment.updateMany({
@@ -1288,7 +1323,7 @@ export async function createRevision(actor: WorkflowActor, requestId: string) {
   if (!latest) throw new WorkflowError("VERSION_NOT_FOUND", "request has no versions", 404);
   assertTransition(latest.status, REVISABLE_STATUSES, "revise");
 
-  const newVersion = await prisma.$transaction(async (tx) => {
+  const newVersion = await tx(async (tx) => {
     const created = await tx.quoteVersion.create({
       data: {
         requestId,
