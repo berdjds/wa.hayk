@@ -14,6 +14,10 @@ jobs:
   test:
     name: Typecheck, test, build
     runs-on: ubuntu-latest
+    env:
+      # CI does not need a browser binary: the PDF smoke test skips cleanly
+      # without one, and skipping the ~150MB Chromium download keeps npm ci fast.
+      PUPPETEER_SKIP_CHROMIUM_DOWNLOAD: "true"
     steps:
       - uses: actions/checkout@v4
 
@@ -28,8 +32,6 @@ jobs:
       - name: Unit and integration tests
         # DB-backed suites push the Prisma schema to throwaway /tmp SQLite files.
         run: npx vitest run
-        env:
-          PUPPETEER_SKIP_CHROMIUM_DOWNLOAD: "true"
       - run: npm run build
 
   deploy:
