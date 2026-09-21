@@ -19,7 +19,7 @@ import {
 import { useToast } from "@/components/ui/toast";
 import { COST_CATEGORIES, PRICING_BASES, RATE_STATUSES } from "@/lib/travel/contracts";
 import TravelShell from "./TravelShell";
-import { StateBadge, apiError, formatDateTime, money, parseJson } from "./utils";
+import { StateBadge, apiError, basisLabel, formatDateTime, money, parseJson } from "./utils";
 import type {
   Agency,
   FxVersionView,
@@ -528,6 +528,15 @@ function ServiceDialog({
 
   async function save(e: React.FormEvent) {
     e.preventDefault();
+    // The engine blocks CAPACITY_BLOCK lines without capacity ≥ 1 — catch it
+    // here so a catalog entry can never be saved into that blocker state.
+    if (form.basis === "CAPACITY_BLOCK") {
+      const cap = intOrNull(form.capacity);
+      if (cap == null || cap < 1) {
+        toast("Capacity is required for the CAPACITY BLOCK basis (people per group)", "error");
+        return;
+      }
+    }
     setSaving(true);
     const payload = {
       name: form.name.trim(),
@@ -601,8 +610,22 @@ function ServiceDialog({
               </Select>
             </div>
             <div>
-              <Label>Capacity (optional)</Label>
-              <Input type="number" min={1} value={form.capacity} onChange={(e) => setForm({ ...form, capacity: e.target.value })} />
+              <Label>
+                Capacity{" "}
+                {form.basis === "CAPACITY_BLOCK" ? (
+                  <span className="text-red-600">(required — people per group)</span>
+                ) : (
+                  "(optional)"
+                )}
+              </Label>
+              <Input
+                type="number"
+                min={1}
+                value={form.capacity}
+                onChange={(e) => setForm({ ...form, capacity: e.target.value })}
+                disabled={form.basis !== "CAPACITY_BLOCK"}
+                required={form.basis === "CAPACITY_BLOCK"}
+              />
             </div>
             <div>
               <Label>Language (optional)</Label>
@@ -1140,7 +1163,7 @@ function ServicesTab() {
                   <tr className={s.active ? "" : "text-muted-foreground"}>
                     <td className="py-2">{s.name}</td>
                     <td className="py-2">{s.category.replace(/_/g, " ")}</td>
-                    <td className="py-2">{s.basis.replace(/_/g, " ")}</td>
+                    <td className="py-2">{basisLabel(s.basis, s.capacity)}</td>
                     <td className="py-2 text-xs">{weekdaysSummary(s.weekdays)}</td>
                     <td className="py-2">{s.supplier?.name ?? "—"}</td>
                     <td className="py-2 text-xs">{s.active ? "Active" : "Inactive"}</td>

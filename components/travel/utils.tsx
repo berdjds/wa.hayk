@@ -70,6 +70,25 @@ export function parseJson<T>(raw: string | null | undefined, fallback: T): T {
   }
 }
 
+/**
+ * Humanized pricing-basis label for catalog/service pickers: operator-facing
+ * wording ("per group of up to 5") instead of the raw enum, with the generic
+ * enum fallback for the bases with no agreed phrasing.
+ */
+export function basisLabel(basis: string, capacity?: number | null): string {
+  switch (basis) {
+    case "CAPACITY_BLOCK":
+      return capacity != null ? `per group of up to ${capacity}` : "per group of up to N";
+    case "PER_PERSON":
+    case "PERSON_MEAL":
+      return "per person";
+    case "GROUP":
+      return "per group";
+    default:
+      return basis.replace(/_/g, " ").toLowerCase();
+  }
+}
+
 export function shortHash(hash: string | null | undefined): string {
   if (!hash) return "—";
   return `${hash.slice(0, 12)}…`;

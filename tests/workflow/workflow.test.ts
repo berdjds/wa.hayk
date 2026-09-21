@@ -9,6 +9,7 @@ import { ensureSchema, getPrisma } from "../travel-db/helpers";
 import {
   END_DATE,
   Fixtures,
+  TRAVELERS,
   actorOf,
   createRequestInput,
   saveContent,
@@ -65,6 +66,35 @@ describe("createRequest", () => {
     await expect(
       workflow.createRequest(actorOf(fx.validator), createRequestInput(fx.agency.id)),
     ).rejects.toMatchObject({ code: "FORBIDDEN", httpStatus: 403 });
+  });
+
+  it("accepts childAges matching the child count and stores them", async () => {
+    const { request } = await workflow.createRequest(actorOf(fx.advisor), {
+      ...createRequestInput(fx.agency.id),
+      travelers: { ...TRAVELERS, adults: 2, children: 2, childAges: [4, 7], paying: 4 },
+    });
+    const stored = JSON.parse(request.travelers);
+    expect(stored.childAges).toEqual([4, 7]);
+  });
+
+  it("rejects childAges that do not list one age per child", async () => {
+    // ZodError at the schema boundary (routes map it to 400); the function
+    // re-parses defensively, so the rejection surfaces here too.
+    await expect(
+      workflow.createRequest(actorOf(fx.advisor), {
+        ...createRequestInput(fx.agency.id),
+        travelers: { ...TRAVELERS, children: 2, childAges: [5], paying: 3 },
+      }),
+    ).rejects.toThrow("childAges must list one age per child");
+  });
+
+  it("rejects an out-of-range child age", async () => {
+    await expect(
+      workflow.createRequest(actorOf(fx.advisor), {
+        ...createRequestInput(fx.agency.id),
+        travelers: { ...TRAVELERS, children: 1, childAges: [18], paying: 3 },
+      }),
+    ).rejects.toThrow();
   });
 });
 

@@ -9,10 +9,23 @@ import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/components/ui/toast";
 import { apiError, formatDateTime, parseJson } from "../utils";
+import TravelerSetupEditor from "../TravelerSetupEditor";
 import type { TravelerSetupView } from "../types";
 import type { DetailContext } from "./RequestDetail";
 
-const TRAVELER_KEYS = ["adults", "children", "infants", "paying", "complimentary", "leaders", "staff"] as const;
+/** e.g. "2 adults · 2 children (ages 4, 7) · 4 paying" — ages only when recorded. */
+function travelerSummary(t: TravelerSetupView): string {
+  const parts = [`${t.adults} adults`, `${t.children} children`];
+  if (t.children > 0 && t.childAges?.length) {
+    parts[parts.length - 1] = `${t.children} children (ages ${t.childAges.join(", ")})`;
+  }
+  if (t.infants) parts.push(`${t.infants} infants`);
+  parts.push(`${t.paying} paying`);
+  if (t.complimentary) parts.push(`${t.complimentary} complimentary`);
+  if (t.leaders) parts.push(`${t.leaders} leaders`);
+  if (t.staff) parts.push(`${t.staff} staff`);
+  return parts.join(" · ");
+}
 
 export default function OverviewTab({ ctx }: { ctx: DetailContext }) {
   const { toast } = useToast();
@@ -32,6 +45,7 @@ export default function OverviewTab({ ctx }: { ctx: DetailContext }) {
       adults: 0,
       children: 0,
       infants: 0,
+      childAges: [],
       paying: 0,
       complimentary: 0,
       leaders: 0,
@@ -124,7 +138,7 @@ export default function OverviewTab({ ctx }: { ctx: DetailContext }) {
             <Field label="Dates" value={`${detail.startDate} → ${detail.endDate}`} />
             <Field
               label="Travelers"
-              value={TRAVELER_KEYS.map((k) => `${k}: ${travelers[k]}`).join(" · ")}
+              value={travelerSummary(travelers)}
             />
             <Field label="Room preferences" value={detail.roomPrefs} />
             <Field label="Flight details" value={detail.flightDetails} />
@@ -164,27 +178,10 @@ export default function OverviewTab({ ctx }: { ctx: DetailContext }) {
             {invalidDates && <p className="text-xs text-red-600">End date must be after the start date.</p>}
             <div>
               <Label>Travelers</Label>
-              <div className="grid grid-cols-3 gap-2 sm:grid-cols-7">
-                {TRAVELER_KEYS.map((k) => (
-                  <div key={k}>
-                    <span className="text-xs text-muted-foreground">{k}</span>
-                    <Input
-                      type="number"
-                      min={0}
-                      value={form.travelers[k]}
-                      onChange={(e) =>
-                        setForm({
-                          ...form,
-                          travelers: {
-                            ...form.travelers,
-                            [k]: Math.max(0, Number.parseInt(e.target.value || "0", 10) || 0),
-                          },
-                        })
-                      }
-                    />
-                  </div>
-                ))}
-              </div>
+              <TravelerSetupEditor
+                value={form.travelers}
+                onChange={(travelers) => setForm({ ...form, travelers })}
+              />
             </div>
             <div className="grid gap-3 sm:grid-cols-2">
               <div>

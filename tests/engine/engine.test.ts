@@ -330,6 +330,40 @@ describe("service lines", () => {
     expect(blockerCodes(res)).toContain("INVALID_POLICY");
   });
 
+  it("CAPACITY_BLOCK tickets: Chir's House 5 pax fits one group of 5 → 10000", () => {
+    const sc = makeScenario({
+      services: [makeService({ category: "TICKETS", basis: "CAPACITY_BLOCK", unitRate: "10000", participants: 5, capacity: 5, label: "Chir's House" })],
+    });
+    const res = calculate(makeInput([sc])).scenarios[0];
+    expect(res.valid).toBe(true);
+    expect(res.totals.byCategory.TICKETS.AMD).toBe("10000");
+  });
+
+  it("CAPACITY_BLOCK tickets: Lavash 12 pax, capacity 10 → 2 groups = 20000", () => {
+    const sc = makeScenario({
+      services: [makeService({ category: "TICKETS", basis: "CAPACITY_BLOCK", unitRate: "10000", participants: 12, capacity: 10, label: "Lavash Baking" })],
+    });
+    const res = calculate(makeInput([sc])).scenarios[0];
+    expect(res.totals.byCategory.TICKETS.AMD).toBe("20000");
+  });
+
+  it("CAPACITY_BLOCK tickets: Chir's House 12 pax, capacity 5 → 3 groups = 30000", () => {
+    const sc = makeScenario({
+      services: [makeService({ category: "TICKETS", basis: "CAPACITY_BLOCK", unitRate: "10000", participants: 12, capacity: 5, label: "Chir's House" })],
+    });
+    const res = calculate(makeInput([sc])).scenarios[0];
+    expect(res.totals.byCategory.TICKETS.AMD).toBe("30000");
+  });
+
+  it("CAPACITY_BLOCK tickets: participants omitted falls back to travelers.paying", () => {
+    const sc = makeScenario({
+      travelers: T({ adults: 9, children: 3, paying: 12 }),
+      services: [makeService({ category: "TICKETS", basis: "CAPACITY_BLOCK", unitRate: "10000", capacity: 5, label: "Chir's House" })],
+    });
+    const res = calculate(makeInput([sc])).scenarios[0];
+    expect(res.totals.byCategory.TICKETS.AMD).toBe("30000");
+  });
+
   it("staff costs are never multiplied by guest PAX (guide day 30000 × 3 = 90000)", () => {
     const sc = makeScenario({
       travelers: T({ paying: 12 }),

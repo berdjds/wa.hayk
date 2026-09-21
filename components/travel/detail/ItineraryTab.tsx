@@ -12,7 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useToast } from "@/components/ui/toast";
 import { addDays, daysBetween } from "@/lib/travel/engine/dates";
 import { normalizeDayServices, type DayServiceItem } from "@/lib/travel/contracts";
-import { apiError } from "../utils";
+import { apiError, basisLabel } from "../utils";
 import type { ServiceProductView, VehicleTypeView } from "../types";
 import type { DetailContext } from "./RequestDetail";
 
@@ -300,7 +300,7 @@ export default function ItineraryTab({ ctx }: { ctx: DetailContext }) {
                 >
                   {p.name}
                   <span className="ml-2 text-xs text-muted-foreground">
-                    {p.basis.replace(/_/g, " ").toLowerCase()}
+                    {basisLabel(p.basis, p.capacity)}
                     {p.durationVariant ? ` · ${p.durationVariant.replace(/_/g, " ")}` : ""}
                     {needsVehicle(p) ? " · per vehicle" : ""}
                   </span>

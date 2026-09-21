@@ -45,7 +45,11 @@ Verification: `npx tsc --noEmit`, `npm test` (vitest), `npm run build`.
 ## Operator workflow
 
 1. Advisor: Travel → New request (agency, dates, travelers) — the package code
-   (`CLIENTSHORT-YYYY-MM-DD-NNNN`) is generated once and never changes.
+   (`CLIENTSHORT-YYYY-MM-DD-NNNN`) is generated once and never changes. Travelers are entered
+   booking.com style: −/+ steppers for adults and children, and one "age at return" (0–17)
+   dropdown per child. The child ages feed room-allocation validation; the paying count
+   auto-follows adults + children until you override it manually. The same editor appears when
+   editing a request on the Overview tab.
 2. Build the itinerary and scenarios on the request page. On the Itinerary tab, generate the
    day-by-day plan from the travel dates, then pick services per day from the catalog (they are
    priced automatically from verified catalog rates) or add free-text entries; overnight cities
@@ -76,6 +80,20 @@ fleet-specific price, open the transportation service in Catalog → Services �
 (or edit) the rate row for that vehicle (the Vehicle column shows which row applies); when an
 advisor pins a transportation service to a day, they pick the vehicle and the matching rate
 applies automatically.
+
+### Tickets & degustations pricing model
+
+Most ticket items are **per person**. Two items are priced **per group** and billed in blocks:
+
+- **Chir's House** — 10,000 AMD per group of up to **5** people: 5 pax → 1 × 10,000;
+  6 pax → 2 × 10,000; 12 pax → 3 × 10,000.
+- **Lavash Baking** — 10,000 AMD per group of up to **10** people: 3/5/8/10 pax → 1 × 10,000;
+  12 pax → 2 × 10,000.
+
+In the catalog these use the "CAPACITY BLOCK" basis with a capacity of 5 / 10 (shown as "per
+group of up to 5" / "per group of up to 10" in the service pickers). The group size is the
+paying traveler count unless a service line overrides participants. Existing databases pick
+this up by re-running the catalog seed (`npx tsx scripts/seed-travel-catalog.ts` — idempotent).
 
 ## Rollout / rollback
 

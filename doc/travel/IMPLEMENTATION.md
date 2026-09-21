@@ -147,6 +147,25 @@ A versioned B2B travel package costing and quotation module inside WAControl:
     two lines — and unknown vehicle ids are rejected with `VEHICLE_TYPE_UNKNOWN` (400), same
     style as `SERVICE_PRODUCT_UNKNOWN`. `vehicleTypeId` identifies the rate bracket and is
     not editable on existing rates (archive + recreate), same rule as occupancy.
+20. **Group-priced tickets via catalog data, not engine math.** The operator prices two
+    TICKETS items per group: Chir's House 10,000 AMD per group of up to 5 (6 pax → 2×) and
+    Lavash Baking 10,000 AMD per group of up to 10 (12 pax → 2×; supersedes the earlier flat
+    GROUP basis inferred from mass template E5:G5). The engine's CAPACITY_BLOCK basis already
+    computes `ceil(pax/capacity) × rate × qty` with `pax = participants ?? travelers.paying`,
+    so the fix is seed data only: `serviceSpec()` maps `/chir/i` → CAPACITY_BLOCK capacity 5
+    and `/lavash/i` → CAPACITY_BLOCK capacity 10, and `upsertServiceProduct` updates the
+    existing rows in place on re-seed. All other TICKETS stay PER_PERSON.
+21. **`childAges` on TravelerSetup.** Traveler input follows the booking.com occupancy
+    pattern: adults/children steppers plus an "age at return" (0–17) dropdown per child.
+    `TravelerSetup.childAges?: number[]` lives inside the travelers JSON string (no schema
+    change); `travelerSchema` rejects payloads where `childAges.length !== children`
+    ("childAges must list one age per child") on both the create and update paths. The ages
+    are informational input for the advisor — occupancy validation
+    (`lib/travel/engine/occupancy.ts`) and ticket participant defaults already key off the
+    counts, so no engine math changes were needed. The shared `TravelerSetupEditor` component
+    keeps `childAges` in sync with `children` (pad with 7 / truncate) and auto-derives
+    `paying = adults + children` only while paying still equals the previous sum, so a manual
+    override is never clobbered.
 
 ## Known limitations
 

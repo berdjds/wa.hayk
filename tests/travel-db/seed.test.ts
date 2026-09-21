@@ -50,8 +50,20 @@ describe("seedTravelCatalog", () => {
   });
 
   it("applies the correct pricing bases to services", async () => {
+    // Operator rule: Lavash Baking is 10,000 AMD per group of up to 10 people.
     const lavash = await prisma.serviceProduct.findFirst({ where: { name: "Lavash Baking" } });
-    expect(lavash?.basis).toBe("GROUP");
+    expect(lavash?.basis).toBe("CAPACITY_BLOCK");
+    expect(lavash?.capacity).toBe(10);
+
+    // Operator rule: Chir's House is 10,000 AMD per group of up to 5 people.
+    const chir = await prisma.serviceProduct.findFirst({ where: { name: "Chir's House" } });
+    expect(chir?.basis).toBe("CAPACITY_BLOCK");
+    expect(chir?.capacity).toBe(5);
+
+    // Other tickets stay per person.
+    const garni = await prisma.serviceProduct.findFirst({ where: { name: "Garni Temple" } });
+    expect(garni?.category).toBe("TICKETS");
+    expect(garni?.basis).toBe("PER_PERSON");
 
     const jeep = await prisma.serviceProduct.findFirst({ where: { name: "Garni Jeep (1-3 pax)" } });
     expect(jeep?.basis).toBe("CAPACITY_BLOCK");

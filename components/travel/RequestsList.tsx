@@ -12,6 +12,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/toast";
 import { QUOTE_STATUSES } from "@/lib/travel/contracts";
 import TravelShell from "./TravelShell";
+import TravelerSetupEditor from "./TravelerSetupEditor";
 import { StatusBadge, apiError } from "./utils";
 import type { Agency, RequestListItem, TravelerSetupView } from "./types";
 
@@ -19,6 +20,7 @@ const EMPTY_TRAVELERS: TravelerSetupView = {
   adults: 2,
   children: 0,
   infants: 0,
+  childAges: [],
   paying: 2,
   complimentary: 0,
   leaders: 0,
@@ -101,9 +103,8 @@ export default function RequestsList({ role, userId }: RequestsListProps) {
     }
   }
 
-  function setTraveler(key: keyof TravelerSetupView, value: string) {
-    const n = Math.max(0, Number.parseInt(value || "0", 10) || 0);
-    setForm((f) => ({ ...f, travelers: { ...f.travelers, [key]: n } }));
+  function setTravelers(travelers: TravelerSetupView) {
+    setForm((f) => ({ ...f, travelers }));
   }
 
   return (
@@ -238,19 +239,7 @@ export default function RequestsList({ role, userId }: RequestsListProps) {
             {invalidDates && <p className="text-xs text-red-600">End date must be after the start date.</p>}
             <div>
               <Label>Travelers</Label>
-              <div className="grid grid-cols-3 gap-2 sm:grid-cols-7">
-                {(["adults", "children", "infants", "paying", "complimentary", "leaders", "staff"] as const).map((k) => (
-                  <div key={k}>
-                    <span className="text-xs text-muted-foreground">{k}</span>
-                    <Input
-                      type="number"
-                      min={0}
-                      value={form.travelers[k]}
-                      onChange={(e) => setTraveler(k, e.target.value)}
-                    />
-                  </div>
-                ))}
-              </div>
+              <TravelerSetupEditor value={form.travelers} onChange={setTravelers} />
             </div>
             <div>
               <Label>Notes</Label>

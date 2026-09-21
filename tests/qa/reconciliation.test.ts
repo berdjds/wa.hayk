@@ -2,7 +2,7 @@
  * QA: workbook reconciliation spot-checks (RECONCILIATION.md) against the
  * seeded catalog in a throwaway DB: exact template codes, Cascade SGL 24000
  * VERIFIED, Cozy House extra-bed conflict staging, Grand Hotel stop-sales,
- * Georgia Vista 4N PAX-4 band 216 USD, Lavash GROUP basis.
+ * Georgia Vista 4N PAX-4 band 216 USD, Lavash CAPACITY_BLOCK basis.
  */
 
 import { beforeAll, describe, expect, it } from "vitest";
@@ -118,12 +118,14 @@ describe("seeded catalog spot-checks", () => {
     }
   });
 
-  it("Lavash baking is priced per GROUP, not per person", async () => {
+  it("Lavash baking is priced per group of up to 10, not per person", async () => {
     const lavash = await prisma.serviceProduct.findFirst({
       where: { name: "Lavash Baking" },
       include: { rates: true },
     });
-    expect(lavash?.basis).toBe("GROUP");
+    // Operator rule: 10,000 AMD per group of up to 10 people (12 pax → 2×).
+    expect(lavash?.basis).toBe("CAPACITY_BLOCK");
+    expect(lavash?.capacity).toBe(10);
     expect(lavash?.category).toBe("TICKETS");
     expect(lavash?.rates[0]?.amount).toBe("10000");
     expect(lavash?.rates[0]?.status).toBe("VERIFIED");

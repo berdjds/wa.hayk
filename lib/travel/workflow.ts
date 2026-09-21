@@ -114,15 +114,28 @@ const moneyString = z.string().trim().regex(/^\d+(\.\d+)?$/, "expected a non-neg
 const shortString = z.string().max(200);
 const longString = z.string().max(4000);
 
-export const travelerSchema = z.object({
-  adults: z.number().int().min(0),
-  children: z.number().int().min(0),
-  infants: z.number().int().min(0),
-  paying: z.number().int().min(0),
-  complimentary: z.number().int().min(0),
-  leaders: z.number().int().min(0),
-  staff: z.number().int().min(0),
-});
+export const travelerSchema = z
+  .object({
+    adults: z.number().int().min(0),
+    children: z.number().int().min(0),
+    infants: z.number().int().min(0),
+    // One age per child, 0-17 (age at return/check-out) — mirrors the
+    // booking.com occupancy picker the operator works from.
+    childAges: z.array(z.number().int().min(0).max(17)).optional(),
+    paying: z.number().int().min(0),
+    complimentary: z.number().int().min(0),
+    leaders: z.number().int().min(0),
+    staff: z.number().int().min(0),
+  })
+  .superRefine((t, ctx) => {
+    if (t.childAges !== undefined && t.childAges.length !== t.children) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["childAges"],
+        message: "childAges must list one age per child",
+      });
+    }
+  });
 
 export const createRequestSchema = z.object({
   agencyId: z.string().min(1).max(200),

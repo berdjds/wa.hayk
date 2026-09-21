@@ -415,9 +415,14 @@ function serviceSpec(s: ServiceCatalogRow): ServiceSpec {
       };
     }
     case "TICKETS": {
+      if (/chir/i.test(s.name)) {
+        // Chir's House: 10,000 AMD per group of up to 5 people (operator rule: 6 pax → 2×).
+        return { ...base, basis: "CAPACITY_BLOCK", capacity: 5, note: "10000 AMD per group of up to 5 people (operator rule: 6 pax → 2 groups)" };
+      }
       if (/lavash/i.test(s.name)) {
-        // Mass templates E5:G5 charge the same 10,000 at 2/4/6 PAX: group price.
-        return { ...base, basis: "GROUP", note: "Flat per group — mass template E5:G5 charges 10000 AMD at 2/4/6 PAX" };
+        // Lavash Baking: 10,000 AMD per group of up to 10 people (operator rule: 12 pax → 2×).
+        // Mass templates E5:G5 charge the same 10,000 at 2/4/6 PAX: group-priced, not per person.
+        return { ...base, basis: "CAPACITY_BLOCK", capacity: 10, note: "10000 AMD per group of up to 10 people (operator rule: 12 pax → 2 groups)" };
       }
       return { ...base, basis: "PER_PERSON" };
     }

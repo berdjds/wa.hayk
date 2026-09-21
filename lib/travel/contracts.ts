@@ -147,6 +147,8 @@ export interface TravelerSetup {
   adults: number;
   children: number;
   infants: number;
+  /** Age of each child at return/check-out (booking.com style); length should equal `children`. */
+  childAges?: number[];
   /** Paying travelers (denominator for informational per-person displays). */
   paying: number;
   complimentary: number;

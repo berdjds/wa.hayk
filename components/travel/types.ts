@@ -189,6 +189,7 @@ export interface TravelerSetupView {
   adults: number;
   children: number;
   infants: number;
+  childAges?: number[];
   paying: number;
   complimentary: number;
   leaders: number;
