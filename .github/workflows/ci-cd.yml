@@ -106,10 +106,12 @@ jobs:
           docker compose up -d wacontrol_app
 
           # db push happens in docker-entrypoint.sh at container start.
-          docker compose exec -T wacontrol_app npm run db:seed || true
+          # Seeds are idempotent and MUST be loud on failure — a silently
+          # skipped seed once left the production catalog empty.
+          docker compose exec -T wacontrol_app npm run db:seed
           # Travel module master data (idempotent; demo users skipped in production).
-          docker compose exec -T wacontrol_app npx tsx scripts/import-workbook.ts || true
-          docker compose exec -T wacontrol_app npx tsx scripts/seed-travel-catalog.ts || true
+          docker compose exec -T wacontrol_app npx tsx scripts/import-workbook.ts
+          docker compose exec -T wacontrol_app npx tsx scripts/seed-travel-catalog.ts
 
           docker ps | grep wacontrol-app
           ENDSSH

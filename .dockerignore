@@ -11,11 +11,15 @@ public/uploads
 Dockerfile
 .dockerignore
 
-# Exclude all of doc/ except the calculator HTML used by the app
+# Exclude all of doc/ except the calculator HTML used by the app and the
+# workbook evidence JSON consumed by scripts/seed-travel-catalog.ts at deploy
 doc/*
 !doc/temp/
 doc/temp/*
 !doc/temp/Hello_Armenia_Package_Calculator_2026_v3.html
+!doc/travel/
+doc/travel/*
+!doc/travel/Workbook-Evidence.json
 
 *.md
 *.tar.gz
