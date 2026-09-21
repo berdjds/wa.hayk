@@ -13,7 +13,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { useToast } from "@/components/ui/toast";
 import { COST_CATEGORIES, PRICING_BASES } from "@/lib/travel/contracts";
 import { nightsBetween, splitStayIntervals } from "@/lib/travel/engine/dates";
-import { StateBadge, apiError, basisLabel, money, parseJson } from "../utils";
+import { StateBadge, apiError, basisLabel, hotelDisplayName, money, parseJson } from "../utils";
 import type { HotelProductView, VehicleTypeView } from "../types";
 import type { DetailContext } from "./RequestDetail";
 
@@ -778,8 +778,7 @@ function StayEditor({
               <SelectContent>
                 {hotels.map((h) => (
                   <SelectItem key={h.id} value={h.id}>
-                    {h.stars ? `${h.stars}★ ` : ""}
-                    {h.name}
+                    {hotelDisplayName(h)}
                     {h.city ? ` (${h.city}, ${h.country})` : ` (${h.country})`}
                   </SelectItem>
                 ))}

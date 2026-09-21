@@ -182,6 +182,21 @@ A versioned B2B travel package costing and quotation module inside WAControl:
     (itinerary-managed) lines as compact read-only rows. The Documents tab merged into Review
     (5 tabs); advisor redaction is unchanged — the preview hook consumes the same redacted
     payload the old Calculate preview button did.
+23. **Operator-feedback UX round.** (a) All `Select` poppers are clamped to the Radix
+    available-height/width viewport vars with a scrolling viewport — long lists (child ages,
+    hotel catalogs) can no longer grow past the frame. (b) Child ages are 0–12 (was 0–17),
+    enforced in `travelerSchema` and the occupancy editor. (c) New-request `paying` defaults
+    to 1, deliberately not `adults + children`, so the auto-follow logic leaves it alone.
+    (d) An empty editable itinerary auto-generates from the travel dates and saves immediately
+    (once per version id, guarded against StrictMode; the PUT takes the day list explicitly so
+    it never depends on state timing). (e) The itinerary day picker separates private-vehicle
+    tours from per-seat group tours — `needsVehicle()` no longer keys on the TRANSPORTATION
+    category, which had been attaching "· Sedan" to per-seat group tours — and groups the rest
+    into friendly sections with a name search. (f) Hotel display names never double the "N★"
+    prefix (`hotelDisplayName`). (g) The departure day (`date >= endDate`) shows a muted "no
+    overnight needed" hint instead of the amber no-stay warning, because nights span
+    [startDate, endDate). (h) `money()` displays long engine decimals rounded to 2dp —
+    display-only formatting, stored values are never recomputed client-side.
 
 ## Known limitations
 

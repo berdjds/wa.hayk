@@ -88,13 +88,23 @@ describe("createRequest", () => {
     ).rejects.toThrow("childAges must list one age per child");
   });
 
-  it("rejects an out-of-range child age", async () => {
-    await expect(
-      workflow.createRequest(actorOf(fx.advisor), {
-        ...createRequestInput(fx.agency.id),
-        travelers: { ...TRAVELERS, children: 1, childAges: [18], paying: 3 },
-      }),
-    ).rejects.toThrow();
+  it("accepts a child aged 12 (inclusive upper bound)", async () => {
+    const { request } = await workflow.createRequest(actorOf(fx.advisor), {
+      ...createRequestInput(fx.agency.id),
+      travelers: { ...TRAVELERS, children: 1, childAges: [12], paying: 3 },
+    });
+    expect(JSON.parse(request.travelers).childAges).toEqual([12]);
+  });
+
+  it("rejects child ages above 12", async () => {
+    for (const age of [13, 18]) {
+      await expect(
+        workflow.createRequest(actorOf(fx.advisor), {
+          ...createRequestInput(fx.agency.id),
+          travelers: { ...TRAVELERS, children: 1, childAges: [age], paying: 3 },
+        }),
+      ).rejects.toThrow();
+    }
   });
 });
 

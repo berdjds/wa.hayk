@@ -123,7 +123,7 @@ payloads are String columns. See `prisma/schema.prisma` comments and `lib/travel
 
 `TravelRequest.travelers` is a JSON `TravelerSetup` string: counts (adults, children, infants,
 paying, complimentary, leaders, staff) plus an optional `childAges` number array (age of each
-child at return, 0–17; one entry per child, validated by `travelerSchema` in
+child at return, 0–12; one entry per child, validated by `travelerSchema` in
 `lib/travel/workflow.ts`).
 
 Phase 3/4 additions: `ServiceLine` gained nullable `serviceProductId` (catalog link) and `date`

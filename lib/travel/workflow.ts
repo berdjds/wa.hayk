@@ -119,9 +119,9 @@ export const travelerSchema = z
     adults: z.number().int().min(0),
     children: z.number().int().min(0),
     infants: z.number().int().min(0),
-    // One age per child, 0-17 (age at return/check-out) — mirrors the
+    // One age per child, 0-12 (age at return/check-out) — mirrors the
     // booking.com occupancy picker the operator works from.
-    childAges: z.array(z.number().int().min(0).max(17)).optional(),
+    childAges: z.array(z.number().int().min(0).max(12)).optional(),
     paying: z.number().int().min(0),
     complimentary: z.number().int().min(0),
     leaders: z.number().int().min(0),

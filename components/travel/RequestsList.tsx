@@ -21,7 +21,9 @@ const EMPTY_TRAVELERS: TravelerSetupView = {
   children: 0,
   infants: 0,
   childAges: [],
-  paying: 2,
+  // Operator default: one paying traveler until adjusted — deliberately not
+  // adults+children, so the auto-follow logic in TravelerSetupEditor leaves it alone.
+  paying: 1,
   complimentary: 0,
   leaders: 0,
   staff: 0,

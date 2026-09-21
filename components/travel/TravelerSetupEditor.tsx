@@ -18,7 +18,7 @@ import type { TravelerSetupView } from "./types";
  */
 
 const DEFAULT_CHILD_AGE = 7;
-const CHILD_AGE_OPTIONS = Array.from({ length: 18 }, (_, i) => i); // 0–17
+const CHILD_AGE_OPTIONS = Array.from({ length: 13 }, (_, i) => i); // 0–12
 const EXTRA_KEYS = ["infants", "paying", "complimentary", "leaders", "staff"] as const;
 
 interface TravelerSetupEditorProps {

@@ -46,16 +46,22 @@ Verification: `npx tsc --noEmit`, `npm test` (vitest), `npm run build`.
 
 1. Advisor: Travel → New request (agency, dates, travelers) — the package code
    (`CLIENTSHORT-YYYY-MM-DD-NNNN`) is generated once and never changes. Travelers are entered
-   booking.com style: −/+ steppers for adults and children, and one "age at return" (0–17)
+   booking.com style: −/+ steppers for adults and children, and one "age at return" (0–12)
    dropdown per child. The child ages feed room-allocation validation; the paying count
-   auto-follows adults + children until you override it manually. The same editor appears when
-   editing a request on the Overview tab.
+   defaults to 1 and auto-follows adults + children only until you override it manually. The
+   same editor appears when editing a request on the Overview tab.
 2. Build the itinerary and scenarios on the request page. The **quote summary bar** under the
    page header always shows the current sell price and per-paying-person price per scenario —
    it recalculates automatically after every save (use its Recalculate button to refresh on
-   demand). On the Itinerary tab, generate the day-by-day plan from the travel dates, then pick
-   services per day from the catalog (they are priced automatically from verified catalog rates)
-   or add free-text entries; overnight cities auto-fill from the scenario's hotel stays — "Sync
+   demand). On the Itinerary tab, an empty itinerary is generated automatically from the travel
+   dates (one day per date, overnight cities pre-filled from hotel stays) and saved — the
+   departure day needs no hotel, so it never raises a "no stay covers this date" warning.
+   Picking a service for a day opens a picker grouped into sections (private-vehicle tours,
+   per-seat group tours with their departure weekdays, tickets & degustations, meals, guides,
+   staff costs, …) with a search box on top; only private-vehicle tours ask for a vehicle.
+   Catalog services are priced automatically from their verified rate on the day's date;
+   free-text entries stay unpriced labels.
+   Overnight cities auto-fill from the scenario's hotel stays — "Sync
    cities from stays" reapplies that after stay edits. On the Scenarios tab, adding a hotel with
    its own dates splits the existing stay (e.g. inserting 3–5 Oct into 1–6 Oct yields 2+2+1
    nights — previewed before saving). Service lines are edited once, in the "Service lines" card

@@ -53,12 +53,17 @@ export function StateBadge({ value, className }: { value: string; className?: st
 }
 
 /**
- * Money is a decimal string + currency rendered verbatim — never reformatted
- * or recomputed client-side.
+ * Money display: decimal string + currency. Values that are already clean
+ * (≤2 decimals) render verbatim; longer engine decimals are DISPLAYED rounded
+ * to 2dp. This is display formatting only — the value itself is never
+ * recomputed or altered client-side.
  */
 export function money(amount: string | null | undefined, currency?: string | null): string {
   if (amount == null || amount === "") return "—";
-  return currency ? `${amount} ${currency}` : amount;
+  const trimmed = amount.trim();
+  const n = Number(trimmed);
+  const text = Number.isFinite(n) && !/^-?\d+(\.\d{1,2})?$/.test(trimmed) ? n.toFixed(2) : amount;
+  return currency ? `${text} ${currency}` : text;
 }
 
 export function parseJson<T>(raw: string | null | undefined, fallback: T): T {
@@ -87,6 +92,15 @@ export function basisLabel(basis: string, capacity?: number | null): string {
     default:
       return basis.replace(/_/g, " ").toLowerCase();
   }
+}
+
+/**
+ * Catalog hotel names may already carry the "N★" prefix (workbook naming) —
+ * prepend the stars field only when the name lacks it, never doubling it.
+ */
+export function hotelDisplayName(h: { name: string; stars: number | null }): string {
+  if (/^\d★/.test(h.name)) return h.name;
+  return h.stars != null ? `${h.stars}★ ${h.name}` : h.name;
 }
 
 export function shortHash(hash: string | null | undefined): string {

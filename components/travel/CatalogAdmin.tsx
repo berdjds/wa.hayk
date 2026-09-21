@@ -19,7 +19,7 @@ import {
 import { useToast } from "@/components/ui/toast";
 import { COST_CATEGORIES, PRICING_BASES, RATE_STATUSES } from "@/lib/travel/contracts";
 import TravelShell from "./TravelShell";
-import { StateBadge, apiError, basisLabel, formatDateTime, money, parseJson } from "./utils";
+import { StateBadge, apiError, basisLabel, formatDateTime, hotelDisplayName, money, parseJson } from "./utils";
 import type {
   Agency,
   FxVersionView,
@@ -1000,10 +1000,7 @@ function HotelsTab() {
               {hotels.map((h) => (
                 <Fragment key={h.id}>
                   <tr className={h.active ? "" : "text-muted-foreground"}>
-                    <td className="py-2">
-                      {h.name}
-                      {h.stars ? <span className="text-muted-foreground"> ({h.stars}★)</span> : null}
-                    </td>
+                    <td className="py-2">{hotelDisplayName(h)}</td>
                     <td className="py-2">{h.city ?? "—"}</td>
                     <td className="py-2">{h.country}</td>
                     <td className="py-2">{h.kind}</td>
