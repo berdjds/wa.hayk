@@ -267,6 +267,15 @@ A versioned B2B travel package costing and quotation module inside WAControl:
     `AMD · quote` line costs from the shared quote preview (first scenario's lines — day-linked
     lines are shared), and the Scenarios tab shows per-stay nightly rates and stay totals.
     INTERNAL documents remain advisor-invisible; only the engine JSON visibility changed.
+29. **Tabbed service picker + day-card restyle (v0.11.2).** The itinerary/template service picker
+    is a shared `ServicePickerDialog` (search, vehicle second step, custom labels, indicative
+    rates) organized into three switchable tabs — Tours (both TRANSPORTATION sections), Tickets &
+    degustations, Services (meals, guides, staff costs, …) — with search filtering the active
+    tab. Each itinerary panel/chips row has its own add button opening the picker on the matching
+    tab. Edit-mode day cards: tidy header row (day/date/city/remove), full-width narrative, two
+    bordered panels with real empty states; the read-only view uses the same grouping (which is
+    why the service catalog now loads for read-only viewers too — `categoryOf` drives grouping).
+    No save/sync/pricing logic changed.
 
 ## Known limitations
 

@@ -8,11 +8,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/components/ui/toast";
 import TravelShell from "./TravelShell";
-import { apiError, basisLabel, hotelDisplayName, parseJson } from "./utils";
+import ServicePickerDialog from "./ServicePickerDialog";
+import { apiError, hotelDisplayName, parseJson } from "./utils";
 import type {
   HotelProductView,
   ServiceProductView,
@@ -26,11 +26,6 @@ const ROOM_TYPES = ["SGL", "DBL", "TPL", "UNIT"];
 // Radix Select forbids empty-string item values, hence the CUSTOM sentinel
 // for "no catalog hotel — free-text name".
 const CUSTOM_HOTEL = "CUSTOM";
-
-/** Mirrors ItineraryTab: only per-vehicle bases take a fleet vehicle. */
-function needsVehicle(p: ServiceProductView): boolean {
-  return p.basis === "VEHICLE_TRIP" || p.basis === "VEHICLE_DAY";
-}
 
 interface ServiceDraft {
   serviceProductId: string | null;
@@ -90,10 +85,6 @@ export default function TemplateEditor({ templateId, role }: { templateId: strin
   const [hotels, setHotels] = useState<HotelProductView[]>([]);
 
   const [pickerDay, setPickerDay] = useState<number | null>(null);
-  const [pickerQuery, setPickerQuery] = useState("");
-  const [customLabel, setCustomLabel] = useState("");
-  const [pendingVehicleProduct, setPendingVehicleProduct] = useState<ServiceProductView | null>(null);
-  const [pickerVehicle, setPickerVehicle] = useState("");
 
   const version: TemplateVersionView | undefined = template?.versions.find((v) => v.id === versionId);
 
@@ -198,36 +189,6 @@ export default function TemplateEditor({ templateId, role }: { templateId: strin
     setDirty(true);
   }
 
-  function pickProduct(p: ServiceProductView) {
-    if (needsVehicle(p)) {
-      setPendingVehicleProduct(p);
-      setPickerVehicle("");
-      return;
-    }
-    if (pickerDay !== null) {
-      addService(pickerDay, { serviceProductId: p.id, label: p.name, quantity: null, vehicleTypeId: null });
-    }
-  }
-
-  function confirmVehicleProduct() {
-    if (!pendingVehicleProduct || !pickerVehicle || pickerDay === null) return;
-    addService(pickerDay, {
-      serviceProductId: pendingVehicleProduct.id,
-      label: pendingVehicleProduct.name,
-      quantity: null,
-      vehicleTypeId: pickerVehicle,
-    });
-    setPendingVehicleProduct(null);
-    setPickerVehicle("");
-  }
-
-  function addCustomService() {
-    const label = customLabel.trim();
-    if (!label || pickerDay === null) return;
-    addService(pickerDay, { serviceProductId: null, label, quantity: null, vehicleTypeId: null });
-    setCustomLabel("");
-  }
-
   // --- scenario mutations --------------------------------------------------------
 
   function patchScenario(si: number, patch: Partial<ScenarioDraft>) {
@@ -316,30 +277,6 @@ export default function TemplateEditor({ templateId, role }: { templateId: strin
     scenarios && scenarios.length > 0
       ? Math.max(0, ...scenarios.flatMap((s) => s.stays.map((st) => st.checkInOffset + st.nights)))
       : Math.max(0, days.length - 1);
-
-  // Picker sections, same grouping as the itinerary picker.
-  const pickerQueryLower = pickerQuery.trim().toLowerCase();
-  const catalog = (products ?? []).filter(
-    (p) => !pickerQueryLower || p.name.toLowerCase().includes(pickerQueryLower),
-  );
-  const sectionDefs: { title: string; match: (p: ServiceProductView) => boolean }[] = [
-    { title: "Tours — private vehicle", match: (p) => p.category === "TRANSPORTATION" && needsVehicle(p) },
-    { title: "Group tours — per seat", match: (p) => p.category === "TRANSPORTATION" && !needsVehicle(p) },
-    { title: "Tickets & degustations", match: (p) => p.category === "TICKETS" },
-    { title: "Meals", match: (p) => p.category === "GUEST_MEALS" },
-    { title: "Guides", match: (p) => p.category === "GUIDES" },
-    { title: "Staff costs", match: (p) => p.category === "STAFF_ACCOMMODATION" || p.category === "STAFF_MEALS" },
-    { title: "Tour leader", match: (p) => p.category === "TOUR_LEADER" },
-    { title: "Extra services", match: (p) => p.category === "EXTRA_SERVICES" },
-  ];
-  const assigned = new Set<string>();
-  const pickerSections = sectionDefs.map((def) => {
-    const items = catalog.filter(def.match);
-    for (const p of items) assigned.add(p.id);
-    return { title: def.title, items };
-  });
-  pickerSections.push({ title: "Other", items: catalog.filter((p) => !assigned.has(p.id)) });
-  const visibleSections = pickerSections.filter((s) => s.items.length > 0);
 
   function vehicleName(id: string | null): string | null {
     return id ? vehicles.find((v) => v.id === id)?.name ?? null : null;
@@ -506,12 +443,7 @@ export default function TemplateEditor({ templateId, role }: { templateId: strin
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={() => {
-                        setPickerDay(di);
-                        setPickerQuery("");
-                        setCustomLabel("");
-                        setPendingVehicleProduct(null);
-                      }}
+                      onClick={() => setPickerDay(di)}
                     >
                       Add service
                     </Button>
@@ -803,91 +735,20 @@ export default function TemplateEditor({ templateId, role }: { templateId: strin
         </div>
       )}
 
-      <Dialog open={pickerDay !== null} onOpenChange={(open) => !open && setPickerDay(null)}>
-        <DialogContent className="sm:max-w-xl">
-          <DialogHeader>
-            <DialogTitle>Add service — day {pickerDay !== null ? pickerDay + 1 : ""}</DialogTitle>
-            <DialogDescription>
-              Catalog services become priced lines at instantiate; custom labels stay narrative.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-3">
-            {products === null && <p className="text-sm text-muted-foreground">Loading catalog…</p>}
-            {pendingVehicleProduct && (
-              <div className="flex items-end gap-2 rounded-md border bg-muted/30 p-2">
-                <div className="flex-1">
-                  <p className="mb-1 text-xs font-medium">{pendingVehicleProduct.name} — vehicle</p>
-                  <Select value={pickerVehicle} onValueChange={setPickerVehicle}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select vehicle" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {vehicles.map((v) => (
-                        <SelectItem key={v.id} value={v.id}>
-                          {v.name} ({v.seats} seats)
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <Button size="sm" onClick={confirmVehicleProduct} disabled={!pickerVehicle}>
-                  Add
-                </Button>
-                <Button size="sm" variant="ghost" onClick={() => setPendingVehicleProduct(null)}>
-                  Back
-                </Button>
-              </div>
-            )}
-            <Input placeholder="Search services…" value={pickerQuery} onChange={(e) => setPickerQuery(e.target.value)} />
-            <div className="max-h-72 space-y-3 overflow-y-auto">
-              {products !== null && visibleSections.length === 0 && (
-                <p className="text-sm text-muted-foreground">
-                  {pickerQueryLower ? "No services match this search." : "No active services in the catalog."}
-                </p>
-              )}
-              {visibleSections.map((section) => (
-                <div key={section.title}>
-                  <p className="mb-1 text-xs font-medium text-muted-foreground">{section.title}</p>
-                  <div className="space-y-1">
-                    {section.items.map((p) => (
-                      <button
-                        key={p.id}
-                        type="button"
-                        className={`w-full rounded-md border px-2 py-1 text-left text-sm hover:bg-accent${
-                          pendingVehicleProduct?.id === p.id ? " border-primary" : ""
-                        }`}
-                        onClick={() => pickProduct(p)}
-                      >
-                        {p.name}
-                        <span className="ml-2 text-xs text-muted-foreground">
-                          {basisLabel(p.basis, p.capacity)}
-                          {needsVehicle(p) ? " · per vehicle" : ""}
-                        </span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              ))}
-            </div>
-            <div className="flex gap-2 border-t pt-3">
-              <Input
-                placeholder="Custom label…"
-                value={customLabel}
-                onChange={(e) => setCustomLabel(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    e.preventDefault();
-                    addCustomService();
-                  }
-                }}
-              />
-              <Button variant="outline" size="sm" onClick={addCustomService} disabled={!customLabel.trim()}>
-                Add custom
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
+      <ServicePickerDialog
+        open={pickerDay !== null}
+        onOpenChange={(open) => !open && setPickerDay(null)}
+        initialTab="services"
+        title={`Add service — day ${pickerDay !== null ? pickerDay + 1 : ""}`}
+        description="Catalog services become priced lines at instantiate; custom labels stay narrative."
+        products={products}
+        vehicles={vehicles}
+        onPick={(item) => {
+          // Stays open for multi-add — template days typically take several services.
+          if (pickerDay === null) return;
+          addService(pickerDay, { ...item, quantity: null });
+        }}
+      />
     </TravelShell>
   );
 }

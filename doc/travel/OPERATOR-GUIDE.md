@@ -73,13 +73,15 @@ Verification: `npx tsc --noEmit`, `npm test` (vitest), `npm run build`.
    demand). On the Itinerary tab, an empty itinerary is generated automatically from the travel
    dates (one day per date, overnight cities pre-filled from hotel stays) and saved — the
    departure day needs no hotel, so it never raises a "no stay covers this date" warning.
-   Day services are shown in two columns — **Tours** and **Tickets & degustations** — each entry
-   with a quantity stepper (−/+) and its net cost (`x AMD · y USD`) from the live quote preview;
+   Day services are shown in two bordered panels — **Tours** and **Tickets & degustations** — each
+   entry with a quantity stepper (−/+) and its net cost (`x AMD · y USD`) from the live quote preview;
    other categories stay as plain chips (v0.11.0). Net costs are visible to the request owner,
-   validators and admins. Picking a service for a day opens a picker grouped into sections
-   (private-vehicle tours, per-seat group tours with their departure weekdays, tickets &
-   degustations, meals, guides, staff costs, …) with a search box on top and an indicative
-   catalog rate per entry; only private-vehicle tours ask for a vehicle.
+   validators and admins. Each panel and the chips row has its own add button ("+ Add tour" /
+   "+ Add ticket" / "+ Add service"), opening the picker on the matching tab (v0.11.2): **Tours**
+   (private-vehicle tours and per-seat group tours with their departure weekdays), **Tickets &
+   degustations**, or **Services** (meals, guides, staff costs, …) — tabs are switchable inside the
+   dialog, with a search box filtering the active tab and an indicative catalog rate per entry;
+   only private-vehicle tours ask for a vehicle.
    Catalog services are priced automatically from their verified rate on the day's date;
    free-text entries stay unpriced labels.
    Overnight cities auto-fill from the scenario's hotel stays — "Sync
