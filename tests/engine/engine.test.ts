@@ -89,7 +89,11 @@ describe("nightly hotel expansion", () => {
     expect(res.totals.byCategory.ACCOMMODATION.AMD).toBe("176000");
     expect(res.nightly).toHaveLength(3);
     expect(res.nightly[2].rate).toBe("32000");
-    expect(res.trace.some((t) => t.includes("2026-10-01 STANDARD: 2 room(s) × 28000 AMD (RateVersion autumn)"))).toBe(true);
+    // Consolidated trace (v0.13.2): one line per rate group, hotel name not ref,
+    // comma-grouped money, evidence parenthetical without internal ids.
+    expect(res.trace.some((t) => t.includes("Test Hotel — STANDARD, 2026-10-01 → 2026-10-02 (2 nights): 2 rooms × 28,000 AMD/night = 112,000 AMD (RateVersion autumn)"))).toBe(true);
+    expect(res.trace.some((t) => t.includes("Test Hotel — STANDARD, 2026-10-03 → 2026-10-03 (1 night): 2 rooms × 32,000 AMD/night = 64,000 AMD"))).toBe(true);
+    expect(res.trace.some((t) => t.includes("stay S1"))).toBe(false);
   });
 
   it("prices per night across a Dec→Jan season boundary", () => {

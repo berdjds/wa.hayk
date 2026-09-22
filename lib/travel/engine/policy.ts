@@ -6,7 +6,7 @@ import type {
   Money,
   PolicyInput,
 } from "@/lib/travel/contracts";
-import { money, parseMoney } from "./money";
+import { money, parseMoney, displayMoneyCeil } from "./money";
 import { resolveFxRate } from "./fx";
 
 export interface PolicyStageResult {
@@ -89,8 +89,8 @@ export function computePolicyStage(
       } else {
         target = cost.times(rate.plus(1)).div(oneMinusFee);
         trace.push(
-          `policy MARKUP_ON_COST ${policy.rate}: target = ${money(cost)} × ${money(rate.plus(1))}` +
-            `${fee.gt(0) ? ` / (1 − fee ${money(fee)})` : ""} = ${money(target)}`,
+          `policy MARKUP_ON_COST ${policy.rate}: target = ${displayMoneyCeil(cost)} × ${money(rate.plus(1))}` +
+            `${fee.gt(0) ? ` / (1 − fee ${money(fee)})` : ""} = ${displayMoneyCeil(target)}`,
         );
       }
     } else {
@@ -99,7 +99,7 @@ export function computePolicyStage(
         push("INVALID_DENOMINATOR", "BLOCKER", `1 − feeFraction − rate = ${money(denom)} is not positive`, "rate");
       } else {
         target = cost.div(denom);
-        trace.push(`policy GROSS_MARGIN_ON_SALES ${policy.rate}: target = ${money(cost)} / ${money(denom)} = ${money(target)}`);
+        trace.push(`policy GROSS_MARGIN_ON_SALES ${policy.rate}: target = ${displayMoneyCeil(cost)} / ${money(denom)} = ${displayMoneyCeil(target)}`);
       }
     }
   }
@@ -123,8 +123,8 @@ export function computePolicyStage(
         const minProfitQuote = minProfit.times(rCur.rate!).div(rQuote.rate!);
         floor = cost.plus(minProfitQuote).div(oneMinusFee);
         trace.push(
-          `policy floor: (${money(cost)} + minProfit ${money(minProfitQuote)} ${fx.quoteCurrency})` +
-            `${fee.gt(0) ? ` / (1 − fee ${money(fee)})` : ""} = ${money(floor)}`,
+          `policy floor: (${displayMoneyCeil(cost)} + minProfit ${displayMoneyCeil(minProfitQuote)} ${fx.quoteCurrency})` +
+            `${fee.gt(0) ? ` / (1 − fee ${money(fee)})` : ""} = ${displayMoneyCeil(floor)}`,
         );
       }
     }
@@ -169,8 +169,8 @@ export function computePolicyStage(
   const profit = sell.minus(cost).minus(feeAmount);
   const margin = sell.isZero() ? null : money(profit.div(sell));
   trace.push(
-    `sell: unrounded ${money(unrounded)} → sell ${money(sell)} (rounding adjustment ${money(roundingAdjustment)}); ` +
-      `profit ${money(profit)}${fee.gt(0) ? ` after fee ${money(feeAmount)}` : ""}`,
+    `sell: unrounded ${displayMoneyCeil(unrounded)} → sell ${displayMoneyCeil(sell)} (rounding adjustment ${displayMoneyCeil(roundingAdjustment)}); ` +
+      `profit ${displayMoneyCeil(profit)}${fee.gt(0) ? ` after fee ${displayMoneyCeil(feeAmount)}` : ""}`,
   );
 
   return {

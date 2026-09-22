@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { normalizeDayServices } from "@/lib/travel/contracts";
+import { groupMoney } from "@/lib/travel/engine/money";
 import {
   buildClientQuotationHtml,
   buildInternalCostingHtml,
@@ -32,8 +33,8 @@ describe("client quotation HTML", () => {
     expect(html).toContain("Option B");
     expect(html).toContain("Yerevan City Stay");
     expect(html).toContain("Yerevan–Dilijan Loop");
-    expect(html).toContain(`${FIXTURE_SELL_A} AMD`);
-    expect(html).toContain(`${FIXTURE_SELL_B} AMD`);
+    expect(html).toContain(`${groupMoney(FIXTURE_SELL_A)} AMD`);
+    expect(html).toContain(`${groupMoney(FIXTURE_SELL_B)} AMD`);
   });
 
   it("never sums scenario totals into a grand total", () => {
@@ -57,7 +58,7 @@ describe("client quotation HTML", () => {
 
   it("labels the per-person price with its paying denominator", () => {
     expect(html).toContain("per paying traveler");
-    expect(html).toContain("76318.18 AMD");
+    expect(html).toContain("76,318.18 AMD");
     expect(html).toContain("22 paying travelers");
   });
 
@@ -190,8 +191,8 @@ describe("client quotation package offer structure", () => {
     expect(html).toContain("Grand Hotel Yerevan / Գրանդ Հյուրանոց · Dilijan Forest Resort");
     expect(html).toContain("8×STANDARD, 2×TRIPLE");
     expect(html).toContain("10×STANDARD, 2×TRIPLE"); // max concurrent rooms across stays
-    expect(html).toContain(`<strong>${FIXTURE_SELL_A} AMD</strong>`);
-    expect(html).toContain(`<strong>${FIXTURE_SELL_B} AMD</strong>`);
+    expect(html).toContain(`<strong>${groupMoney(FIXTURE_SELL_A)} AMD</strong>`);
+    expect(html).toContain(`<strong>${groupMoney(FIXTURE_SELL_B)} AMD</strong>`);
   });
 
   it("keeps the per-scenario detail blocks after the comparison table", () => {
@@ -344,15 +345,15 @@ describe("internal costing HTML", () => {
 
   it("contains category totals, costQuote, policy and profit/margin", () => {
     expect(html).toContain("costQuote");
-    expect(html).toContain("1471700.00 AMD");
+    expect(html).toContain("1,471,700.00 AMD");
     expect(html).toContain("ACCOMMODATION");
-    expect(html).toContain("1187500.00");
+    expect(html).toContain("1,187,500.00");
     expect(html).toContain("Profit");
-    expect(html).toContain("207300.00 AMD");
+    expect(html).toContain("207,300.00 AMD");
     expect(html).toContain("Margin");
     expect(html).toContain("0.1235");
     expect(html).toContain("MARKUP_ON_COST");
-    expect(html).toContain("1678938.00 AMD"); // policyTarget
+    expect(html).toContain("1,678,938.00 AMD"); // policyTarget
     expect(html).toContain("126.00 AMD"); // roundingAdjustment
   });
 
@@ -364,8 +365,17 @@ describe("internal costing HTML", () => {
 
   it("contains the nightly rate trace with source references", () => {
     expect(html).toContain(FIXTURE_SOURCEREF);
-    expect(html).toContain(`${FIXTURE_NIGHTLY_RATE} AMD`);
+    expect(html).toContain(`${groupMoney(FIXTURE_NIGHTLY_RATE)} AMD`);
     expect(html).toContain("Nightly rate trace");
+  });
+
+  it("renders the calculation trace consolidated, grouped and without internal ids", () => {
+    expect(html).toContain("Calculation trace");
+    expect(html).toContain(
+      "Dilijan Forest Resort — STANDARD, 2026-10-03 → 2026-10-04 (2 nights): 10 rooms × 31,000 AMD/night = 620,000 AMD (RateVersion clx-autumn-2026)",
+    );
+    expect(html).toContain("policy MARKUP_ON_COST 0.14: target = 1,529,300 × 1.14 = 1,743,402");
+    expect(html).toContain("sell: unrounded 1,742,488 → sell 1,842,500 (rounding adjustment 12); profit 313,200");
   });
 
   it("contains issues and override notes", () => {
@@ -376,8 +386,8 @@ describe("internal costing HTML", () => {
   });
 
   it("keeps the client-facing sell totals as well", () => {
-    expect(html).toContain(`${FIXTURE_SELL_A} AMD`);
-    expect(html).toContain(`${FIXTURE_SELL_B} AMD`);
+    expect(html).toContain(`${groupMoney(FIXTURE_SELL_A)} AMD`);
+    expect(html).toContain(`${groupMoney(FIXTURE_SELL_B)} AMD`);
     expect(html).toContain("Option A");
     expect(html).toContain("Option B");
   });

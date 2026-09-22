@@ -180,9 +180,17 @@ function scenarioResultA(): ScenarioResult {
     perPayingPerson: "76318.18",
     lines: [],
     trace: [
-      "stay ST-YER: 5 nights × 8 STANDARD rooms @ 28500.75 AMD",
-      "policy: MARKUP_ON_COST 0.14 over cost 1471700.00 AMD",
-      "rounding: 1678874.00 → 1679000.00 AMD (+126.00)",
+      "Grand Hotel Yerevan / Գրանդ Հյուրանոց — STANDARD, 2026-10-01 → 2026-10-05 (5 nights): 8 rooms × 28,501 AMD/night = 1,140,030 AMD (RateVersion clx-autumn-2026)",
+      "Grand Hotel Yerevan / Գրանդ Հյուրանոց — TRIPLE, 2026-10-01 → 2026-10-05 (5 nights): 2 rooms × 36,500 AMD/night = 365,000 AMD (RateVersion clx-autumn-2026)",
+      "\"Airport transfers (round trip)\" [VEHICLE_TRIP]: 60 × 2 = 120 USD",
+      "\"Yerevan city tour with guide\" [GUIDE_DAY]: 30,000 × 5 = 150,000 AMD",
+      "\"Museum entrance fees\" [PER_PERSON]: 2,500 × 22 pax × 1 = 55,000 AMD",
+      "\"Welcome dinner\": included elsewhere — charged 0",
+      "fx: 1,425,500 AMD → 1,425,500 AMD (rate 1 AMD/AMD, quote rate 1)",
+      "fx: 120 USD → 46,200 AMD (rate 385 AMD/USD, quote rate 1)",
+      "policy MARKUP_ON_COST 0.14: target = 1,471,700 × 1.14 = 1,678,938",
+      "policy floor: (1,471,700 + minProfit 150,000 AMD) = 1,621,700",
+      "sell: unrounded 1,678,874 → sell 1,679,000 (rounding adjustment 126); profit 207,300",
     ],
   };
 }
@@ -216,7 +224,16 @@ function scenarioResultB(): ScenarioResult {
     margin: "0.1700",
     perPayingPerson: "83750.00",
     lines: [],
-    trace: ["policy: MARKUP_ON_COST 0.14 over cost 1529300.00 AMD"],
+    trace: [
+      "Grand Hotel Yerevan / Գրանդ Հյուրանոց — STANDARD, 2026-10-01 → 2026-10-02 (2 nights): 8 rooms × 28,501 AMD/night = 456,012 AMD (RateVersion clx-autumn-2026)",
+      "Dilijan Forest Resort — STANDARD, 2026-10-03 → 2026-10-04 (2 nights): 10 rooms × 31,000 AMD/night = 620,000 AMD (RateVersion clx-autumn-2026)",
+      "Grand Hotel Yerevan / Գրանդ Հյուրանոց — STANDARD, 2026-10-05 → 2026-10-05 (1 night): 8 rooms × 28,501 AMD/night = 228,006 AMD (RateVersion clx-autumn-2026)",
+      "fx: 1,460,000 AMD → 1,460,000 AMD (rate 1 AMD/AMD, quote rate 1)",
+      "fx: 180 USD → 69,300 AMD (rate 385 AMD/USD, quote rate 1)",
+      "policy MARKUP_ON_COST 0.14: target = 1,529,300 × 1.14 = 1,743,402",
+      "policy floor: (1,529,300 + minProfit 150,000 AMD) = 1,679,300",
+      "sell: unrounded 1,742,488 → sell 1,842,500 (rounding adjustment 12); profit 313,200",
+    ],
   };
 }
 

@@ -9,7 +9,49 @@
 
 import { describe, expect, it } from "vitest";
 import { calculate, parseMoney } from "@/lib/travel/engine";
+import { displayMoneyCeil, groupMoney } from "@/lib/travel/engine/money";
 import { T, makeInput, makeScenario, makeService, makeStay, alloc } from "./helpers";
+
+describe("displayMoneyCeil (trace display, v0.13.2)", () => {
+  it("rounds up to a whole unit and comma-groups", () => {
+    expect(displayMoneyCeil("824.86187845303867403")).toBe("825");
+    expect(displayMoneyCeil("298600")).toBe("298,600");
+    expect(displayMoneyCeil("1529300")).toBe("1,529,300");
+    expect(displayMoneyCeil("55000.00")).toBe("55,000");
+  });
+
+  it("keeps exact integers unchanged apart from grouping", () => {
+    expect(displayMoneyCeil("0")).toBe("0");
+    expect(displayMoneyCeil("7")).toBe("7");
+    expect(displayMoneyCeil("1000")).toBe("1,000");
+  });
+
+  it("ceils fractions away from zero floor even below 1, and toward zero for negatives", () => {
+    expect(displayMoneyCeil("0.01")).toBe("1");
+    expect(displayMoneyCeil("-12.3")).toBe("-12");
+    expect(displayMoneyCeil("-12.9")).toBe("-12");
+    expect(displayMoneyCeil("-1200.5")).toBe("-1,200");
+  });
+
+  it("accepts Decimal instances", () => {
+    expect(displayMoneyCeil(parseMoney("999.1")!)).toBe("1,000");
+  });
+});
+
+describe("groupMoney (PDF table cells, v0.13.2)", () => {
+  it("comma-groups the integer part and preserves decimals as-is", () => {
+    expect(groupMoney("298600")).toBe("298,600");
+    expect(groupMoney("824.86187845303867403")).toBe("824.86187845303867403");
+    expect(groupMoney("362.5")).toBe("362.5");
+    expect(groupMoney("1234567.89")).toBe("1,234,567.89");
+  });
+
+  it("handles zero, small values and negatives", () => {
+    expect(groupMoney("0")).toBe("0");
+    expect(groupMoney("42")).toBe("42");
+    expect(groupMoney("-5000.25")).toBe("-5,000.25");
+  });
+});
 
 describe("parseMoney strictness", () => {
   it("rejects hex, scientific notation, Infinity and empty input", () => {

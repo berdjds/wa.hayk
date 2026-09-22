@@ -18,7 +18,7 @@ import {
 } from "@/lib/travel/contracts";
 import { enumerateNights, isValidISODate, nightsBetween } from "./dates";
 import { validateOccupancy } from "./occupancy";
-import { money, parseMoney } from "./money";
+import { money, parseMoney, displayMoneyCeil } from "./money";
 import { resolveFxRate } from "./fx";
 import { computePolicyStage } from "./policy";
 
@@ -26,6 +26,20 @@ import { computePolicyStage } from "./policy";
  * The calculation engine. Fully pure: no I/O, no clock, no prisma — the same
  * input snapshot always produces the same output (see lib/travel/snapshots.ts).
  */
+
+/**
+ * Trace display (v0.13.2): drop the internal "RateVersion <id>" prefix and keep
+ * only the evidence anchor; omit the parenthetical entirely when the rate has
+ * no evidence. Non-catalog refs (e.g. "Tour Calculator!D9") pass through.
+ */
+function formatSourceRef(sourceRef: string | null | undefined): string {
+  if (!sourceRef) return "";
+  const m = sourceRef.match(/^RateVersion \S+ \((.*)\)$/);
+  const evidence = m ? m[1] : sourceRef;
+  if (!evidence || evidence === "no evidence") return "";
+  return ` (${evidence})`;
+}
+
 export function calculate(input: EngineInput): EngineOutput {
   const scenarios = input.scenarios.map((sc) => calculateScenario(sc, input));
   return {
@@ -121,6 +135,25 @@ function calculateScenario(sc: ScenarioEngineInput, input: EngineInput): Scenari
 
     const nightsOfStay = enumerateNights(stay.checkIn, stay.checkOut);
     stayNights.set(stay.ref, nightsOfStay);
+    // Trace lines consolidate identical nights into one line per group
+    // (v0.13.2); per-night detail still lands in nightly[] above.
+    const traceGroups = new Map<
+      string,
+      {
+        roomType: string;
+        wholeUnit: boolean;
+        rooms: number;
+        rate: Decimal;
+        currency: string;
+        sourceRef?: string;
+        extraBeds: number;
+        extraBedPerNight: Decimal;
+        extraBedIncluded: boolean;
+        firstNight: string;
+        lastNight: string;
+        nights: number;
+      }
+    >();
     for (const night of nightsOfStay) {
       const refs = coverage.get(night) ?? [];
       refs.push(stay.ref);
@@ -184,14 +217,37 @@ function calculateScenario(sc: ScenarioEngineInput, input: EngineInput): Scenari
         });
         // wholeUnit cottages are rented per unit-night; alloc.rooms is the unit
         // count, so bedroom counts must never enter the formula.
-        trace.push(
-          `stay ${stay.ref} ${night} ${alloc.roomType}${alloc.wholeUnit ? " (whole unit)" : ""}: ` +
-            `${alloc.rooms} room(s) × ${period.rate} ${period.currency}` +
-            (alloc.extraBeds > 0
-              ? ` + ${alloc.extraBeds} extra bed(s) = ${money(extraBedCharge)} ${period.currency}${alloc.extraBedIncludedInRate ? " (included in rate)" : ""}`
-              : "") +
-            (period.sourceRef ? ` (${period.sourceRef})` : ""),
-        );
+        const gKey = [
+          alloc.roomType,
+          alloc.wholeUnit ? "1" : "0",
+          alloc.rooms,
+          alloc.extraBeds,
+          alloc.extraBedIncludedInRate ? "1" : "0",
+          period.rate,
+          period.currency,
+          period.sourceRef ?? "",
+          money(extraBedCharge),
+        ].join("|");
+        const group = traceGroups.get(gKey);
+        if (group) {
+          group.nights += 1;
+          group.lastNight = night;
+        } else {
+          traceGroups.set(gKey, {
+            roomType: alloc.roomType,
+            wholeUnit: alloc.wholeUnit ?? false,
+            rooms: alloc.rooms,
+            rate,
+            currency: period.currency,
+            sourceRef: period.sourceRef,
+            extraBeds: alloc.extraBeds,
+            extraBedPerNight: extraBedCharge,
+            extraBedIncluded: alloc.extraBedIncludedInRate ?? false,
+            firstNight: night,
+            lastNight: night,
+            nights: 1,
+          });
+        }
       }
 
       for (const supp of stay.supplements ?? []) {
@@ -205,8 +261,24 @@ function calculateScenario(sc: ScenarioEngineInput, input: EngineInput): Scenari
           continue;
         }
         addCost("ACCOMMODATION", supp.currency, amount);
-        trace.push(`stay ${stay.ref} ${night} supplement "${supp.label}": +${supp.amount} ${supp.currency}`);
+        trace.push(`${stay.hotelName} ${night} supplement "${supp.label}": +${displayMoneyCeil(supp.amount)} ${supp.currency}`);
       }
+    }
+
+    // One consolidated trace line per (roomType, rate, currency, sourceRef,
+    // wholeUnit) group — e.g. `Royal Plaza — DBL, 2026-09-22 → 2026-09-24
+    // (3 nights): 1 room × 55,000 AMD/night = 165,000 AMD (Tour Calculator!D6)`.
+    for (const g of Array.from(traceGroups.values())) {
+      const total = g.rate.times(g.rooms).plus(g.extraBedPerNight).times(g.nights);
+      trace.push(
+        `${stay.hotelName} — ${g.roomType}${g.wholeUnit ? " (whole unit)" : ""}, ` +
+          `${g.firstNight} → ${g.lastNight} (${g.nights} night${g.nights === 1 ? "" : "s"}): ` +
+          `${g.rooms} ${g.rooms === 1 ? "room" : "rooms"} × ${displayMoneyCeil(g.rate)} ${g.currency}/night` +
+          (g.extraBeds > 0
+            ? ` + ${g.extraBeds} extra bed${g.extraBeds === 1 ? "" : "s"} = ${displayMoneyCeil(g.extraBedPerNight)} ${g.currency}/night${g.extraBedIncluded ? " (included in rate)" : ""}`
+            : "") +
+          ` = ${displayMoneyCeil(total)} ${g.currency}${formatSourceRef(g.sourceRef)}`,
+      );
     }
   }
 
@@ -272,7 +344,7 @@ function calculateScenario(sc: ScenarioEngineInput, input: EngineInput): Scenari
             ? "CATALOG"
             : "MANUAL";
     if (line.includedElsewhere) {
-      trace.push(`line ${line.ref} "${line.label}": included elsewhere — charged 0`);
+      trace.push(`"${line.label}": included elsewhere — charged 0`);
       pendingLines.push({ line, amount: new Decimal(0), amountSource });
       continue;
     }
@@ -318,7 +390,7 @@ function calculateScenario(sc: ScenarioEngineInput, input: EngineInput): Scenari
       case "PERSON_MEAL": {
         const pax = line.participants ?? defaultPax;
         amount = rate.times(pax).times(qty);
-        formula = `${line.unitRate} × ${pax} pax × ${money(qty)}`;
+        formula = `${displayMoneyCeil(line.unitRate)} × ${pax} pax × ${money(qty)}`;
         break;
       }
       case "CAPACITY_BLOCK": {
@@ -330,18 +402,18 @@ function calculateScenario(sc: ScenarioEngineInput, input: EngineInput): Scenari
         const pax = line.participants ?? defaultPax;
         const units = Math.ceil(pax / line.capacity);
         amount = new Decimal(units).times(rate).times(qty);
-        formula = `ceil(${pax}/${line.capacity}) = ${units} unit(s) × ${line.unitRate} × ${money(qty)}`;
+        formula = `ceil(${pax}/${line.capacity}) = ${units} unit(s) × ${displayMoneyCeil(line.unitRate)} × ${money(qty)}`;
         break;
       }
       // GROUP, FIXED_PACKAGE, GUIDE_DAY, GUIDE_HALF_DAY, VEHICLE_TRIP,
       // VEHICLE_DAY, PER_KM, ROOM_NIGHT: rate × quantity, never × guest PAX.
       default: {
         amount = rate.times(qty);
-        formula = `${line.unitRate} × ${money(qty)}`;
+        formula = `${displayMoneyCeil(line.unitRate)} × ${money(qty)}`;
       }
     }
     addCost(line.category, line.currency, amount);
-    trace.push(`line ${line.ref} "${line.label}" [${line.basis}]: ${formula} = ${money(amount)} ${line.currency}`);
+    trace.push(`"${line.label}" [${line.basis}]: ${formula} = ${displayMoneyCeil(amount)} ${line.currency}`);
     pendingLines.push({ line, amount, amountSource });
   }
 
@@ -389,7 +461,7 @@ function calculateScenario(sc: ScenarioEngineInput, input: EngineInput): Scenari
       const converted = total.times(fxRates.get(cur)!).div(rQuote);
       costByCurrency[cur] = money(converted);
       costQuote = costQuote.plus(converted);
-      trace.push(`fx: ${money(total)} ${cur} → ${money(converted)} ${input.fx.quoteCurrency} (rate ${money(fxRates.get(cur)!)} AMD/${cur}, quote rate ${money(rQuote)})`);
+      trace.push(`fx: ${displayMoneyCeil(total)} ${cur} → ${displayMoneyCeil(converted)} ${input.fx.quoteCurrency} (rate ${money(fxRates.get(cur)!)} AMD/${cur}, quote rate ${money(rQuote)})`);
     });
   }
 

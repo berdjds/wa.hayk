@@ -20,6 +20,7 @@ import type {
   TravelerSetup,
 } from "@/lib/travel/contracts";
 import type { QuotationPdfInput } from "./types";
+import { groupMoney } from "../engine/money";
 
 export function escapeHtml(value: string): string {
   return value
@@ -30,9 +31,12 @@ export function escapeHtml(value: string): string {
     .replace(/'/g, "&#39;");
 }
 
-/** Money is authoritative as a decimal string — render it exactly as given. */
+/**
+ * Money is authoritative as a decimal string — decimals are rendered exactly,
+ * but the integer part is comma-grouped for readability (v0.13.2).
+ */
 function money(amount: string, currency: string): string {
-  return `${escapeHtml(amount)} ${escapeHtml(currency)}`;
+  return `${escapeHtml(groupMoney(amount))} ${escapeHtml(currency)}`;
 }
 
 function daysBetween(from: string, to: string): number {
@@ -621,7 +625,7 @@ function categoryTotalsHtml(res: ScenarioResult): string {
   const rows = Object.entries(res.totals.byCategory)
     .map(([category, perCurrency]) => {
       const cells = currencyList
-        .map((c) => `<td>${perCurrency[c] !== undefined ? escapeHtml(perCurrency[c]) : "—"}</td>`)
+        .map((c) => `<td>${perCurrency[c] !== undefined ? escapeHtml(groupMoney(perCurrency[c])) : "—"}</td>`)
         .join("");
       return `<tr><td>${escapeHtml(category)}</td>${cells}</tr>`;
     })
@@ -633,14 +637,14 @@ function categoryTotalsHtml(res: ScenarioResult): string {
 
 function costByCurrencyHtml(res: ScenarioResult, quoteCurrency: string): string {
   const rows = Object.entries(res.totals.costByCurrency)
-    .map(([c, amount]) => `<tr><td>${escapeHtml(c)}</td><td>${escapeHtml(amount)} ${escapeHtml(quoteCurrency)}</td></tr>`)
+    .map(([c, amount]) => `<tr><td>${escapeHtml(c)}</td><td>${escapeHtml(groupMoney(amount))} ${escapeHtml(quoteCurrency)}</td></tr>`)
     .join("");
   return `
     <h3>Cost converted to quote currency</h3>
     <table>
       <thead><tr><th>Source currency</th><th>Total in ${escapeHtml(quoteCurrency)}</th></tr></thead>
       <tbody>${rows}</tbody>
-      <tfoot><tr><th>costQuote</th><th><strong>${escapeHtml(res.totals.costQuote)} ${escapeHtml(quoteCurrency)}</strong></th></tr></tfoot>
+      <tfoot><tr><th>costQuote</th><th><strong>${escapeHtml(groupMoney(res.totals.costQuote))} ${escapeHtml(quoteCurrency)}</strong></th></tr></tfoot>
     </table>`;
 }
 
