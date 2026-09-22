@@ -4,12 +4,14 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import axios from "axios";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useToast } from "@/components/ui/toast";
 import { versionLabel } from "@/lib/travel/contracts";
 import { nightsBetween } from "@/lib/travel/engine/dates";
-import TravelShell from "../TravelShell";
 import { StatusBadge, apiError, money, parseJson } from "../utils";
 import type { TravelRequestDetail, VersionDetail } from "../types";
 import type { ScenarioResult } from "@/lib/travel/contracts";
@@ -59,6 +61,7 @@ export default function RequestDetail({ requestId, role, userId }: RequestDetail
   const [compareOpen, setCompareOpen] = useState(false);
   const [compareA, setCompareA] = useState("");
   const [compareB, setCompareB] = useState("");
+  const [reviseOpen, setReviseOpen] = useState(false);
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
@@ -119,9 +122,11 @@ export default function RequestDetail({ requestId, role, userId }: RequestDetail
 
   if (!detail || !version) {
     return (
-      <TravelShell title="Travel request" role={role} current="requests">
-        <p className="text-sm text-muted-foreground">Loading…</p>
-      </TravelShell>
+      <div className="space-y-4">
+        <Skeleton className="h-24 w-full" />
+        <Skeleton className="h-10 w-2/3" />
+        <Skeleton className="h-64 w-full" />
+      </div>
     );
   }
 
@@ -157,7 +162,7 @@ export default function RequestDetail({ requestId, role, userId }: RequestDetail
 
   async function handleNewRevision() {
     if (!detail) return;
-    if (!confirm("Create a new draft revision cloned from the latest version?")) return;
+    setReviseOpen(false);
     setBusy(true);
     try {
       const res = await axios.post(`/api/travel/requests/${detail.id}/versions`);
@@ -176,8 +181,11 @@ export default function RequestDetail({ requestId, role, userId }: RequestDetail
   const cmpB = detail.versions.find((v) => v.id === compareB);
 
   return (
-    <TravelShell title={detail.packageCode} subtitle={detail.title} role={role} current="requests">
-      <Card className="mb-4">
+    <>
+      {/* Sticky request header: identity + version pills stay visible while
+          scrolling long itinerary/scenario tabs (sits under the h-14 layout
+          header). */}
+      <Card className="sticky top-14 z-30 mb-4 shadow-sm">
         <CardHeader>
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="space-y-1">
@@ -185,6 +193,7 @@ export default function RequestDetail({ requestId, role, userId }: RequestDetail
                 <CardTitle className="font-mono text-xl">{detail.packageCode}</CardTitle>
                 <StatusBadge status={detail.status} />
               </div>
+              <p className="text-sm font-medium">{detail.title}</p>
               <p className="text-sm text-muted-foreground">
                 {detail.agency.shortCode} — {detail.agency.name} · {detail.startDate} → {detail.endDate} (
                 {nights} night{nights === 1 ? "" : "s"} / {nights + 1} days) · Owner:{" "}
@@ -204,7 +213,7 @@ export default function RequestDetail({ requestId, role, userId }: RequestDetail
                 </Button>
               ))}
               {canRevise && (
-                <Button size="sm" variant="outline" onClick={handleNewRevision} disabled={busy}>
+                <Button size="sm" variant="outline" onClick={() => setReviseOpen(true)} disabled={busy}>
                   New revision
                 </Button>
               )}
@@ -273,7 +282,27 @@ export default function RequestDetail({ requestId, role, userId }: RequestDetail
           <HistoryTab ctx={ctx} />
         </TabsContent>
       </Tabs>
-    </TravelShell>
+
+      <Dialog open={reviseOpen} onOpenChange={setReviseOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Create a new revision?</DialogTitle>
+            <DialogDescription>
+              A new draft revision ({versionLabel(latest.versionNo + 1)}) is cloned from the latest version —
+              scenarios, itinerary and service lines come along.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setReviseOpen(false)} disabled={busy}>
+              Cancel
+            </Button>
+            <Button onClick={handleNewRevision} disabled={busy}>
+              {busy ? "Creating..." : "Create revision"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
 
@@ -285,20 +314,20 @@ function scenarioResult(v: VersionDetail, scenarioId: string): ScenarioResult | 
 function VersionCompare({ a, b, fallbackCurrency }: { a: VersionDetail; b: VersionDetail; fallbackCurrency: string }) {
   const labels = Array.from(new Set([...a.scenarios.map((s) => s.label), ...b.scenarios.map((s) => s.label)]));
   return (
-    <div className="mt-4 overflow-x-auto">
-      <table className="w-full text-sm">
-        <thead className="border-b text-left">
-          <tr>
-            <th className="pb-2 font-medium">Scenario</th>
-            <th className="pb-2 font-medium">
+    <div className="mt-4">
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>Scenario</TableHead>
+            <TableHead>
               {versionLabel(a.versionNo)} ({a.status})
-            </th>
-            <th className="pb-2 font-medium">
+            </TableHead>
+            <TableHead>
               {versionLabel(b.versionNo)} ({b.status})
-            </th>
-          </tr>
-        </thead>
-        <tbody className="divide-y">
+            </TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
           {labels.map((label) => {
             const scA = a.scenarios.find((s) => s.label === label);
             const scB = b.scenarios.find((s) => s.label === label);
@@ -310,15 +339,15 @@ function VersionCompare({ a, b, fallbackCurrency }: { a: VersionDetail; b: Versi
               return `${res.valid ? "valid" : "invalid"} · ${res.issues.length} issue(s) · sell ${money(res.sell, currency)}`;
             };
             return (
-              <tr key={label}>
-                <td className="py-2">{label}</td>
-                <td className="py-2">{cell(scA, resA, a.quoteCurrency ?? fallbackCurrency)}</td>
-                <td className="py-2">{cell(scB, resB, b.quoteCurrency ?? fallbackCurrency)}</td>
-              </tr>
+              <TableRow key={label}>
+                <TableCell>{label}</TableCell>
+                <TableCell>{cell(scA, resA, a.quoteCurrency ?? fallbackCurrency)}</TableCell>
+                <TableCell>{cell(scB, resB, b.quoteCurrency ?? fallbackCurrency)}</TableCell>
+              </TableRow>
             );
           })}
-        </tbody>
-      </table>
+        </TableBody>
+      </Table>
     </div>
   );
 }

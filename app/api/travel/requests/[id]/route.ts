@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
+import { unlink } from "node:fs/promises";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { ROLE_ADMIN, ROLE_ADVISOR, ROLE_VALIDATOR } from "@/lib/travel/contracts";
 import { publicDocumentView, redactScenarioResultJson } from "@/lib/travel/redact";
 import { updateDraft, updateDraftSchema } from "@/lib/travel/workflow";
+import { writeAuditLog } from "@/lib/audit";
 import { getTravelActor, travelError, unauthorized } from "../../guard";
 
 const patchBodySchema = z.object({
@@ -134,5 +136,60 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     return NextResponse.json(updated);
   } catch (err) {
     return travelError(err, "[API /travel/requests/[id]]");
+  }
+}
+
+// Hard delete of a request and everything hanging off it (v0.12.0 — added so
+// test/junk requests can be cleaned up). ADMIN only. Children are deleted
+// explicitly in dependency order inside one transaction rather than relying on
+// the schema's onDelete: Cascade, so behavior is identical on databases whose
+// FKs predate the cascade annotations. Rendered PDF files under
+// data/documents/ are unlinked best-effort afterwards — a missing file must
+// not fail the delete (it may already be gone).
+export async function DELETE(_req: NextRequest, { params }: { params: { id: string } }) {
+  const actor = await getTravelActor();
+  if (!actor) return unauthorized();
+  if (actor.role !== ROLE_ADMIN) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  try {
+    const request = await prisma.travelRequest.findUnique({
+      where: { id: params.id },
+      include: { versions: { select: { id: true, documents: { select: { filePath: true } } } } },
+    });
+    if (!request) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+
+    await writeAuditLog(
+      "TRAVEL_REQUEST_DELETED",
+      actor.id,
+      `Deleted request ${request.packageCode} "${request.title}" (${request.versions.length} version(s))`,
+    );
+
+    const versionIds = request.versions.map((v) => v.id);
+    const filePaths = request.versions.flatMap((v) => v.documents.map((d) => d.filePath));
+    await prisma.$transaction([
+      prisma.notificationDelivery.deleteMany({ where: { event: { requestId: request.id } } }),
+      prisma.workflowEvent.deleteMany({ where: { requestId: request.id } }),
+      prisma.validationAssignment.deleteMany({ where: { requestId: request.id } }),
+      prisma.staySegment.deleteMany({ where: { scenario: { versionId: { in: versionIds } } } }),
+      prisma.scenario.deleteMany({ where: { versionId: { in: versionIds } } }),
+      prisma.itineraryDay.deleteMany({ where: { versionId: { in: versionIds } } }),
+      prisma.serviceLine.deleteMany({ where: { versionId: { in: versionIds } } }),
+      prisma.calculationSnapshot.deleteMany({ where: { versionId: { in: versionIds } } }),
+      prisma.reviewDecision.deleteMany({ where: { versionId: { in: versionIds } } }),
+      prisma.quoteDocument.deleteMany({ where: { versionId: { in: versionIds } } }),
+      prisma.quoteVersion.deleteMany({ where: { requestId: request.id } }),
+      prisma.travelRequest.delete({ where: { id: request.id } }),
+    ]);
+
+    for (const filePath of filePaths) {
+      await unlink(filePath).catch(() => null);
+    }
+    return NextResponse.json({ ok: true });
+  } catch (err) {
+    return travelError(err, "[API /travel/requests/[id] DELETE]");
   }
 }

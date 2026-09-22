@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/components/ui/toast";
 import TravelShell from "./TravelShell";
@@ -85,6 +86,7 @@ export default function TemplateEditor({ templateId, role }: { templateId: strin
   const [hotels, setHotels] = useState<HotelProductView[]>([]);
 
   const [pickerDay, setPickerDay] = useState<number | null>(null);
+  const [discardFor, setDiscardFor] = useState<string | null>(null);
 
   const version: TemplateVersionView | undefined = template?.versions.find((v) => v.id === versionId);
 
@@ -161,7 +163,15 @@ export default function TemplateEditor({ templateId, role }: { templateId: strin
   }, [templateId]);
 
   function switchVersion(nextId: string) {
-    if (dirty && !window.confirm("Discard unsaved changes?")) return;
+    // Switching discards unsaved edits — confirm instead of losing them silently.
+    if (dirty) {
+      setDiscardFor(nextId);
+      return;
+    }
+    doSwitchVersion(nextId);
+  }
+
+  function doSwitchVersion(nextId: string) {
     const v = template?.versions.find((x) => x.id === nextId);
     if (!template || !v) return;
     setVersionId(nextId);
@@ -749,6 +759,29 @@ export default function TemplateEditor({ templateId, role }: { templateId: strin
           addService(pickerDay, { ...item, quantity: null });
         }}
       />
+
+      <Dialog open={discardFor !== null} onOpenChange={(open) => !open && setDiscardFor(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Discard unsaved changes?</DialogTitle>
+            <DialogDescription>Switching versions throws away the edits you have not saved yet.</DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDiscardFor(null)}>
+              Keep editing
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => {
+                if (discardFor) doSwitchVersion(discardFor);
+                setDiscardFor(null);
+              }}
+            >
+              Discard changes
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </TravelShell>
   );
 }

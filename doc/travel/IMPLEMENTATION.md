@@ -276,6 +276,35 @@ A versioned B2B travel package costing and quotation module inside WAControl:
     bordered panels with real empty states; the read-only view uses the same grouping (which is
     why the service catalog now loads for read-only viewers too — `categoryOf` drives grouping).
     No save/sync/pricing logic changed.
+30. **Template management endpoints (v0.12.0).** `POST /api/travel/templates` (ADMIN; code
+    uppercased, P2002 → 409) creates a template with v1 as `nights + 1` empty day slots —
+    before this, only the workbook import could create templates.
+    `POST /templates/[id]/duplicate` copies the latest version's content into `<CODE>-COPY`
+    (incremented, P2002-retried against the allocation race); the copy restarts at versionNo 1.
+    `DELETE /templates/[id]` hard-deletes template + versions — safe because requests snapshot
+    content at instantiate (`QuoteVersion.templateVersionId` is an informational string, no FK)
+    and BatchRun references are plain-string history. Versions are deleted explicitly in a
+    transaction rather than relying on the schema cascade so behavior does not depend on FK
+    enforcement. Audits: TRAVEL_TEMPLATE_CREATED / _DUPLICATED / _DELETED (the TRAVEL_ prefix is
+    new; older travel audits are unprefixed).
+31. **Request hard delete (v0.12.0).** `DELETE /api/travel/requests/[id]` (ADMIN only) removes
+    the request and every child row explicitly in dependency order inside one `$transaction`
+    (deliveries → events → assignments → stays → scenarios → days → lines → snapshots →
+    decisions → documents → versions → request) instead of trusting the onDelete: Cascade FKs.
+    Rendered PDF files are unlinked best-effort after the transaction — a missing file must not
+    fail the delete. Audit TRAVEL_REQUEST_DELETED carries package code + title. UI: per-row ✕
+    in the requests list and a "Danger zone" card on the Overview tab, both behind confirm
+    dialogs. Built to purge test requests from production.
+32. **Travel chrome via route layout (v0.12.0).** `app/travel/layout.tsx` renders the module
+    chrome once: a new `TravelHeader` client component (sticky backdrop-blur, pathname-derived
+    active nav pills, hamburger + user dropdown below md, role badge, sign out) and a slim
+    footer with the package version. `TravelShell` survives as a thin compatibility wrapper
+    (title/subtitle → exported `PageHeader`) so unmigrated pages (CatalogAdmin, TemplateEditor)
+    keep working; restyled pages render PageHeader themselves. New ui primitives: table,
+    skeleton, separator, dropdown-menu. Native confirm() calls in RequestDetail (new revision),
+    ScenariosTab (remove scenario) and TemplateEditor (discard on version switch) became Dialog
+    confirms. CatalogAdmin deliberately got no table rework — it inherits the chrome and a deep
+    restyle was out of scope.
 
 ## Known limitations
 

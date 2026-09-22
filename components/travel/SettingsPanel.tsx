@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/components/ui/toast";
-import TravelShell from "./TravelShell";
+import { PageHeader } from "./TravelShell";
 import { apiError, formatDateTime } from "./utils";
 import type { PolicyView, TravelSettingsView, TravelUser } from "./types";
 
@@ -113,7 +113,8 @@ export default function SettingsPanel({ role, userId }: SettingsPanelProps) {
   }
 
   return (
-    <TravelShell title="Travel settings" subtitle="Module configuration (singleton)." role={role} current="settings">
+    <>
+      <PageHeader title="Travel settings" subtitle="Module configuration (singleton)." />
       <div className="grid gap-4 lg:grid-cols-2">
         <Card>
           <CardHeader>
@@ -343,6 +344,6 @@ export default function SettingsPanel({ role, userId }: SettingsPanelProps) {
           </CardContent>
         </Card>
       </div>
-    </TravelShell>
+    </>
   );
 }

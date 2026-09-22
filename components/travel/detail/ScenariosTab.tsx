@@ -127,6 +127,7 @@ export default function ScenariosTab({ ctx }: { ctx: DetailContext }) {
   const [splitTo, setSplitTo] = useState("");
   const [jsonFor, setJsonFor] = useState<number | null>(null);
   const [jsonText, setJsonText] = useState("");
+  const [removeScenarioIdx, setRemoveScenarioIdx] = useState<number | null>(null);
 
   // Hydrate editor state whenever a different version is selected or reloaded.
   useEffect(() => {
@@ -279,12 +280,16 @@ export default function ScenariosTab({ ctx }: { ctx: DetailContext }) {
   function removeScenario(si: number) {
     const key = scenarios[si].key;
     const bound = lines.filter((l) => l.scenarioKey === key).length;
-    if (
-      bound > 0 &&
-      !confirm(`${bound} service line(s) attached to this scenario will be deleted. Remove scenario?`)
-    ) {
+    // With lines attached, deletion is destructive enough to ask first.
+    if (bound > 0) {
+      setRemoveScenarioIdx(si);
       return;
     }
+    doRemoveScenario(si);
+  }
+
+  function doRemoveScenario(si: number) {
+    const key = scenarios[si].key;
     mutate(() => {
       setScenarios((prev) => prev.filter((_, i) => i !== si));
       // Lines bound to the removed scenario are deleted with it.
@@ -759,6 +764,32 @@ export default function ScenariosTab({ ctx }: { ctx: DetailContext }) {
           <Textarea rows={16} className="font-mono text-xs" value={jsonText} onChange={(e) => setJsonText(e.target.value)} />
           <DialogFooter>
             <Button onClick={applyJson}>Apply JSON</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={removeScenarioIdx !== null} onOpenChange={(open) => !open && setRemoveScenarioIdx(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Remove this scenario?</DialogTitle>
+            <DialogDescription>
+              {removeScenarioIdx !== null &&
+                `${lines.filter((l) => l.scenarioKey === scenarios[removeScenarioIdx]?.key).length} service line(s) attached to it will be deleted with it.`}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRemoveScenarioIdx(null)}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => {
+                if (removeScenarioIdx !== null) doRemoveScenario(removeScenarioIdx);
+                setRemoveScenarioIdx(null);
+              }}
+            >
+              Remove scenario
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

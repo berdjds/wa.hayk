@@ -10,9 +10,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useToast } from "@/components/ui/toast";
 import { addDays } from "@/lib/travel/engine/dates";
-import TravelShell from "./TravelShell";
+import { PageHeader } from "./TravelShell";
 import { StateBadge, apiError, money } from "./utils";
 import type { Agency, TemplateView, TemplateVersionView } from "./types";
 
@@ -36,14 +37,21 @@ export default function TemplatesList({ role }: TemplatesListProps) {
   const [quoteCurrency, setQuoteCurrency] = useState("USD");
   const [instantiateFor, setInstantiateFor] = useState<TemplateView | null>(null);
   const [batchFor, setBatchFor] = useState<TemplateView | null>(null);
+  const [newOpen, setNewOpen] = useState(false);
+  const [deleteFor, setDeleteFor] = useState<TemplateView | null>(null);
 
-  const canInstantiate = role === "ADMIN" || role === "ADVISOR";
+  const isAdmin = role === "ADMIN";
+  const canInstantiate = isAdmin || role === "ADVISOR";
 
-  useEffect(() => {
-    axios
+  function reloadTemplates() {
+    return axios
       .get("/api/travel/templates")
       .then((res) => setTemplates(res.data))
       .catch((err) => toast(apiError(err, "Failed to load templates"), "error"));
+  }
+
+  useEffect(() => {
+    reloadTemplates();
     axios
       .get("/api/travel/agencies")
       .then((res) => setAgencies(res.data))
@@ -54,10 +62,32 @@ export default function TemplatesList({ role }: TemplatesListProps) {
         if (res.data?.activePolicy?.quoteCurrency) setQuoteCurrency(res.data.activePolicy.quoteCurrency);
       })
       .catch(() => null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [toast]);
 
+  async function handleDuplicate(t: TemplateView) {
+    try {
+      const res = await axios.post(`/api/travel/templates/${t.id}/duplicate`);
+      toast(`Duplicated ${t.code} → ${res.data.code}`, "success");
+      await reloadTemplates();
+    } catch (err) {
+      toast(apiError(err, "Duplicate failed"), "error");
+    }
+  }
+
   return (
-    <TravelShell title="Package templates" subtitle="Workbook-imported packages; instantiate one into a request." role={role} current="templates">
+    <>
+      <PageHeader
+        title="Package templates"
+        subtitle="Reusable packages; instantiate one into a request or manage content in the editor."
+        actions={
+          isAdmin ? (
+            <Button size="sm" onClick={() => setNewOpen(true)}>
+              + New template
+            </Button>
+          ) : undefined
+        }
+      />
       <div className="space-y-4">
         {templates.map((t) => (
           <Card key={t.id}>
@@ -69,9 +99,9 @@ export default function TemplatesList({ role }: TemplatesListProps) {
                   </CardTitle>
                   <CardDescription>{t.versions.length} version(s)</CardDescription>
                 </div>
-                {canInstantiate && (
-                  <div className="flex gap-2">
-                    {role === "ADMIN" && (
+                <div className="flex flex-wrap gap-2">
+                  {isAdmin && (
+                    <>
                       <Button
                         variant="outline"
                         size="sm"
@@ -79,57 +109,72 @@ export default function TemplatesList({ role }: TemplatesListProps) {
                       >
                         Edit
                       </Button>
-                    )}
-                    <Button variant="outline" size="sm" onClick={() => setBatchFor(t)}>
-                      Batch pricing
-                    </Button>
-                    <Button size="sm" onClick={() => setInstantiateFor(t)}>
-                      Instantiate
-                    </Button>
-                  </div>
-                )}
+                      <Button variant="outline" size="sm" onClick={() => handleDuplicate(t)}>
+                        Duplicate
+                      </Button>
+                      <Button variant="outline" size="sm" onClick={() => setDeleteFor(t)}>
+                        Delete
+                      </Button>
+                    </>
+                  )}
+                  {canInstantiate && (
+                    <>
+                      <Button variant="outline" size="sm" onClick={() => setBatchFor(t)}>
+                        Batch pricing
+                      </Button>
+                      <Button size="sm" onClick={() => setInstantiateFor(t)}>
+                        Instantiate
+                      </Button>
+                    </>
+                  )}
+                </div>
               </div>
             </CardHeader>
             <CardContent>
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead className="border-b text-left">
-                    <tr>
-                      <th className="pb-2 font-medium">Version</th>
-                      <th className="pb-2 font-medium">Nights / days</th>
-                      <th className="pb-2 font-medium">Legacy markup</th>
-                      <th className="pb-2 font-medium">Status</th>
-                      <th className="pb-2 font-medium">Provenance</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y">
-                    {t.versions.map((v) => (
-                      <tr key={v.id}>
-                        <td className="py-2">v{v.versionNo}</td>
-                        <td className="py-2">
-                          {v.nights} / {v.days}
-                        </td>
-                        <td className="py-2">
-                          {v.legacyMarkup ?? "—"}
-                          {v.legacyMarkup && (
-                            <span className="ml-1 text-xs text-muted-foreground">(legacy markup, informational only)</span>
-                          )}
-                        </td>
-                        <td className="py-2">
-                          <Badge variant={v.status === "ACTIVE" ? "default" : "outline"}>{v.status}</Badge>
-                        </td>
-                        <td className="py-2 text-xs text-muted-foreground">{v.provenance ?? "—"}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Version</TableHead>
+                    <TableHead>Nights / days</TableHead>
+                    <TableHead>Legacy markup</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Provenance</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {t.versions.map((v) => (
+                    <TableRow key={v.id}>
+                      <TableCell>v{v.versionNo}</TableCell>
+                      <TableCell>
+                        {v.nights} / {v.days}
+                      </TableCell>
+                      <TableCell>
+                        {v.legacyMarkup ?? "—"}
+                        {v.legacyMarkup && (
+                          <span className="ml-1 text-xs text-muted-foreground">(legacy markup, informational only)</span>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant={v.status === "ACTIVE" ? "default" : "outline"}>{v.status}</Badge>
+                      </TableCell>
+                      <TableCell className="text-xs text-muted-foreground">{v.provenance ?? "—"}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
             </CardContent>
           </Card>
         ))}
         {templates.length === 0 && (
           <Card>
-            <CardContent className="py-6 text-center text-sm text-muted-foreground">No templates found.</CardContent>
+            <CardContent className="py-10 text-center">
+              <p className="text-sm text-muted-foreground">No templates found.</p>
+              {isAdmin && (
+                <Button variant="outline" size="sm" className="mt-3" onClick={() => setNewOpen(true)}>
+                  Create your first template
+                </Button>
+              )}
+            </CardContent>
           </Card>
         )}
       </div>
@@ -144,7 +189,141 @@ export default function TemplatesList({ role }: TemplatesListProps) {
       {batchFor && (
         <BatchDialog template={batchFor} quoteCurrency={quoteCurrency} onClose={() => setBatchFor(null)} />
       )}
-    </TravelShell>
+      {newOpen && (
+        <NewTemplateDialog
+          onClose={() => setNewOpen(false)}
+          onCreated={async () => {
+            setNewOpen(false);
+            await reloadTemplates();
+          }}
+        />
+      )}
+      {deleteFor && (
+        <DeleteTemplateDialog
+          template={deleteFor}
+          onClose={() => setDeleteFor(null)}
+          onDeleted={async () => {
+            setDeleteFor(null);
+            await reloadTemplates();
+          }}
+        />
+      )}
+    </>
+  );
+}
+
+function NewTemplateDialog({ onClose, onCreated }: { onClose: () => void; onCreated: () => Promise<void> }) {
+  const { toast } = useToast();
+  const [code, setCode] = useState("");
+  const [name, setName] = useState("");
+  const [nights, setNights] = useState(4);
+  const [saving, setSaving] = useState(false);
+
+  async function handleCreate(e: React.FormEvent) {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      await axios.post("/api/travel/templates", { code, name, nights });
+      toast(`Created template ${code.trim().toUpperCase()}`, "success");
+      await onCreated();
+    } catch (err) {
+      toast(apiError(err, "Failed to create template"), "error");
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>New template</DialogTitle>
+          <DialogDescription>
+            Creates the template with an empty v1 — add days, services and hotel scenarios in the editor.
+          </DialogDescription>
+        </DialogHeader>
+        <form onSubmit={handleCreate} className="space-y-3">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div>
+              <Label>Code</Label>
+              <Input
+                value={code}
+                onChange={(e) => setCode(e.target.value)}
+                placeholder="ARM-S26-0405A"
+                className="font-mono"
+                required
+              />
+            </div>
+            <div>
+              <Label>Nights</Label>
+              <Input
+                type="number"
+                min={1}
+                max={59}
+                value={nights}
+                onChange={(e) => setNights(Math.max(1, Number.parseInt(e.target.value || "1", 10) || 1))}
+              />
+              <p className="mt-1 text-xs text-muted-foreground">{nights + 1} day rows (arrival … departure)</p>
+            </div>
+            <div className="sm:col-span-2">
+              <Label>Name</Label>
+              <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Armenia highlights" required />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button type="submit" disabled={saving || !code.trim() || !name.trim()}>
+              {saving ? "Creating..." : "Create template"}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function DeleteTemplateDialog({
+  template,
+  onClose,
+  onDeleted,
+}: {
+  template: TemplateView;
+  onClose: () => void;
+  onDeleted: () => Promise<void>;
+}) {
+  const { toast } = useToast();
+  const [busy, setBusy] = useState(false);
+
+  async function handleDelete() {
+    setBusy(true);
+    try {
+      await axios.delete(`/api/travel/templates/${template.id}`);
+      toast(`Deleted template ${template.code}`, "success");
+      await onDeleted();
+    } catch (err) {
+      toast(apiError(err, "Delete failed"), "error");
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Delete template {template.code}?</DialogTitle>
+          <DialogDescription>
+            Deletes “{template.name}” and its {template.versions.length} version(s). Requests already created from
+            it are not affected. This cannot be undone.
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose} disabled={busy}>
+            Cancel
+          </Button>
+          <Button variant="destructive" onClick={handleDelete} disabled={busy}>
+            {busy ? "Deleting..." : "Delete template"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -375,37 +554,37 @@ function BatchDialog({
           </Button>
         </form>
         {results && (
-          <div className="mt-4 overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="border-b text-left">
-                <tr>
-                  <th className="pb-2 font-medium">Pax</th>
-                  <th className="pb-2 font-medium">Valid</th>
-                  <th className="pb-2 font-medium">Sell</th>
-                  <th className="pb-2 font-medium">Per person</th>
-                  <th className="pb-2 font-medium">Issues</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y">
+          <div className="mt-4">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Pax</TableHead>
+                  <TableHead>Valid</TableHead>
+                  <TableHead>Sell</TableHead>
+                  <TableHead>Per person</TableHead>
+                  <TableHead>Issues</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
                 {results.map((r) => (
-                  <tr key={r.pax}>
-                    <td className="py-2">{r.pax}</td>
-                    <td className="py-2">
+                  <TableRow key={r.pax}>
+                    <TableCell>{r.pax}</TableCell>
+                    <TableCell>
                       <StateBadge value={r.valid ? "READY" : "FAILED"} />
-                    </td>
-                    <td className="py-2">{r.sell ? money(r.sell, quoteCurrency) : "—"}</td>
-                    <td className="py-2">{r.perPayingPerson ? money(r.perPayingPerson, quoteCurrency) : "—"}</td>
-                    <td className="py-2 text-xs">
+                    </TableCell>
+                    <TableCell>{r.sell ? money(r.sell, quoteCurrency) : "—"}</TableCell>
+                    <TableCell>{r.perPayingPerson ? money(r.perPayingPerson, quoteCurrency) : "—"}</TableCell>
+                    <TableCell className="text-xs">
                       {r.issues.map((i, j) => (
                         <div key={j}>
                           <span className="font-mono">{i.code}</span> {i.message}
                         </div>
                       ))}
-                    </td>
-                  </tr>
+                    </TableCell>
+                  </TableRow>
                 ))}
-              </tbody>
-            </table>
+              </TableBody>
+            </Table>
           </div>
         )}
       </DialogContent>

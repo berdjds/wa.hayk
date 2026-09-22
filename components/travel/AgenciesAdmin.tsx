@@ -15,7 +15,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { useToast } from "@/components/ui/toast";
-import TravelShell from "./TravelShell";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { PageHeader } from "./TravelShell";
 import { apiError, formatDateTime } from "./utils";
 import type { Agency } from "./types";
 
@@ -112,12 +113,11 @@ export default function AgenciesAdmin({ role }: AgenciesAdminProps) {
   }
 
   return (
-    <TravelShell
-      title="Agencies"
-      subtitle="Client agencies. The short code is embedded in package codes (ACME-2026-09-21-0001) — choose a stable one."
-      role={role}
-      current="agencies"
-    >
+    <>
+      <PageHeader
+        title="Agencies"
+        subtitle="Client agencies. The short code is embedded in package codes (ACME-2026-09-21-0001) — choose a stable one."
+      />
       <div className="grid gap-4 lg:grid-cols-3">
         <Card className="lg:col-span-2">
           <CardHeader>
@@ -130,55 +130,53 @@ export default function AgenciesAdmin({ role }: AgenciesAdminProps) {
             ) : agencies.length === 0 ? (
               <p className="text-sm text-muted-foreground">No agencies yet — create the first one on the right.</p>
             ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b text-left text-xs text-muted-foreground">
-                      <th className="py-2 pr-3 font-medium">Code</th>
-                      <th className="py-2 pr-3 font-medium">Name</th>
-                      <th className="py-2 pr-3 font-medium">Contact</th>
-                      <th className="py-2 pr-3 font-medium">Status</th>
-                      <th className="py-2 font-medium">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {agencies.map((agency) => (
-                      <tr key={agency.id} className="border-b last:border-0">
-                        <td className="py-2 pr-3 font-mono font-medium">{agency.shortCode}</td>
-                        <td className="py-2 pr-3">{agency.name}</td>
-                        <td className="py-2 pr-3 text-xs text-muted-foreground">
-                          {agency.contactName && <div>{agency.contactName}</div>}
-                          {agency.contactEmail && <div>{agency.contactEmail}</div>}
-                          {agency.contactPhone && <div>{agency.contactPhone}</div>}
-                          {!agency.contactName && !agency.contactEmail && !agency.contactPhone && "—"}
-                        </td>
-                        <td className="py-2 pr-3">
-                          {agency.active ? (
-                            <span className="text-xs font-medium text-green-700">Active</span>
-                          ) : (
-                            <span className="text-xs font-medium text-slate-500">Inactive</span>
-                          )}
-                        </td>
-                        <td className="py-2">
-                          <div className="flex gap-1">
-                            <Button variant="outline" size="sm" onClick={() => openEdit(agency)}>
-                              Edit
-                            </Button>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              disabled={togglingId === agency.id}
-                              onClick={() => toggleActive(agency)}
-                            >
-                              {agency.active ? "Deactivate" : "Reactivate"}
-                            </Button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Code</TableHead>
+                    <TableHead>Name</TableHead>
+                    <TableHead>Contact</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {agencies.map((agency) => (
+                    <TableRow key={agency.id}>
+                      <TableCell className="font-mono font-medium">{agency.shortCode}</TableCell>
+                      <TableCell>{agency.name}</TableCell>
+                      <TableCell className="text-xs text-muted-foreground">
+                        {agency.contactName && <div>{agency.contactName}</div>}
+                        {agency.contactEmail && <div>{agency.contactEmail}</div>}
+                        {agency.contactPhone && <div>{agency.contactPhone}</div>}
+                        {!agency.contactName && !agency.contactEmail && !agency.contactPhone && "—"}
+                      </TableCell>
+                      <TableCell>
+                        {agency.active ? (
+                          <span className="text-xs font-medium text-green-700">Active</span>
+                        ) : (
+                          <span className="text-xs font-medium text-slate-500">Inactive</span>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex gap-1">
+                          <Button variant="outline" size="sm" onClick={() => openEdit(agency)}>
+                            Edit
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={togglingId === agency.id}
+                            onClick={() => toggleActive(agency)}
+                          >
+                            {agency.active ? "Deactivate" : "Reactivate"}
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
             )}
           </CardContent>
         </Card>
@@ -299,6 +297,6 @@ export default function AgenciesAdmin({ role }: AgenciesAdminProps) {
           </form>
         </DialogContent>
       </Dialog>
-    </TravelShell>
+    </>
   );
 }

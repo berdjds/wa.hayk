@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/components/ui/toast";
 import { apiError, formatDateTime, parseJson } from "../utils";
 import TravelerSetupEditor from "../TravelerSetupEditor";
@@ -113,6 +114,7 @@ export default function OverviewTab({ ctx }: { ctx: DetailContext }) {
   const invalidDates = !(form.endDate > form.startDate);
 
   return (
+    <>
     <Card>
       <CardHeader>
         <div className="flex items-center justify-between">
@@ -208,6 +210,62 @@ export default function OverviewTab({ ctx }: { ctx: DetailContext }) {
           </form>
         )}
       </CardContent>
+    </Card>
+    {ctx.isAdmin && <DeleteRequestCard ctx={ctx} />}
+    </>
+  );
+}
+
+/** ADMIN-only hard delete (v0.12.0) — test/junk requests, gone for good. */
+function DeleteRequestCard({ ctx }: { ctx: DetailContext }) {
+  const { toast } = useToast();
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const { detail } = ctx;
+
+  async function handleDelete() {
+    setDeleting(true);
+    try {
+      await axios.delete(`/api/travel/requests/${detail.id}`);
+      toast(`Deleted ${detail.packageCode}`, "success");
+      window.location.href = "/travel";
+    } catch (err) {
+      toast(apiError(err, "Delete failed"), "error");
+      setDeleting(false);
+      setConfirmOpen(false);
+    }
+  }
+
+  return (
+    <Card className="border-destructive/40">
+      <CardHeader>
+        <CardTitle className="text-base">Danger zone</CardTitle>
+        <CardDescription>Hard-deletes this request with all versions, documents and notifications.</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <Button variant="destructive" size="sm" onClick={() => setConfirmOpen(true)}>
+          Delete request
+        </Button>
+      </CardContent>
+      <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete request {detail.packageCode}?</DialogTitle>
+            <DialogDescription>
+              Deletes “{detail.title}” with all its versions, scenarios, itinerary, documents and notifications.
+              This cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfirmOpen(false)} disabled={deleting}>
+              Cancel
+            </Button>
+            <Button variant="destructive" onClick={handleDelete} disabled={deleting}>
+              {deleting ? "Deleting..." : "Delete request"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Card>
   );
 }

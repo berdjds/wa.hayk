@@ -3,9 +3,10 @@
 import { useEffect, useState } from "react";
 import axios from "axios";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useToast } from "@/components/ui/toast";
-import TravelShell from "./TravelShell";
+import { PageHeader } from "./TravelShell";
 import { StatusBadge, apiError } from "./utils";
 import type { RequestListItem } from "./types";
 
@@ -30,67 +31,64 @@ export default function ReviewQueue({ role, userId }: ReviewQueueProps) {
   }, [role, userId, toast]);
 
   return (
-    <TravelShell
-      title="Review queue"
-      subtitle={role === "ADMIN" ? "All requests pending validation." : "Requests assigned to you for validation."}
-      role={role}
-      current="review"
-    >
+    <>
+      <PageHeader
+        title="Review queue"
+        subtitle={
+          role === "ADMIN"
+            ? "All requests pending validation."
+            : "Requests assigned to you for validation — open one to review its snapshot and record a decision."
+        }
+      />
       <Card>
-        <CardHeader>
-          <CardTitle>Pending validation ({items.length})</CardTitle>
-          <CardDescription>Open a request to review its snapshot and record a decision.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="border-b text-left">
-                <tr>
-                  <th className="pb-2 font-medium">Package code</th>
-                  <th className="pb-2 font-medium">Title</th>
-                  <th className="pb-2 font-medium">Agency</th>
-                  <th className="pb-2 font-medium">Dates</th>
-                  <th className="pb-2 font-medium">Owner</th>
-                  {role === "ADMIN" && <th className="pb-2 font-medium">Validator</th>}
-                  <th className="pb-2 font-medium">Status</th>
-                  <th className="pb-2 font-medium"></th>
-                </tr>
-              </thead>
-              <tbody className="divide-y">
-                {items.map((r) => (
-                  <tr key={r.id}>
-                    <td className="py-2 font-mono text-xs">{r.packageCode}</td>
-                    <td className="py-2">{r.title}</td>
-                    <td className="py-2">{r.agency.shortCode}</td>
-                    <td className="py-2 whitespace-nowrap">
-                      {r.startDate} → {r.endDate}
-                    </td>
-                    <td className="py-2">{r.owner.name || r.owner.email}</td>
-                    {role === "ADMIN" && (
-                      <td className="py-2">{r.validator ? r.validator.name || r.validator.email : "—"}</td>
-                    )}
-                    <td className="py-2">
-                      <StatusBadge status={r.status} />
-                    </td>
-                    <td className="py-2">
-                      <Button size="sm" onClick={() => (window.location.href = `/travel/requests/${r.id}`)}>
-                        Review
-                      </Button>
-                    </td>
-                  </tr>
-                ))}
-                {items.length === 0 && (
-                  <tr>
-                    <td colSpan={8} className="py-6 text-center text-muted-foreground">
-                      Nothing pending validation.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
+        <CardContent className="p-0">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="pl-4">Package code</TableHead>
+                <TableHead>Title</TableHead>
+                <TableHead>Agency</TableHead>
+                <TableHead>Dates</TableHead>
+                <TableHead>Owner</TableHead>
+                {role === "ADMIN" && <TableHead>Validator</TableHead>}
+                <TableHead>Status</TableHead>
+                <TableHead className="pr-4" />
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {items.map((r) => (
+                <TableRow key={r.id}>
+                  <TableCell className="pl-4 font-mono text-xs">{r.packageCode}</TableCell>
+                  <TableCell>{r.title}</TableCell>
+                  <TableCell>{r.agency.shortCode}</TableCell>
+                  <TableCell className="whitespace-nowrap">
+                    {r.startDate} → {r.endDate}
+                  </TableCell>
+                  <TableCell>{r.owner.name || r.owner.email}</TableCell>
+                  {role === "ADMIN" && (
+                    <TableCell>{r.validator ? r.validator.name || r.validator.email : "—"}</TableCell>
+                  )}
+                  <TableCell>
+                    <StatusBadge status={r.status} />
+                  </TableCell>
+                  <TableCell className="pr-4 text-right">
+                    <Button size="sm" onClick={() => (window.location.href = `/travel/requests/${r.id}`)}>
+                      Review
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              ))}
+              {items.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={8} className="py-10 text-center text-muted-foreground">
+                    Nothing pending validation.
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
         </CardContent>
       </Card>
-    </TravelShell>
+    </>
   );
 }

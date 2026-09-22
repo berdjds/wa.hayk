@@ -113,6 +113,20 @@ Verification: `npx tsc --noEmit`, `npm test` (vitest), `npm run build`.
 6. Both sides receive email + WhatsApp notifications at each step; delivery problems are
    visible under Travel → Notifications (admin can retry or reprocess the queue).
 
+Housekeeping (ADMIN, v0.12.0): test and junk requests can be hard-deleted — the ✕ action on a
+row in the requests list, or **Delete request** in the "Danger zone" card on a request's
+Overview tab. Deletion removes all versions, scenarios, itinerary, documents and notifications
+and is audited; it cannot be undone.
+
+## Template management (ADMIN)
+
+Travel → Templates lists every template with its versions. Since v0.12.0 admins can manage
+templates from the UI, not just the workbook import: **+ New template** (code, name, nights —
+v1 starts as empty day slots), **Duplicate** per card (copies the latest version's content into
+`<CODE>-COPY`, incremented when taken), and **Delete** per card (hard delete with a confirm
+dialog; requests already created from the template are not affected — they snapshotted the
+content at instantiate).
+
 ## Template editor (ADMIN, v0.11.0)
 
 Travel → Templates → **Edit** opens the template editor: template name, version selector, day
