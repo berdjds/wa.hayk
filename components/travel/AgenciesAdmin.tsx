@@ -5,6 +5,7 @@ import axios from "axios";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Dialog,
@@ -152,11 +153,9 @@ export default function AgenciesAdmin({ role }: AgenciesAdminProps) {
                         {!agency.contactName && !agency.contactEmail && !agency.contactPhone && "—"}
                       </TableCell>
                       <TableCell>
-                        {agency.active ? (
-                          <span className="text-xs font-medium text-green-700">Active</span>
-                        ) : (
-                          <span className="text-xs font-medium text-slate-500">Inactive</span>
-                        )}
+                        <Badge variant={agency.active ? "success" : "neutral"}>
+                          {agency.active ? "Active" : "Inactive"}
+                        </Badge>
                       </TableCell>
                       <TableCell>
                         <div className="flex gap-1">

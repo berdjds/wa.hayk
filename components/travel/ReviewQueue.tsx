@@ -2,8 +2,10 @@
 
 import { useEffect, useState } from "react";
 import axios from "axios";
+import { ClipboardList } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { EmptyState } from "@/components/ui/empty-state";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useToast } from "@/components/ui/toast";
 import { PageHeader } from "./TravelShell";
@@ -40,6 +42,13 @@ export default function ReviewQueue({ role, userId }: ReviewQueueProps) {
             : "Requests assigned to you for validation — open one to review its snapshot and record a decision."
         }
       />
+      {items.length === 0 ? (
+        <EmptyState
+          icon={ClipboardList}
+          title="Nothing pending validation"
+          description="Requests submitted for validation will appear here."
+        />
+      ) : (
       <Card>
         <CardContent className="p-0">
           <Table>
@@ -59,9 +68,9 @@ export default function ReviewQueue({ role, userId }: ReviewQueueProps) {
               {items.map((r) => (
                 <TableRow key={r.id}>
                   <TableCell className="pl-4 font-mono text-xs">{r.packageCode}</TableCell>
-                  <TableCell>{r.title}</TableCell>
+                  <TableCell className="font-medium">{r.title}</TableCell>
                   <TableCell>{r.agency.shortCode}</TableCell>
-                  <TableCell className="whitespace-nowrap">
+                  <TableCell className="whitespace-nowrap text-muted-foreground">
                     {r.startDate} → {r.endDate}
                   </TableCell>
                   <TableCell>{r.owner.name || r.owner.email}</TableCell>
@@ -78,17 +87,11 @@ export default function ReviewQueue({ role, userId }: ReviewQueueProps) {
                   </TableCell>
                 </TableRow>
               ))}
-              {items.length === 0 && (
-                <TableRow>
-                  <TableCell colSpan={8} className="py-10 text-center text-muted-foreground">
-                    Nothing pending validation.
-                  </TableCell>
-                </TableRow>
-              )}
             </TableBody>
           </Table>
         </CardContent>
       </Card>
+      )}
     </>
   );
 }

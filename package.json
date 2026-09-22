@@ -1,6 +1,6 @@
 {
   "name": "wacontrol",
-  "version": "0.12.0",
+  "version": "0.13.0",
   "private": true,
   "scripts": {
     "dev": "tsx server.ts",
@@ -31,6 +31,7 @@
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.0.0",
     "decimal.js": "^10.6.0",
+    "geist": "^1.7.2",
     "lucide-react": "^0.303.0",
     "mime-types": "^2.1.35",
     "next": "14.0.4",

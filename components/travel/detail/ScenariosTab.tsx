@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import axios from "axios";
+import { X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -547,7 +548,7 @@ export default function ScenariosTab({ ctx }: { ctx: DetailContext }) {
                     <CardTitle className="text-base">{sc.label}</CardTitle>
                   )}
                   {persisted && (
-                    <Badge variant={persisted.valid ? "default" : "outline"}>
+                    <Badge variant={persisted.valid ? "success" : "neutral"}>
                       {persisted.valid ? "valid" : "not validated"}
                     </Badge>
                   )}
@@ -615,23 +616,31 @@ export default function ScenariosTab({ ctx }: { ctx: DetailContext }) {
                     const sum = (key: "amountAmd" | "amountQuote") =>
                       String(Math.round(rows.reduce((acc, n) => acc + Number(n[key] ?? 0), 0) * 100) / 100);
                     return (
-                      <div key={stay.key} className="rounded-md border bg-muted/20 px-3 py-2 text-xs">
+                      <div key={stay.key} className="rounded-lg border bg-muted/20 px-3 py-2 text-xs [font-variant-numeric:tabular-nums]">
                         <p className="mb-1 font-medium">
                           {stay.hotelName}
                           {stay.city ? ` · ${stay.city}` : ""} — {rows.length} night row(s)
                         </p>
                         <ul className="space-y-0.5 text-muted-foreground">
                           {rows.map((n, ni) => (
-                            <li key={ni}>
-                              {n.date} · {n.roomType} ×{n.rooms}
-                              {n.extraBeds > 0 ? ` +${n.extraBeds} bed(s)` : ""} — {money(n.amountAmd, "AMD")}
-                              {n.amountQuote != null && currency !== "AMD" ? ` · ${money(n.amountQuote, currency)}` : ""}
+                            <li key={ni} className="flex items-baseline justify-between gap-4">
+                              <span>
+                                {n.date} · {n.roomType} ×{n.rooms}
+                                {n.extraBeds > 0 ? ` +${n.extraBeds} bed(s)` : ""}
+                              </span>
+                              <span className="text-right">
+                                {money(n.amountAmd, "AMD")}
+                                {n.amountQuote != null && currency !== "AMD" ? ` · ${money(n.amountQuote, currency)}` : ""}
+                              </span>
                             </li>
                           ))}
                         </ul>
-                        <p className="mt-1 border-t pt-1 font-medium">
-                          Stay total: {money(sum("amountAmd"), "AMD")}
-                          {currency !== "AMD" ? ` · ${money(sum("amountQuote"), currency)}` : ""}
+                        <p className="mt-1 flex items-baseline justify-between gap-4 border-t pt-1 font-medium">
+                          <span>Stay total</span>
+                          <span className="text-right">
+                            {money(sum("amountAmd"), "AMD")}
+                            {currency !== "AMD" ? ` · ${money(sum("amountQuote"), currency)}` : ""}
+                          </span>
                         </p>
                       </div>
                     );
@@ -640,7 +649,7 @@ export default function ScenariosTab({ ctx }: { ctx: DetailContext }) {
 
               {/* result summary (from the shared quote preview) */}
               {result && (
-                <div className="rounded-md border bg-muted/30 p-3 text-sm">
+                <div className="rounded-lg border bg-muted/30 p-3 text-sm [font-variant-numeric:tabular-nums]">
                   <div className="flex flex-wrap items-center gap-3">
                     <StateBadge value={result.valid ? "READY" : "FAILED"} />
                     <span>
@@ -657,7 +666,7 @@ export default function ScenariosTab({ ctx }: { ctx: DetailContext }) {
                     <div className="mt-2 flex flex-wrap gap-3 border-t pt-2 text-xs text-muted-foreground">
                       <span>Internal — cost {money(result.totals.costQuote, currency)}</span>
                       <span>profit {money(result.profit, currency)}</span>
-                      <span>margin {result.margin ?? "—"}</span>
+                      <span>margin {result.margin != null ? `${(Number(result.margin) * 100).toFixed(1)}%` : "—"}</span>
                     </div>
                   )}
                   {!canSeeInternal && (
@@ -826,12 +835,10 @@ function StayEditor({
   const hasOverrides = Object.keys(stay.rateOverrides).length > 0;
   const invalidDates = !(stay.checkOut > stay.checkIn);
   return (
-    <div className="rounded-md border p-3">
+    <div className="rounded-lg border bg-muted/10 p-3">
       {hasOverrides && (
         <div className="mb-2">
-          <Badge variant="outline" className="border-amber-300 bg-amber-50 text-amber-800">
-            override
-          </Badge>
+          <Badge variant="warning">override</Badge>
         </div>
       )}
       <div className="grid gap-2 sm:grid-cols-[1fr_110px_130px_130px_90px]">
@@ -857,8 +864,14 @@ function StayEditor({
               <Button variant="outline" size="sm" onClick={onSplit}>
                 Split
               </Button>
-              <Button variant="ghost" size="sm" onClick={onRemove}>
-                ✕
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-9 w-9 text-muted-foreground hover:text-destructive"
+                aria-label="Remove stay segment"
+                onClick={onRemove}
+              >
+                <X />
               </Button>
             </div>
           </>
@@ -886,11 +899,11 @@ function StayEditor({
       <div className="mt-2 space-y-2">
         {stay.allocations.map((a, ai) =>
           editable ? (
-            <div key={ai} className="grid items-end gap-2 rounded border bg-muted/20 p-2 sm:grid-cols-[90px_repeat(6,70px)_auto]">
+            <div key={ai} className="grid items-end gap-2 rounded-lg border bg-card p-2 sm:grid-cols-[90px_repeat(6,1fr)_auto]">
               <div>
                 <span className="text-xs text-muted-foreground">Room type</span>
                 <Select value={a.roomType} onValueChange={(v) => onAllocation(ai, { roomType: v })}>
-                  <SelectTrigger>
+                  <SelectTrigger className="h-8 text-[13px]">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -917,6 +930,7 @@ function StayEditor({
                   <Input
                     type="number"
                     min={0}
+                    className="h-8 text-right text-[13px] [font-variant-numeric:tabular-nums]"
                     value={a[key]}
                     onChange={(e) => onAllocation(ai, { [key]: Math.max(0, Number.parseInt(e.target.value || "0", 10) || 0) })}
                   />
@@ -939,8 +953,14 @@ function StayEditor({
                   />
                   Bed in rate
                 </label>
-                <Button variant="ghost" size="sm" onClick={() => onRemoveAllocation(ai)}>
-                  ✕
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                  aria-label="Remove room row"
+                  onClick={() => onRemoveAllocation(ai)}
+                >
+                  <X />
                 </Button>
               </div>
             </div>
@@ -1013,9 +1033,7 @@ function ServiceLineTable({
                   {l.overrideRate && (
                     <>
                       {" "}
-                      <Badge variant="outline" className="border-amber-300 bg-amber-50 text-amber-800">
-                        override
-                      </Badge>
+                      <Badge variant="warning">override</Badge>
                     </>
                   )}
                 </li>
@@ -1033,7 +1051,7 @@ function ServiceLineTable({
         // here would fight the itinerary sync on every save, so they render
         // as compact read-only rows.
         l.serviceProductId ? (
-          <div key={l.key} className="flex flex-wrap items-center gap-2 rounded border bg-muted/20 px-3 py-2 text-sm">
+          <div key={l.key} className="flex flex-wrap items-center gap-2 rounded-lg border bg-muted/20 px-3 py-2 text-sm">
             <span className="font-medium">{l.label}</span>
             <Badge variant="outline" title={l.date ? `Itinerary day ${l.date}` : "Itinerary-linked"}>
               itinerary{l.date ? ` · ${l.date}` : ""}
@@ -1044,25 +1062,16 @@ function ServiceLineTable({
               {vehicleName(l.vehicleTypeId) ? ` · ${vehicleName(l.vehicleTypeId)}` : ""}
               {l.scenarioKey ? ` · ${scenarioName(l.scenarioKey)}` : ""}
             </span>
-            {l.overrideRate && (
-              <Badge variant="outline" className="border-amber-300 bg-amber-50 text-amber-800">
-                override
-              </Badge>
-            )}
+            {l.overrideRate && <Badge variant="warning">override</Badge>}
             <span className="ml-auto text-xs text-muted-foreground">Managed on the Itinerary tab</span>
           </div>
         ) : (
-        <div key={l.key} className="grid items-end gap-2 rounded border bg-muted/20 p-2 lg:grid-cols-[1.4fr_1fr_1fr_70px_90px_70px_70px_70px_110px_auto]">
+        <div key={l.key} className="grid items-end gap-2 rounded-lg border bg-card p-2 lg:grid-cols-[1.4fr_1fr_1fr_70px_90px_70px_70px_70px_110px_auto]">
           <div>
             <span className="text-xs text-muted-foreground">
-              Label{" "}
-              {l.overrideRate && (
-                <Badge variant="outline" className="border-amber-300 bg-amber-50 text-amber-800">
-                  override
-                </Badge>
-              )}
+              Label {l.overrideRate && <Badge variant="warning">override</Badge>}
             </span>
-            <Input value={l.label} onChange={(e) => onChange(i, { label: e.target.value })} />
+            <Input className="h-8 text-[13px]" value={l.label} onChange={(e) => onChange(i, { label: e.target.value })} />
           </div>
           <div>
             <span className="text-xs text-muted-foreground">Category</span>
@@ -1117,23 +1126,40 @@ function ServiceLineTable({
           )}
           <div>
             <span className="text-xs text-muted-foreground">Currency</span>
-            <Input value={l.currency} onChange={(e) => onChange(i, { currency: e.target.value.toUpperCase() })} />
+            <Input className="h-8 text-[13px]" value={l.currency} onChange={(e) => onChange(i, { currency: e.target.value.toUpperCase() })} />
           </div>
           <div>
             <span className="text-xs text-muted-foreground">Unit rate</span>
-            <Input placeholder="TBC" value={l.unitRate} onChange={(e) => onChange(i, { unitRate: e.target.value })} />
+            <Input
+              placeholder="TBC"
+              className="h-8 text-right text-[13px] [font-variant-numeric:tabular-nums]"
+              value={l.unitRate}
+              onChange={(e) => onChange(i, { unitRate: e.target.value })}
+            />
           </div>
           <div>
             <span className="text-xs text-muted-foreground">Qty</span>
-            <Input value={l.quantity} onChange={(e) => onChange(i, { quantity: e.target.value })} />
+            <Input
+              className="h-8 text-right text-[13px] [font-variant-numeric:tabular-nums]"
+              value={l.quantity}
+              onChange={(e) => onChange(i, { quantity: e.target.value })}
+            />
           </div>
           <div>
             <span className="text-xs text-muted-foreground">Pax</span>
-            <Input value={l.participants} onChange={(e) => onChange(i, { participants: e.target.value })} />
+            <Input
+              className="h-8 text-right text-[13px] [font-variant-numeric:tabular-nums]"
+              value={l.participants}
+              onChange={(e) => onChange(i, { participants: e.target.value })}
+            />
           </div>
           <div>
             <span className="text-xs text-muted-foreground">Capacity</span>
-            <Input value={l.capacity} onChange={(e) => onChange(i, { capacity: e.target.value })} />
+            <Input
+              className="h-8 text-right text-[13px] [font-variant-numeric:tabular-nums]"
+              value={l.capacity}
+              onChange={(e) => onChange(i, { capacity: e.target.value })}
+            />
           </div>
           <div>
             <span className="text-xs text-muted-foreground">Scenario</span>
@@ -1167,8 +1193,14 @@ function ServiceLineTable({
               <input type="checkbox" checked={l.isStaffCost} onChange={(e) => onChange(i, { isStaffCost: e.target.checked })} />
               Staff
             </label>
-            <Button variant="ghost" size="sm" onClick={() => onRemove(i)}>
-              ✕
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 text-muted-foreground hover:text-destructive"
+              aria-label="Remove service line"
+              onClick={() => onRemove(i)}
+            >
+              <X />
             </Button>
           </div>
         </div>

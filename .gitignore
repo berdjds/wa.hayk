@@ -49,3 +49,6 @@ tsconfig.tsbuildinfo
 
 # travel module generated documents (issued PDFs)
 /data/documents/
+
+# visual-QA screenshot artifacts (regenerated locally by tests/qa/capture-screenshots.ts)
+doc/temp/screenshots/

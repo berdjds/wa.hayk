@@ -1,52 +1,51 @@
 "use client";
 
 import { Badge } from "@/components/ui/badge";
-import { cn } from "@/lib/utils";
 
-/** Status → badge styling; light-theme palette consistent with the toast colors. */
-const STATUS_STYLES: Record<string, string> = {
-  DRAFT: "border-slate-300 bg-slate-50 text-slate-700",
-  PENDING_VALIDATION: "border-blue-300 bg-blue-50 text-blue-800",
-  CHANGES_REQUESTED: "border-amber-300 bg-amber-50 text-amber-800",
-  APPROVED: "border-green-300 bg-green-50 text-green-800",
-  ISSUED: "border-indigo-300 bg-indigo-50 text-indigo-800",
-  ACCEPTED: "border-green-300 bg-green-50 text-green-800",
-  DECLINED: "border-red-300 bg-red-50 text-red-800",
-  EXPIRED: "border-slate-300 bg-slate-100 text-slate-500",
-  REJECTED: "border-red-300 bg-red-50 text-red-800",
-  CANCELLED: "border-slate-300 bg-slate-100 text-slate-500",
+/** Status → tinted badge variant (v0.13.0): draft=neutral, pending=amber, approved=green, rejected=red, issued=blue. */
+const STATUS_VARIANTS: Record<string, "neutral" | "warning" | "success" | "danger" | "info"> = {
+  DRAFT: "neutral",
+  PENDING_VALIDATION: "warning",
+  CHANGES_REQUESTED: "warning",
+  APPROVED: "success",
+  ISSUED: "info",
+  ACCEPTED: "success",
+  DECLINED: "danger",
+  EXPIRED: "neutral",
+  REJECTED: "danger",
+  CANCELLED: "neutral",
 };
 
 export function StatusBadge({ status, className }: { status: string; className?: string }) {
   return (
-    <Badge variant="outline" className={cn(STATUS_STYLES[status] ?? "border-slate-300", className)}>
+    <Badge variant={STATUS_VARIANTS[status] ?? "neutral"} className={className}>
       {status.replace(/_/g, " ")}
     </Badge>
   );
 }
 
-const GENERIC_STYLES: Record<string, string> = {
-  QUEUED: "border-blue-300 bg-blue-50 text-blue-800",
-  SENT: "border-green-300 bg-green-50 text-green-800",
-  FAILED: "border-red-300 bg-red-50 text-red-800",
-  SKIPPED_NO_DESTINATION: "border-slate-300 bg-slate-100 text-slate-500",
-  NEEDS_REVIEW: "border-amber-300 bg-amber-50 text-amber-800",
-  VERIFIED: "border-green-300 bg-green-50 text-green-800",
-  ARCHIVED: "border-slate-300 bg-slate-100 text-slate-500",
-  STAGED: "border-blue-300 bg-blue-50 text-blue-800",
-  ACTIVATED: "border-green-300 bg-green-50 text-green-800",
-  ERROR: "border-red-300 bg-red-50 text-red-800",
-  PARTIALLY_ACTIVATED: "border-amber-300 bg-amber-50 text-amber-800",
-  PENDING: "border-blue-300 bg-blue-50 text-blue-800",
-  READY: "border-green-300 bg-green-50 text-green-800",
-  BLOCKER: "border-red-300 bg-red-50 text-red-800",
-  WARNING: "border-amber-300 bg-amber-50 text-amber-800",
+const GENERIC_VARIANTS: Record<string, "neutral" | "warning" | "success" | "danger" | "info"> = {
+  QUEUED: "info",
+  SENT: "success",
+  FAILED: "danger",
+  SKIPPED_NO_DESTINATION: "neutral",
+  NEEDS_REVIEW: "warning",
+  VERIFIED: "success",
+  ARCHIVED: "neutral",
+  STAGED: "info",
+  ACTIVATED: "success",
+  ERROR: "danger",
+  PARTIALLY_ACTIVATED: "warning",
+  PENDING: "warning",
+  READY: "success",
+  BLOCKER: "danger",
+  WARNING: "warning",
 };
 
-/** Small colored badge for non-quote statuses (deliveries, rates, imports, issues). */
+/** Small tinted badge for non-quote statuses (deliveries, rates, imports, issues). */
 export function StateBadge({ value, className }: { value: string; className?: string }) {
   return (
-    <Badge variant="outline" className={cn(GENERIC_STYLES[value] ?? "border-slate-300", className)}>
+    <Badge variant={GENERIC_VARIANTS[value] ?? "neutral"} className={className}>
       {value.replace(/_/g, " ")}
     </Badge>
   );

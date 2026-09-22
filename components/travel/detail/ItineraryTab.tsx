@@ -2,11 +2,12 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import axios from "axios";
+import { CalendarDays, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { EmptyState } from "@/components/ui/empty-state";
 import { useToast } from "@/components/ui/toast";
 import { addDays, daysBetween } from "@/lib/travel/engine/dates";
 import { normalizeDayServices, type DayServiceItem, type ScenarioResultLine } from "@/lib/travel/contracts";
@@ -321,47 +322,54 @@ export default function ItineraryTab({ ctx }: { ctx: DetailContext }) {
   const cityByDate = hasStays ? deriveCityByDate(ctx) : {};
 
   return (
-    <Card>
-      <CardHeader>
-        <div className="flex items-center justify-between">
-          <div>
-            <CardTitle>Itinerary</CardTitle>
-            <CardDescription>
-              Day-by-day plan for this version.{ctx.canEditVersion ? "" : " Read-only for this version status."}
-            </CardDescription>
-          </div>
-          {ctx.canEditVersion && (
-            <div className="flex gap-2">
-              {hasStays && (
-                <Button variant="outline" size="sm" onClick={() => applyCitySync(days, true)}>
-                  Sync cities from stays
-                </Button>
-              )}
-              <Button variant="outline" size="sm" onClick={addDay}>
-                Add day
-              </Button>
-              <Button size="sm" onClick={handleSave} disabled={!dirty || saving}>
-                {saving ? "Saving..." : "Save itinerary"}
-              </Button>
-            </div>
-          )}
+    <div>
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <h2 className="text-base font-semibold tracking-tight">Itinerary</h2>
+          <p className="text-[13px] text-muted-foreground">
+            Day-by-day plan for this version.{ctx.canEditVersion ? "" : " Read-only for this version status."}
+          </p>
         </div>
-      </CardHeader>
-      <CardContent>
+        {ctx.canEditVersion && (
+          <div className="flex gap-2">
+            {hasStays && (
+              <Button variant="outline" size="sm" onClick={() => applyCitySync(days, true)}>
+                Sync cities from stays
+              </Button>
+            )}
+            <Button variant="outline" size="sm" onClick={addDay}>
+              Add day
+            </Button>
+            <Button size="sm" onClick={handleSave} disabled={!dirty || saving}>
+              {saving ? "Saving..." : "Save itinerary"}
+            </Button>
+          </div>
+        )}
+      </div>
+      <div>
         {days.length === 0 &&
           (ctx.canEditVersion ? (
-            <div className="flex flex-col items-center gap-3 rounded-md border border-dashed p-8 text-center">
-              <p className="text-sm text-muted-foreground">
-                No itinerary days yet. Generate one day per travel date ({ctx.detail.startDate} →{" "}
-                {ctx.detail.endDate}) or add days manually.
-              </p>
-              <Button onClick={generateFromTravelDates}>Generate days from travel dates</Button>
-            </div>
+            <EmptyState
+              icon={CalendarDays}
+              title="No itinerary days yet"
+              description={`Generate one day per travel date (${ctx.detail.startDate} → ${ctx.detail.endDate}) or add days manually.`}
+              action={<Button onClick={generateFromTravelDates}>Generate days from travel dates</Button>}
+            />
           ) : (
-            <p className="text-sm text-muted-foreground">No itinerary days yet.</p>
+            <EmptyState icon={CalendarDays} title="No itinerary days yet" />
           ))}
-        <div className="space-y-3">
+        {/* Timeline: the day number rides a left rail; day cards are the only
+            containment layer (no card-in-card). */}
+        <div className="space-y-4">
           {days.map((d, i) => {
+            const rail = (
+              <div className="flex w-8 shrink-0 flex-col items-center">
+                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border bg-card text-xs font-semibold text-foreground">
+                  {d.dayOffset + 1}
+                </span>
+                {i < days.length - 1 && <span className="mt-1 w-px flex-1 bg-border" />}
+              </div>
+            );
             // Tours and Tickets & degustations get their own panels (edit mode:
             // with quantity steppers and net costs, v0.11.0); other categories
             // stay as a plain chips row.
@@ -388,20 +396,22 @@ export default function ItineraryTab({ ctx }: { ctx: DetailContext }) {
                   </div>
                 );
               return (
-                <div key={i} className="rounded-md border p-3 text-sm">
-                  <div className="mb-1 flex items-center gap-3 font-medium">
-                    <span>Day {d.dayOffset + 1}</span>
-                    <span className="text-muted-foreground">{d.date}</span>
-                    {d.overnightCity && <span className="text-muted-foreground">· {d.overnightCity}</span>}
-                  </div>
-                  {d.narrative && <p className="whitespace-pre-wrap">{d.narrative}</p>}
-                  {d.services.length > 0 && (
-                    <div className="mt-2 grid gap-3 sm:grid-cols-2">
-                      {readGroup("Tours", tours)}
-                      {readGroup("Tickets & degustations", tickets)}
-                      {readGroup("Services", others)}
+                <div key={i} className="flex gap-3">
+                  {rail}
+                  <div className="min-w-0 flex-1 rounded-xl border bg-card p-4 text-sm shadow-[0_1px_2px_rgb(0_0_0/0.04)]">
+                    <div className="mb-1 flex items-center gap-3 font-medium">
+                      <span className="text-muted-foreground">{d.date}</span>
+                      {d.overnightCity && <span className="text-muted-foreground">· {d.overnightCity}</span>}
                     </div>
-                  )}
+                    {d.narrative && <p className="whitespace-pre-wrap">{d.narrative}</p>}
+                    {d.services.length > 0 && (
+                      <div className="mt-2 grid gap-3 sm:grid-cols-2">
+                        {readGroup("Tours", tours)}
+                        {readGroup("Tickets & degustations", tickets)}
+                        {readGroup("Services", others)}
+                      </div>
+                    )}
+                  </div>
                 </div>
               );
             }
@@ -409,7 +419,7 @@ export default function ItineraryTab({ ctx }: { ctx: DetailContext }) {
             const renderEntry = ({ s, j }: { s: DayServiceItem; j: number }) => {
               const cost = serviceCost(s, d.date);
               return (
-                <div key={j} className="flex items-center gap-2 rounded border bg-background px-2 py-1 text-sm">
+                <div key={j} className="flex items-center gap-2 rounded-lg border bg-card px-2 py-1 text-[13px]">
                   <span className="flex-1">
                     {s.label}
                     {vehicleName(s.vehicleTypeId) && (
@@ -420,24 +430,24 @@ export default function ItineraryTab({ ctx }: { ctx: DetailContext }) {
                     <button
                       type="button"
                       aria-label={`Decrease ${s.label} quantity`}
-                      className="h-5 w-5 rounded border text-xs leading-none"
+                      className="h-5 w-5 rounded border bg-card text-xs leading-none transition-colors hover:bg-muted disabled:opacity-40"
                       disabled={(s.quantity ?? 1) <= 1}
                       onClick={() => setServiceQuantity(i, j, -1)}
                     >
                       −
                     </button>
-                    <span className="w-5 text-center text-xs">{s.quantity ?? 1}</span>
+                    <span className="w-5 text-center text-xs [font-variant-numeric:tabular-nums]">{s.quantity ?? 1}</span>
                     <button
                       type="button"
                       aria-label={`Increase ${s.label} quantity`}
-                      className="h-5 w-5 rounded border text-xs leading-none"
+                      className="h-5 w-5 rounded border bg-card text-xs leading-none transition-colors hover:bg-muted"
                       onClick={() => setServiceQuantity(i, j, 1)}
                     >
                       +
                     </button>
                   </span>
                   {cost?.amountAmd != null && (
-                    <span className="whitespace-nowrap text-xs text-muted-foreground">
+                    <span className="whitespace-nowrap text-xs text-muted-foreground [font-variant-numeric:tabular-nums]">
                       {money(cost.amountAmd, "AMD")}
                       {cost.amountQuote != null && ctx.resultCurrency !== "AMD"
                         ? ` · ${money(cost.amountQuote, ctx.resultCurrency)}`
@@ -447,10 +457,10 @@ export default function ItineraryTab({ ctx }: { ctx: DetailContext }) {
                   <button
                     type="button"
                     aria-label={`Remove ${s.label}`}
-                    className="text-muted-foreground hover:text-foreground"
+                    className="text-muted-foreground transition-colors hover:text-destructive"
                     onClick={() => removeService(i, j)}
                   >
-                    ✕
+                    <X className="h-3.5 w-3.5" />
                   </button>
                 </div>
               );
@@ -462,7 +472,7 @@ export default function ItineraryTab({ ctx }: { ctx: DetailContext }) {
               addLabel: string,
               emptyLabel: string,
             ) => (
-              <div className="rounded-md border bg-muted/10 p-2">
+              <div className="rounded-lg border border-dashed bg-muted/20 p-2">
                 <div className="mb-1 flex items-center justify-between gap-2">
                   <p className="text-xs font-medium text-muted-foreground">{title}</p>
                   <Button
@@ -481,76 +491,85 @@ export default function ItineraryTab({ ctx }: { ctx: DetailContext }) {
               </div>
             );
             return (
-              <div key={i} className="rounded-md border p-3">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-sm font-medium">Day {d.dayOffset + 1}</span>
-                  <Input
-                    type="date"
-                    className="w-[150px]"
-                    value={d.date}
-                    onChange={(e) => update(i, { date: e.target.value })}
-                  />
-                  <div className="min-w-[180px] flex-1">
+              <div key={i} className="flex gap-3">
+                {rail}
+                <div className="min-w-0 flex-1 rounded-xl border bg-card p-4 shadow-[0_1px_2px_rgb(0_0_0/0.04)]">
+                  <div className="flex flex-wrap items-center gap-2">
                     <Input
-                      placeholder="Overnight city"
-                      value={d.overnightCity}
-                      onChange={(e) => update(i, { overnightCity: e.target.value })}
+                      type="date"
+                      className="h-8 w-[150px] text-[13px]"
+                      value={d.date}
+                      onChange={(e) => update(i, { date: e.target.value })}
                     />
-                    {hasStays && !cityByDate[d.date] && (
-                      // Nights span [startDate, endDate): the departure day has no
-                      // overnight by definition — hint instead of warning.
-                      d.date >= ctx.detail.endDate ? (
-                        <p className="mt-1 text-xs text-muted-foreground">Departure day — no overnight needed</p>
-                      ) : (
-                        <p className="mt-1 text-xs text-amber-600">No stay covers this date</p>
-                      )
-                    )}
+                    <div className="min-w-[180px] flex-1">
+                      <Input
+                        placeholder="Overnight city"
+                        className="h-8 text-[13px]"
+                        value={d.overnightCity}
+                        onChange={(e) => update(i, { overnightCity: e.target.value })}
+                      />
+                      {hasStays && !cityByDate[d.date] && (
+                        // Nights span [startDate, endDate): the departure day has no
+                        // overnight by definition — hint instead of warning.
+                        d.date >= ctx.detail.endDate ? (
+                          <p className="mt-1 text-xs text-muted-foreground">Departure day — no overnight needed</p>
+                        ) : (
+                          <p className="mt-1 text-xs text-amber-600">No stay covers this date</p>
+                        )
+                      )}
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                      aria-label={`Remove day ${d.dayOffset + 1}`}
+                      onClick={() => removeDay(i)}
+                    >
+                      <X />
+                    </Button>
                   </div>
-                  <Button variant="ghost" size="sm" onClick={() => removeDay(i)}>
-                    ✕
-                  </Button>
-                </div>
-                <Textarea
-                  className="mt-2"
-                  rows={2}
-                  placeholder="Narrative"
-                  value={d.narrative}
-                  onChange={(e) => update(i, { narrative: e.target.value })}
-                />
-                <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                  {panel("Tours", tours, "tours", "+ Add tour", "No tours yet")}
-                  {panel("Tickets & degustations", tickets, "tickets", "+ Add ticket", "No tickets yet")}
-                </div>
-                <div className="mt-2 flex flex-wrap content-start items-start gap-1">
-                  {others.map(({ s, j }) => (
-                    <Badge key={j} variant="outline" className="flex items-center gap-1">
-                      {s.label}
-                      {(s.quantity ?? 1) > 1 ? ` ×${s.quantity}` : ""}
-                      {vehicleName(s.vehicleTypeId) ? ` · ${vehicleName(s.vehicleTypeId)}` : ""}
-                      <button
-                        type="button"
-                        aria-label={`Remove ${s.label}`}
-                        className="text-muted-foreground hover:text-foreground"
-                        onClick={() => removeService(i, j)}
-                      >
-                        ✕
-                      </button>
-                    </Badge>
-                  ))}
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-6 px-2 text-xs"
-                    onClick={() => setPicker({ day: i, tab: "services" })}
-                  >
-                    + Add service
-                  </Button>
+                  <Textarea
+                    className="mt-2"
+                    rows={2}
+                    placeholder="Narrative"
+                    value={d.narrative}
+                    onChange={(e) => update(i, { narrative: e.target.value })}
+                  />
+                  <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                    {panel("Tours", tours, "tours", "+ Add tour", "No tours yet")}
+                    {panel("Tickets & degustations", tickets, "tickets", "+ Add ticket", "No tickets yet")}
+                  </div>
+                  <div className="mt-2 flex flex-wrap content-start items-start gap-1">
+                    {others.map(({ s, j }) => (
+                      <Badge key={j} variant="outline" className="flex items-center gap-1">
+                        {s.label}
+                        {(s.quantity ?? 1) > 1 ? ` ×${s.quantity}` : ""}
+                        {vehicleName(s.vehicleTypeId) ? ` · ${vehicleName(s.vehicleTypeId)}` : ""}
+                        <button
+                          type="button"
+                          aria-label={`Remove ${s.label}`}
+                          className="text-muted-foreground transition-colors hover:text-destructive"
+                          onClick={() => removeService(i, j)}
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </Badge>
+                    ))}
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-6 px-2 text-xs"
+                      onClick={() => setPicker({ day: i, tab: "services" })}
+                    >
+                      + Add service
+                    </Button>
+                  </div>
                 </div>
               </div>
             );
           })}
         </div>
-      </CardContent>
+      </div>
       <ServicePickerDialog
         open={picker !== null}
         onOpenChange={(open) => !open && setPicker(null)}
@@ -568,6 +587,6 @@ export default function ItineraryTab({ ctx }: { ctx: DetailContext }) {
           setPicker(null);
         }}
       />
-    </Card>
+    </div>
   );
 }

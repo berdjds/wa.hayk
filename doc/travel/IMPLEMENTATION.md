@@ -305,6 +305,23 @@ A versioned B2B travel package costing and quotation module inside WAControl:
     ScenariosTab (remove scenario) and TemplateEditor (discard on version switch) became Dialog
     confirms. CatalogAdmin deliberately got no table rework — it inherits the chrome and a deep
     restyle was out of scope.
+33. **Design overhaul (v0.13.0).** Full visual redesign of the travel module (and a light
+    restyle of /login): Geist replaces Inter (`geist` package, wired via next/font in
+    `app/layout.tsx` + tailwind `fontFamily.sans/mono`); a zinc-ramp token system in
+    `globals.css` (zinc-100 page background under white cards, deep-green primary reserved
+    for primary buttons and active nav/tab states only, `--radius: 0.75rem`, 8pt spacing,
+    13px tables). The v0.12.0 `TravelHeader` top-nav is **deleted** and replaced by
+    `TravelSidebar` — a fixed 240px sidebar on lg+ (grouped nav: Work / Library / Admin,
+    brand block, user card with sign-out) plus a mobile top bar with a left Sheet drawer
+    (new `components/ui/sheet.tsx`). ui primitives restyled (button/input/select/textarea
+    h-9 rounded-lg, card/dialog/dropdown/tabs/table/badge/toast) and badge gains
+    neutral/warning/success/danger/info variants mapped from status strings in
+    `components/travel/utils.tsx`. The itinerary tab drops its outer card for a timeline
+    (numbered day rail + connecting line, day cards as the only containment layer), all
+    nine CatalogAdmin tables converted from raw `<table>` to the ui Table primitive,
+    money columns right-aligned with tabular-nums, and a shared `EmptyState` component
+    replaces ad-hoc empty lists. Chat dashboard and admin panel were intentionally left
+    untouched except for the global token changes.
 
 ## Known limitations
 

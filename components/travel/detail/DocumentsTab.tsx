@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useToast } from "@/components/ui/toast";
 import { versionLabel } from "@/lib/travel/contracts";
 import { StateBadge, apiError, formatDateTime, shortHash } from "../utils";
@@ -46,31 +47,31 @@ export default function DocumentsTab({ ctx }: { ctx: DetailContext }) {
         <CardDescription>Generated documents for this request. The list is filtered to your role.</CardDescription>
       </CardHeader>
       <CardContent>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="border-b text-left">
-              <tr>
-                <th className="pb-2 font-medium">Version</th>
-                <th className="pb-2 font-medium">Kind</th>
-                <th className="pb-2 font-medium">State</th>
-                <th className="pb-2 font-medium">Created</th>
-                <th className="pb-2 font-medium">Issued at</th>
-                <th className="pb-2 font-medium">SHA-256</th>
-                <th className="pb-2 font-medium">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y">
+        <div className="overflow-x-auto rounded-lg border">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="pl-3">Version</TableHead>
+                <TableHead>Kind</TableHead>
+                <TableHead>State</TableHead>
+                <TableHead>Created</TableHead>
+                <TableHead>Issued at</TableHead>
+                <TableHead>SHA-256</TableHead>
+                <TableHead className="pr-3">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {docs.map((d) => (
-                <tr key={d.id}>
-                  <td className="py-2">{versionLabel(d.versionNo)}</td>
-                  <td className="py-2">{d.kind}</td>
-                  <td className="py-2">
+                <TableRow key={d.id}>
+                  <TableCell className="pl-3">{versionLabel(d.versionNo)}</TableCell>
+                  <TableCell>{d.kind}</TableCell>
+                  <TableCell>
                     <StateBadge value={d.renderState} />
-                  </td>
-                  <td className="py-2 whitespace-nowrap">{formatDateTime(d.createdAt)}</td>
-                  <td className="py-2 whitespace-nowrap">{formatDateTime(d.issuedAt)}</td>
-                  <td className="py-2 font-mono text-xs">{shortHash(d.sha256)}</td>
-                  <td className="py-2">
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap text-muted-foreground">{formatDateTime(d.createdAt)}</TableCell>
+                  <TableCell className="whitespace-nowrap text-muted-foreground">{formatDateTime(d.issuedAt)}</TableCell>
+                  <TableCell className="font-mono text-xs">{shortHash(d.sha256)}</TableCell>
+                  <TableCell className="pr-3">
                     <div className="flex gap-2">
                       {d.renderState === "READY" && (
                         <a href={`/api/travel/documents/${d.id}`} target="_blank" rel="noreferrer">
@@ -95,18 +96,18 @@ export default function DocumentsTab({ ctx }: { ctx: DetailContext }) {
                         </Button>
                       )}
                     </div>
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
               ))}
               {docs.length === 0 && (
-                <tr>
-                  <td colSpan={7} className="py-6 text-center text-muted-foreground">
+                <TableRow>
+                  <TableCell colSpan={7} className="py-8 text-center text-muted-foreground">
                     No documents yet — issue an approved version to generate the client PDF.
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
               )}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         </div>
       </CardContent>
       {sendDoc && <SendDocumentDialog doc={sendDoc} onClose={() => setSendDoc(null)} />}

@@ -16,6 +16,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Badge } from "@/components/ui/badge";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useToast } from "@/components/ui/toast";
 import { COST_CATEGORIES, PRICING_BASES, RATE_STATUSES } from "@/lib/travel/contracts";
 import TravelShell from "./TravelShell";
@@ -42,13 +44,24 @@ export default function CatalogAdmin({ role, userId }: CatalogAdminProps) {
   return (
     <TravelShell title="Travel catalog" subtitle="Hotels, services, rates, FX, policies, imports and agencies." role={role} current="catalog">
       <Tabs defaultValue="hotels" className="space-y-4">
-        <TabsList className="flex-wrap">
-          <TabsTrigger value="hotels">Hotels</TabsTrigger>
-          <TabsTrigger value="services">Services</TabsTrigger>
-          <TabsTrigger value="rates">Rates</TabsTrigger>
-          <TabsTrigger value="fxpolicy">FX &amp; Policy</TabsTrigger>
-          <TabsTrigger value="imports">Imports</TabsTrigger>
-          <TabsTrigger value="agencies">Agencies</TabsTrigger>
+        {/* Page-level tabs: underline style (segmented is for in-card sets). */}
+        <TabsList className="h-auto w-full justify-start gap-1 overflow-x-auto rounded-none border-b bg-transparent p-0">
+          {[
+            ["hotels", "Hotels"],
+            ["services", "Services"],
+            ["rates", "Rates"],
+            ["fxpolicy", "FX & Policy"],
+            ["imports", "Imports"],
+            ["agencies", "Agencies"],
+          ].map(([value, label]) => (
+            <TabsTrigger
+              key={value}
+              value={value}
+              className="rounded-none border-b-2 border-transparent px-3 py-2 text-sm text-muted-foreground data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:font-medium data-[state=active]:text-foreground data-[state=active]:shadow-none"
+            >
+              {label}
+            </TabsTrigger>
+          ))}
         </TabsList>
         <TabsContent value="hotels">
           <HotelsTab />
@@ -422,44 +435,44 @@ function RateTable({
     return <p className="py-2 text-xs text-muted-foreground">No rates yet.</p>;
   }
   return (
-    <table className="w-full text-xs">
-      <thead className="border-b text-left text-muted-foreground">
-        <tr>
-          {productType === "HOTEL" && <th className="py-1 pr-3 font-medium">Occupancy</th>}
-          {productType === "SERVICE" && <th className="py-1 pr-3 font-medium">Vehicle</th>}
-          <th className="py-1 pr-3 font-medium">Board</th>
-          <th className="py-1 pr-3 font-medium">Amount</th>
-          <th className="py-1 pr-3 font-medium">Validity</th>
-          <th className="py-1 pr-3 font-medium">Weekdays</th>
-          <th className="py-1 pr-3 font-medium">Min stay</th>
-          <th className="py-1 pr-3 font-medium">Status</th>
-          <th className="py-1 font-medium"></th>
-        </tr>
-      </thead>
-      <tbody className="divide-y">
+    <Table className="text-xs">
+      <TableHeader>
+        <TableRow>
+          {productType === "HOTEL" && <TableHead>Occupancy</TableHead>}
+          {productType === "SERVICE" && <TableHead>Vehicle</TableHead>}
+          <TableHead>Board</TableHead>
+          <TableHead className="text-right">Amount</TableHead>
+          <TableHead>Validity</TableHead>
+          <TableHead>Weekdays</TableHead>
+          <TableHead>Min stay</TableHead>
+          <TableHead>Status</TableHead>
+          <TableHead />
+        </TableRow>
+      </TableHeader>
+      <TableBody>
         {rates.map((r) => (
-          <tr key={r.id}>
-            {productType === "HOTEL" && <td className="py-1.5 pr-3 font-medium">{r.occupancy ?? "—"}</td>}
-            {productType === "SERVICE" && <td className="py-1.5 pr-3">{r.vehicleType?.name ?? "—"}</td>}
-            <td className="py-1.5 pr-3">{r.board ?? "—"}</td>
-            <td className="py-1.5 pr-3 whitespace-nowrap">{r.amount == null ? "TBC" : money(r.amount, r.currency)}</td>
-            <td className="py-1.5 pr-3 whitespace-nowrap">
+          <TableRow key={r.id}>
+            {productType === "HOTEL" && <TableCell className="font-medium">{r.occupancy ?? "—"}</TableCell>}
+            {productType === "SERVICE" && <TableCell>{r.vehicleType?.name ?? "—"}</TableCell>}
+            <TableCell>{r.board ?? "—"}</TableCell>
+            <TableCell className="whitespace-nowrap text-right">{r.amount == null ? "TBC" : money(r.amount, r.currency)}</TableCell>
+            <TableCell className="whitespace-nowrap">
               {r.validFrom ?? "…"} → {r.validTo ?? "…"}
-            </td>
-            <td className="py-1.5 pr-3">{weekdaysSummary(r.weekdays)}</td>
-            <td className="py-1.5 pr-3">{r.minStay ?? "—"}</td>
-            <td className="py-1.5 pr-3">
+            </TableCell>
+            <TableCell>{weekdaysSummary(r.weekdays)}</TableCell>
+            <TableCell>{r.minStay ?? "—"}</TableCell>
+            <TableCell>
               <StateBadge value={r.status} className="px-1.5 py-0 text-[10px]" />
-            </td>
-            <td className="py-1.5">
+            </TableCell>
+            <TableCell>
               <Button size="sm" variant="outline" onClick={() => onEdit(r)}>
                 Edit
               </Button>
-            </td>
-          </tr>
+            </TableCell>
+          </TableRow>
         ))}
-      </tbody>
-    </table>
+      </TableBody>
+    </Table>
   );
 }
 
@@ -980,39 +993,39 @@ function HotelsTab() {
       </CardHeader>
       <CardContent className="space-y-4">
         <Input placeholder="Search hotels..." value={q} onChange={(e) => setQ(e.target.value)} className="max-w-xs" />
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="border-b text-left">
-              <tr>
-                <th className="pb-2 font-medium">Name</th>
-                <th className="pb-2 font-medium">City</th>
-                <th className="pb-2 font-medium">Country</th>
-                <th className="pb-2 font-medium">Kind</th>
-                <th className="pb-2 font-medium">Capacity</th>
-                <th className="pb-2 font-medium">Boards</th>
-                <th className="pb-2 font-medium">Price validity</th>
-                <th className="pb-2 font-medium">Supplier</th>
-                <th className="pb-2 font-medium">Status</th>
-                <th className="pb-2 font-medium">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y">
+        <div className="overflow-x-auto rounded-lg border">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Name</TableHead>
+                <TableHead>City</TableHead>
+                <TableHead>Country</TableHead>
+                <TableHead>Kind</TableHead>
+                <TableHead>Capacity</TableHead>
+                <TableHead>Boards</TableHead>
+                <TableHead>Price validity</TableHead>
+                <TableHead>Supplier</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {hotels.map((h) => (
                 <Fragment key={h.id}>
-                  <tr className={h.active ? "" : "text-muted-foreground"}>
-                    <td className="py-2">{hotelDisplayName(h)}</td>
-                    <td className="py-2">{h.city ?? "—"}</td>
-                    <td className="py-2">{h.country}</td>
-                    <td className="py-2">{h.kind}</td>
-                    <td className="py-2">
+                  <TableRow className={h.active ? "" : "text-muted-foreground"}>
+                    <TableCell>{hotelDisplayName(h)}</TableCell>
+                    <TableCell>{h.city ?? "—"}</TableCell>
+                    <TableCell>{h.country}</TableCell>
+                    <TableCell>{h.kind}</TableCell>
+                    <TableCell>
                       {h.capacityAdults}A/{h.capacityChildren}C (max {h.capacityTotal})
                       {h.extraBedAllowed ? " +EB" : ""}
-                    </td>
-                    <td className="py-2">{parseJson<string[]>(h.boardOptions, []).join(", ") || "—"}</td>
-                    <td className="py-2 text-xs whitespace-nowrap">{validitySummary(h.rates)}</td>
-                    <td className="py-2">{h.supplier?.name ?? "—"}</td>
-                    <td className="py-2 text-xs">{h.active ? "Active" : "Inactive"}</td>
-                    <td className="py-2">
+                    </TableCell>
+                    <TableCell>{parseJson<string[]>(h.boardOptions, []).join(", ") || "—"}</TableCell>
+                    <TableCell className="text-xs whitespace-nowrap">{validitySummary(h.rates)}</TableCell>
+                    <TableCell>{h.supplier?.name ?? "—"}</TableCell>
+                    <TableCell><Badge variant={h.active ? "success" : "neutral"}>{h.active ? "Active" : "Inactive"}</Badge></TableCell>
+                    <TableCell>
                       <div className="flex gap-1">
                         <Button size="sm" variant="outline" onClick={() => setHotelDialog({ open: true, hotel: h })}>
                           Edit
@@ -1025,11 +1038,11 @@ function HotelsTab() {
                           {expandedId === h.id ? "Hide rates" : `Rates (${h.rates.length})`}
                         </Button>
                       </div>
-                    </td>
-                  </tr>
+                    </TableCell>
+                  </TableRow>
                   {expandedId === h.id && (
-                    <tr>
-                      <td colSpan={10} className="bg-muted/30 px-4 py-3">
+                    <TableRow>
+                      <TableCell colSpan={10} className="bg-muted/30 px-4 py-3">
                         <div className="mb-2 flex items-center justify-between">
                           <p className="text-xs font-medium text-muted-foreground">
                             Price brackets — {h.name}
@@ -1047,20 +1060,20 @@ function HotelsTab() {
                           productType="HOTEL"
                           onEdit={(r) => setRateDialog({ open: true, hotelId: h.id, rate: r })}
                         />
-                      </td>
-                    </tr>
+                      </TableCell>
+                    </TableRow>
                   )}
                 </Fragment>
               ))}
               {hotels.length === 0 && (
-                <tr>
-                  <td colSpan={10} className="py-6 text-center text-muted-foreground">
+                <TableRow>
+                  <TableCell colSpan={10} className="py-6 text-center text-muted-foreground">
                     No hotels found.
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
               )}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         </div>
       </CardContent>
       <HotelDialog
@@ -1141,30 +1154,30 @@ function ServicesTab() {
             </SelectContent>
           </Select>
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="border-b text-left">
-              <tr>
-                <th className="pb-2 font-medium">Name</th>
-                <th className="pb-2 font-medium">Category</th>
-                <th className="pb-2 font-medium">Basis</th>
-                <th className="pb-2 font-medium">Weekdays</th>
-                <th className="pb-2 font-medium">Supplier</th>
-                <th className="pb-2 font-medium">Status</th>
-                <th className="pb-2 font-medium">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y">
+        <div className="overflow-x-auto rounded-lg border">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Name</TableHead>
+                <TableHead>Category</TableHead>
+                <TableHead>Basis</TableHead>
+                <TableHead>Weekdays</TableHead>
+                <TableHead>Supplier</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {services.map((s) => (
                 <Fragment key={s.id}>
-                  <tr className={s.active ? "" : "text-muted-foreground"}>
-                    <td className="py-2">{s.name}</td>
-                    <td className="py-2">{s.category.replace(/_/g, " ")}</td>
-                    <td className="py-2">{basisLabel(s.basis, s.capacity)}</td>
-                    <td className="py-2 text-xs">{weekdaysSummary(s.weekdays)}</td>
-                    <td className="py-2">{s.supplier?.name ?? "—"}</td>
-                    <td className="py-2 text-xs">{s.active ? "Active" : "Inactive"}</td>
-                    <td className="py-2">
+                  <TableRow className={s.active ? "" : "text-muted-foreground"}>
+                    <TableCell>{s.name}</TableCell>
+                    <TableCell>{s.category.replace(/_/g, " ")}</TableCell>
+                    <TableCell>{basisLabel(s.basis, s.capacity)}</TableCell>
+                    <TableCell className="text-xs">{weekdaysSummary(s.weekdays)}</TableCell>
+                    <TableCell>{s.supplier?.name ?? "—"}</TableCell>
+                    <TableCell><Badge variant={s.active ? "success" : "neutral"}>{s.active ? "Active" : "Inactive"}</Badge></TableCell>
+                    <TableCell>
                       <div className="flex gap-1">
                         <Button size="sm" variant="outline" onClick={() => setServiceDialog({ open: true, service: s })}>
                           Edit
@@ -1177,11 +1190,11 @@ function ServicesTab() {
                           {expandedId === s.id ? "Hide rates" : `Rates (${s.rates.length})`}
                         </Button>
                       </div>
-                    </td>
-                  </tr>
+                    </TableCell>
+                  </TableRow>
                   {expandedId === s.id && (
-                    <tr>
-                      <td colSpan={7} className="bg-muted/30 px-4 py-3">
+                    <TableRow>
+                      <TableCell colSpan={7} className="bg-muted/30 px-4 py-3">
                         <div className="mb-2 flex items-center justify-between">
                           <p className="text-xs font-medium text-muted-foreground">Rates — {s.name}</p>
                           <Button
@@ -1196,20 +1209,20 @@ function ServicesTab() {
                           productType="SERVICE"
                           onEdit={(r) => setRateDialog({ open: true, serviceId: s.id, rate: r })}
                         />
-                      </td>
-                    </tr>
+                      </TableCell>
+                    </TableRow>
                   )}
                 </Fragment>
               ))}
               {services.length === 0 && (
-                <tr>
-                  <td colSpan={7} className="py-6 text-center text-muted-foreground">
+                <TableRow>
+                  <TableCell colSpan={7} className="py-6 text-center text-muted-foreground">
                     No services found.
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
               )}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         </div>
       </CardContent>
       <ServiceDialog
@@ -1300,43 +1313,43 @@ function RatesTab() {
             </SelectContent>
           </Select>
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="border-b text-left">
-              <tr>
-                <th className="pb-2 font-medium">Product</th>
-                <th className="pb-2 font-medium">Occ / board</th>
-                <th className="pb-2 font-medium">Vehicle</th>
-                <th className="pb-2 font-medium">Amount</th>
-                <th className="pb-2 font-medium">Validity</th>
-                <th className="pb-2 font-medium">Evidence</th>
-                <th className="pb-2 font-medium">Notes</th>
-                <th className="pb-2 font-medium">Status</th>
-                <th className="pb-2 font-medium">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y">
+        <div className="overflow-x-auto rounded-lg border">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Product</TableHead>
+                <TableHead>Occ / board</TableHead>
+                <TableHead>Vehicle</TableHead>
+                <TableHead className="text-right">Amount</TableHead>
+                <TableHead>Validity</TableHead>
+                <TableHead>Evidence</TableHead>
+                <TableHead>Notes</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {rates.map((r) => (
-                <tr key={r.id}>
-                  <td className="py-2">
+                <TableRow key={r.id}>
+                  <TableCell>
                     {productName(r)}
                     <span className="ml-1 text-xs text-muted-foreground">({r.productType})</span>
-                  </td>
-                  <td className="py-2">
+                  </TableCell>
+                  <TableCell>
                     {r.occupancy ?? "—"}
                     {r.board ? ` / ${r.board}` : ""}
-                  </td>
-                  <td className="py-2">{r.productType === "VEHICLE" ? "—" : (r.vehicleType?.name ?? "—")}</td>
-                  <td className="py-2">{r.amount == null ? "TBC" : money(r.amount, r.currency)}</td>
-                  <td className="py-2 whitespace-nowrap text-xs">
+                  </TableCell>
+                  <TableCell>{r.productType === "VEHICLE" ? "—" : (r.vehicleType?.name ?? "—")}</TableCell>
+                  <TableCell className="text-right">{r.amount == null ? "TBC" : money(r.amount, r.currency)}</TableCell>
+                  <TableCell className="whitespace-nowrap text-xs">
                     {r.validFrom ?? "…"} → {r.validTo ?? "…"}
-                  </td>
-                  <td className="py-2 text-xs">{r.evidenceRef ?? "—"}</td>
-                  <td className="py-2 text-xs">{r.notes ?? "—"}</td>
-                  <td className="py-2">
+                  </TableCell>
+                  <TableCell className="text-xs">{r.evidenceRef ?? "—"}</TableCell>
+                  <TableCell className="text-xs">{r.notes ?? "—"}</TableCell>
+                  <TableCell>
                     <StateBadge value={r.status} />
-                  </td>
-                  <td className="py-2">
+                  </TableCell>
+                  <TableCell>
                     <div className="flex gap-1">
                       {r.status === "NEEDS_REVIEW" && (
                         <Button size="sm" variant="outline" disabled={busyId === r.id} onClick={() => patchRate(r.id, "VERIFIED")}>
@@ -1349,18 +1362,18 @@ function RatesTab() {
                         </Button>
                       )}
                     </div>
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
               ))}
               {rates.length === 0 && (
-                <tr>
-                  <td colSpan={9} className="py-6 text-center text-muted-foreground">
+                <TableRow>
+                  <TableCell colSpan={9} className="py-6 text-center text-muted-foreground">
                     No rates for this filter.
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
               )}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         </div>
       </CardContent>
     </Card>
@@ -1464,25 +1477,25 @@ function FxPolicyTab() {
             />
             <Button type="submit">Add</Button>
           </form>
-          <div className="max-h-[400px] overflow-auto">
-            <table className="w-full text-sm">
-              <thead className="border-b text-left">
-                <tr>
-                  <th className="pb-2 font-medium">Currency</th>
-                  <th className="pb-2 font-medium">AMD per unit</th>
-                  <th className="pb-2 font-medium">Effective from</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y">
+          <div className="max-h-[400px] overflow-auto rounded-lg border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Currency</TableHead>
+                  <TableHead>AMD per unit</TableHead>
+                  <TableHead>Effective from</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
                 {fx.map((f) => (
-                  <tr key={f.id}>
-                    <td className="py-2 font-medium">{f.currency}</td>
-                    <td className="py-2">{f.amdPerUnit}</td>
-                    <td className="py-2">{f.effectiveFrom}</td>
-                  </tr>
+                  <TableRow key={f.id}>
+                    <TableCell className="font-medium">{f.currency}</TableCell>
+                    <TableCell>{f.amdPerUnit}</TableCell>
+                    <TableCell>{f.effectiveFrom}</TableCell>
+                  </TableRow>
                 ))}
-              </tbody>
-            </table>
+              </TableBody>
+            </Table>
           </div>
         </CardContent>
       </Card>
@@ -1545,41 +1558,41 @@ function FxPolicyTab() {
             </label>
             <Button type="submit">Create policy</Button>
           </form>
-          <div className="max-h-[400px] overflow-auto">
-            <table className="w-full text-sm">
-              <thead className="border-b text-left">
-                <tr>
-                  <th className="pb-2 font-medium">Name</th>
-                  <th className="pb-2 font-medium">Type</th>
-                  <th className="pb-2 font-medium">Rate</th>
-                  <th className="pb-2 font-medium">Min profit</th>
-                  <th className="pb-2 font-medium">Fee</th>
-                  <th className="pb-2 font-medium">Quote ccy</th>
-                  <th className="pb-2 font-medium">Active</th>
-                  <th className="pb-2 font-medium"></th>
-                </tr>
-              </thead>
-              <tbody className="divide-y">
+          <div className="max-h-[400px] overflow-auto rounded-lg border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Name</TableHead>
+                  <TableHead>Type</TableHead>
+                  <TableHead>Rate</TableHead>
+                  <TableHead>Min profit</TableHead>
+                  <TableHead>Fee</TableHead>
+                  <TableHead>Quote ccy</TableHead>
+                  <TableHead>Active</TableHead>
+                  <TableHead />
+                </TableRow>
+              </TableHeader>
+              <TableBody>
                 {policies.map((p) => (
-                  <tr key={p.id}>
-                    <td className="py-2">{p.name}</td>
-                    <td className="py-2 text-xs">{p.type.replace(/_/g, " ")}</td>
-                    <td className="py-2">{p.rate ?? "—"}</td>
-                    <td className="py-2">{p.minProfit ? money(p.minProfit, p.minProfitCurrency) : "—"}</td>
-                    <td className="py-2">{p.feeFraction ?? "—"}</td>
-                    <td className="py-2">{p.quoteCurrency}</td>
-                    <td className="py-2">{p.active ? <StateBadge value="READY" /> : "—"}</td>
-                    <td className="py-2">
+                  <TableRow key={p.id}>
+                    <TableCell>{p.name}</TableCell>
+                    <TableCell className="text-xs">{p.type.replace(/_/g, " ")}</TableCell>
+                    <TableCell>{p.rate ?? "—"}</TableCell>
+                    <TableCell>{p.minProfit ? money(p.minProfit, p.minProfitCurrency) : "—"}</TableCell>
+                    <TableCell>{p.feeFraction ?? "—"}</TableCell>
+                    <TableCell>{p.quoteCurrency}</TableCell>
+                    <TableCell>{p.active ? <StateBadge value="READY" /> : "—"}</TableCell>
+                    <TableCell>
                       {!p.active && (
                         <Button size="sm" variant="outline" onClick={() => activatePolicy(p.id)}>
                           Activate
                         </Button>
                       )}
-                    </td>
-                  </tr>
+                    </TableCell>
+                  </TableRow>
                 ))}
-              </tbody>
-            </table>
+              </TableBody>
+            </Table>
           </div>
         </CardContent>
       </Card>
@@ -1637,72 +1650,72 @@ function ImportsTab() {
         <CardDescription>Staged workbook imports. Select staged rows to verify them.</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="border-b text-left">
-              <tr>
-                <th className="pb-2 font-medium">File</th>
-                <th className="pb-2 font-medium">Status</th>
-                <th className="pb-2 font-medium">Rows</th>
-                <th className="pb-2 font-medium">Created</th>
-                <th className="pb-2 font-medium"></th>
-              </tr>
-            </thead>
-            <tbody className="divide-y">
+        <div className="overflow-x-auto rounded-lg border">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>File</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Rows</TableHead>
+                <TableHead>Created</TableHead>
+                <TableHead />
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {batches.map((b) => (
-                <tr key={b.id}>
-                  <td className="py-2">{b.fileName}</td>
-                  <td className="py-2">
+                <TableRow key={b.id}>
+                  <TableCell>{b.fileName}</TableCell>
+                  <TableCell>
                     <StateBadge value={b.status} />
-                  </td>
-                  <td className="py-2 text-xs">
+                  </TableCell>
+                  <TableCell className="text-xs">
                     {b.rowCount} total —{" "}
                     {Object.entries(b.counts)
                       .map(([s, n]) => `${s}: ${n}`)
                       .join(", ")}
-                  </td>
-                  <td className="py-2 whitespace-nowrap">{formatDateTime(b.createdAt)}</td>
-                  <td className="py-2">
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap">{formatDateTime(b.createdAt)}</TableCell>
+                  <TableCell>
                     <Button size="sm" variant="outline" onClick={() => openRows(b.id)}>
                       {openBatch === b.id ? "Hide rows" : "Rows"}
                     </Button>
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
               ))}
               {batches.length === 0 && (
-                <tr>
-                  <td colSpan={5} className="py-6 text-center text-muted-foreground">
+                <TableRow>
+                  <TableCell colSpan={5} className="py-6 text-center text-muted-foreground">
                     No import batches.
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
               )}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         </div>
 
         {openBatch && (
-          <div className="rounded-md border p-3">
+          <div className="rounded-lg border p-3">
             <div className="mb-2 flex items-center justify-between">
               <p className="text-sm font-medium">Batch rows</p>
               <Button size="sm" disabled={selected.size === 0} onClick={() => verifySelected(openBatch)}>
                 Verify selected ({selected.size})
               </Button>
             </div>
-            <div className="max-h-[400px] overflow-auto">
-              <table className="w-full text-sm">
-                <thead className="border-b text-left">
-                  <tr>
-                    <th className="pb-2 font-medium"></th>
-                    <th className="pb-2 font-medium">Entity</th>
-                    <th className="pb-2 font-medium">Source ref</th>
-                    <th className="pb-2 font-medium">Status</th>
-                    <th className="pb-2 font-medium">Issue</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y">
+            <div className="max-h-[400px] overflow-auto rounded-lg border">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead />
+                    <TableHead>Entity</TableHead>
+                    <TableHead>Source ref</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Issue</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
                   {rows.map((r) => (
-                    <tr key={r.id}>
-                      <td className="py-2">
+                    <TableRow key={r.id}>
+                      <TableCell>
                         {r.status === "STAGED" && (
                           <input
                             type="checkbox"
@@ -1715,17 +1728,17 @@ function ImportsTab() {
                             }}
                           />
                         )}
-                      </td>
-                      <td className="py-2">{r.entityType}</td>
-                      <td className="py-2 font-mono text-xs">{r.sourceRef}</td>
-                      <td className="py-2">
+                      </TableCell>
+                      <TableCell>{r.entityType}</TableCell>
+                      <TableCell className="font-mono text-xs">{r.sourceRef}</TableCell>
+                      <TableCell>
                         <StateBadge value={r.status} />
-                      </td>
-                      <td className="py-2 text-xs">{r.issueText ?? "—"}</td>
-                    </tr>
+                      </TableCell>
+                      <TableCell className="text-xs">{r.issueText ?? "—"}</TableCell>
+                    </TableRow>
                   ))}
-                </tbody>
-              </table>
+                </TableBody>
+              </Table>
             </div>
           </div>
         )}
@@ -1801,35 +1814,35 @@ function AgenciesTab() {
           <Input placeholder="Contact phone" value={form.contactPhone} onChange={(e) => setForm({ ...form, contactPhone: e.target.value })} />
           <Button type="submit">Create agency</Button>
         </form>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="border-b text-left">
-              <tr>
-                <th className="pb-2 font-medium">Code</th>
-                <th className="pb-2 font-medium">Name</th>
-                <th className="pb-2 font-medium">Contact</th>
-                <th className="pb-2 font-medium">Status</th>
-                <th className="pb-2 font-medium"></th>
-              </tr>
-            </thead>
-            <tbody className="divide-y">
+        <div className="overflow-x-auto rounded-lg border">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Code</TableHead>
+                <TableHead>Name</TableHead>
+                <TableHead>Contact</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead />
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {agencies.map((a) => (
-                <tr key={a.id}>
-                  <td className="py-2 font-mono">{a.shortCode}</td>
-                  <td className="py-2">{a.name}</td>
-                  <td className="py-2 text-xs">
+                <TableRow key={a.id}>
+                  <TableCell className="font-mono">{a.shortCode}</TableCell>
+                  <TableCell>{a.name}</TableCell>
+                  <TableCell className="text-xs">
                     {[a.contactName, a.contactEmail, a.contactPhone].filter(Boolean).join(" · ") || "—"}
-                  </td>
-                  <td className="py-2">{a.active ? "Active" : "Inactive"}</td>
-                  <td className="py-2">
+                  </TableCell>
+                  <TableCell><Badge variant={a.active ? "success" : "neutral"}>{a.active ? "Active" : "Inactive"}</Badge></TableCell>
+                  <TableCell>
                     <Button size="sm" variant="outline" onClick={() => toggleActive(a)}>
                       {a.active ? "Deactivate" : "Activate"}
                     </Button>
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
               ))}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         </div>
       </CardContent>
     </Card>

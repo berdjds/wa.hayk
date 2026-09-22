@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/components/ui/toast";
 import { versionLabel, type EngineIssue, type ScenarioResult } from "@/lib/travel/contracts";
@@ -172,29 +173,29 @@ export default function ReviewTab({ ctx }: { ctx: DetailContext }) {
         </CardHeader>
         <CardContent className="space-y-4">
           {results.length > 0 && (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="border-b text-left">
-                  <tr>
-                    <th className="pb-2 font-medium">Scenario</th>
-                    <th className="pb-2 font-medium">Valid</th>
-                    <th className="pb-2 font-medium">Sell</th>
-                    <th className="pb-2 font-medium">Per paying person</th>
-                    <th className="pb-2 font-medium">Issues</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y">
+            <div className="overflow-x-auto rounded-lg border">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="pl-3">Scenario</TableHead>
+                    <TableHead>Valid</TableHead>
+                    <TableHead className="text-right">Sell</TableHead>
+                    <TableHead className="text-right">Per paying person</TableHead>
+                    <TableHead className="pr-3 text-right">Issues</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
                   {results.map((r) => (
-                    <tr key={r.ref}>
-                      <td className="py-2">{r.label}</td>
-                      <td className="py-2">{r.valid ? "yes" : "no"}</td>
-                      <td className="py-2 font-medium">{money(r.sell, ctx.resultCurrency)}</td>
-                      <td className="py-2">{money(r.perPayingPerson, ctx.resultCurrency)}</td>
-                      <td className="py-2">{r.issues.length}</td>
-                    </tr>
+                    <TableRow key={r.ref}>
+                      <TableCell className="pl-3 font-medium">{r.label}</TableCell>
+                      <TableCell>{r.valid ? "yes" : "no"}</TableCell>
+                      <TableCell className="text-right font-medium">{money(r.sell, ctx.resultCurrency)}</TableCell>
+                      <TableCell className="text-right">{money(r.perPayingPerson, ctx.resultCurrency)}</TableCell>
+                      <TableCell className="pr-3 text-right">{r.issues.length}</TableCell>
+                    </TableRow>
                   ))}
-                </tbody>
-              </table>
+                </TableBody>
+              </Table>
             </div>
           )}
           {allIssues.length > 0 && (
@@ -319,7 +320,7 @@ export default function ReviewTab({ ctx }: { ctx: DetailContext }) {
               const r = ctx.quoteResults?.get(sc.id) ?? null;
               const blockers = r ? r.issues.filter((i) => i.severity === "BLOCKER") : [];
               return (
-                <div key={sc.id} className="rounded-md border p-3 text-sm">
+                <div key={sc.id} className="rounded-lg border p-3 text-sm [font-variant-numeric:tabular-nums]">
                   <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
                     <span className="font-medium">{sc.label}</span>
                     {r ? (

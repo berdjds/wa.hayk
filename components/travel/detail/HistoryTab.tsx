@@ -59,10 +59,10 @@ export default function HistoryTab({ ctx }: { ctx: DetailContext }) {
         <CardDescription>Decisions, assignments and version lifecycle, newest first.</CardDescription>
       </CardHeader>
       <CardContent>
-        <ol className="relative space-y-3 border-l pl-4">
+        <ol className="relative space-y-4 border-l pl-5">
           {entries.map((e, i) => (
             <li key={i} className="text-sm">
-              <span className="absolute -left-1.5 mt-1.5 h-3 w-3 rounded-full border bg-background" />
+              <span className="absolute -left-[5px] mt-1.5 h-2.5 w-2.5 rounded-full border-2 border-primary/40 bg-card" />
               <span className="font-medium">{e.label}</span>
               <span className="ml-2 text-xs text-muted-foreground">{formatDateTime(e.time)}</span>
               {e.detail && <p className="text-xs text-muted-foreground">{e.detail}</p>}

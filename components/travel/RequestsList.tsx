@@ -2,10 +2,12 @@
 
 import { useCallback, useEffect, useState } from "react";
 import axios from "axios";
+import { Inbox, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent } from "@/components/ui/card";
+import { EmptyState } from "@/components/ui/empty-state";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -181,7 +183,13 @@ export default function RequestsList({ role, userId }: RequestsListProps) {
       <PageHeader
         title="Travel Requests"
         subtitle={role === "ADVISOR" ? "Your B2B quotation requests." : "All B2B quotation requests and packages."}
-        actions={canCreate ? <Button onClick={() => setCreateOpen(true)}>+ New request</Button> : undefined}
+        actions={
+          canCreate ? (
+            <Button onClick={() => setCreateOpen(true)}>
+              <Plus /> New request
+            </Button>
+          ) : undefined
+        }
       />
       <Card className="mb-4">
         <CardContent className="flex flex-wrap items-center gap-2 py-3">
@@ -213,6 +221,20 @@ export default function RequestsList({ role, userId }: RequestsListProps) {
         </CardContent>
       </Card>
 
+      {requests.length === 0 ? (
+        <EmptyState
+          icon={Inbox}
+          title="No requests found"
+          description={q || status !== "ALL" ? "Try widening the search or clearing the filters." : "Requests you create or receive will show up here."}
+          action={
+            canCreate ? (
+              <Button variant="outline" size="sm" onClick={() => setCreateOpen(true)}>
+                <Plus /> Create your first request
+              </Button>
+            ) : undefined
+          }
+        />
+      ) : (
       <Card>
         <CardContent className="p-0">
           <Table>
@@ -237,11 +259,11 @@ export default function RequestsList({ role, userId }: RequestsListProps) {
                   onClick={() => (window.location.href = `/travel/requests/${r.id}`)}
                 >
                   <TableCell className="pl-4 font-mono text-xs">{r.packageCode}</TableCell>
-                  <TableCell>{r.title}</TableCell>
+                  <TableCell className="font-medium">{r.title}</TableCell>
                   <TableCell>
                     {r.agency.shortCode} — {r.agency.name}
                   </TableCell>
-                  <TableCell className="whitespace-nowrap">
+                  <TableCell className="whitespace-nowrap text-muted-foreground">
                     {r.startDate} → {r.endDate}
                   </TableCell>
                   <TableCell>{r.owner.name || r.owner.email}</TableCell>
@@ -249,40 +271,30 @@ export default function RequestsList({ role, userId }: RequestsListProps) {
                   <TableCell>
                     <StatusBadge status={r.status} />
                   </TableCell>
-                  <TableCell className="whitespace-nowrap">{new Date(r.updatedAt).toLocaleString()}</TableCell>
+                  <TableCell className="whitespace-nowrap text-muted-foreground">{new Date(r.updatedAt).toLocaleString()}</TableCell>
                   {isAdmin && (
                     <TableCell className="pr-4 text-right">
                       <Button
                         variant="ghost"
-                        size="sm"
+                        size="icon"
+                        className="h-8 w-8 text-muted-foreground hover:text-destructive"
                         aria-label={`Delete ${r.packageCode}`}
                         onClick={(e) => {
                           e.stopPropagation();
                           setDeleteFor(r);
                         }}
                       >
-                        ✕
+                        <Trash2 />
                       </Button>
                     </TableCell>
                   )}
                 </TableRow>
               ))}
-              {requests.length === 0 && (
-                <TableRow>
-                  <TableCell colSpan={isAdmin ? 9 : 8} className="py-10 text-center">
-                    <p className="text-sm text-muted-foreground">No requests found.</p>
-                    {canCreate && (
-                      <Button variant="outline" size="sm" className="mt-3" onClick={() => setCreateOpen(true)}>
-                        Create your first request
-                      </Button>
-                    )}
-                  </TableCell>
-                </TableRow>
-              )}
             </TableBody>
           </Table>
         </CardContent>
       </Card>
+      )}
 
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
         <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">

@@ -1,31 +1,33 @@
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
-import TravelHeader from "@/components/travel/TravelHeader";
+import { TravelMobileBar, TravelSidebar } from "@/components/travel/TravelSidebar";
 import pkg from "@/package.json";
 
 /**
- * Travel module route layout (v0.12.0): header + page background + slim footer
- * live here instead of being re-wrapped by every page through TravelShell.
- * Pages still guard themselves (redirect on no session / no travel access);
- * the header simply hides when there is no session.
+ * Travel module route layout (v0.13.0): sidebar app shell. The 240px sidebar
+ * is fixed on lg+ and the content column is offset with lg:pl-60; below lg a
+ * slim top bar with a Sheet-based nav takes over. Pages still guard
+ * themselves (redirect on no session / no travel access); the chrome simply
+ * hides when there is no session.
  */
 export default async function TravelLayout({ children }: { children: React.ReactNode }) {
   const session = await getServerSession(authOptions);
+  const navProps = session?.user
+    ? {
+        role: session.user.role,
+        userName: session.user.name ?? null,
+        userEmail: session.user.email ?? null,
+        version: pkg.version,
+      }
+    : null;
+
   return (
-    <div className="flex min-h-screen flex-col bg-muted/40">
-      {session?.user && (
-        <TravelHeader
-          role={session.user.role}
-          userName={session.user.name ?? null}
-          userEmail={session.user.email ?? null}
-        />
-      )}
-      <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-6">{children}</main>
-      <footer className="border-t bg-background">
-        <div className="mx-auto flex h-10 max-w-7xl items-center justify-center px-4 text-xs text-muted-foreground">
-          WAControl Travel · v{pkg.version} · B2B quotations &amp; packages
-        </div>
-      </footer>
+    <div className="min-h-screen bg-background">
+      {navProps && <TravelSidebar {...navProps} />}
+      <div className={navProps ? "lg:pl-60" : undefined}>
+        {navProps && <TravelMobileBar {...navProps} />}
+        <main className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6 lg:py-8">{children}</main>
+      </div>
     </div>
   );
 }

@@ -184,7 +184,7 @@ export default function ServicePickerDialog({
         <div className="space-y-3">
           {products === null && <p className="text-sm text-muted-foreground">Loading catalog…</p>}
           {pendingVehicleProduct && (
-            <div className="flex items-end gap-2 rounded-md border bg-muted/30 p-2">
+            <div className="flex items-end gap-2 rounded-lg border bg-muted/30 p-2">
               <div className="flex-1">
                 <p className="mb-1 text-xs font-medium">
                   {pendingVehicleProduct.name} — vehicle
@@ -234,8 +234,8 @@ export default function ServicePickerDialog({
                     <button
                       key={p.id}
                       type="button"
-                      className={`w-full rounded-md border px-2 py-1 text-left text-sm hover:bg-accent${
-                        pendingVehicleProduct?.id === p.id ? " border-primary" : ""
+                      className={`w-full rounded-lg border bg-card px-3 py-2 text-left text-sm transition-colors hover:bg-muted${
+                        pendingVehicleProduct?.id === p.id ? " border-primary ring-1 ring-primary" : ""
                       }`}
                       onClick={() => pickProduct(p)}
                     >

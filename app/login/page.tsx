@@ -39,13 +39,13 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-muted/40 p-4">
+    <div className="flex min-h-screen flex-col items-center justify-center bg-background p-4">
       <Card className="w-full max-w-sm">
         <CardHeader className="text-center">
-          <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-gradient-to-br from-emerald-400 to-green-700 text-sm font-bold text-white shadow-sm">
-            WA
+          <div className="mx-auto mb-3 flex h-11 w-11 items-center justify-center rounded-xl bg-primary text-sm font-bold text-primary-foreground">
+            W
           </div>
-          <CardTitle>WAControl</CardTitle>
+          <CardTitle className="text-xl">WAControl</CardTitle>
           <CardDescription>Sign in to manage WhatsApp messages.</CardDescription>
         </CardHeader>
         <CardContent>

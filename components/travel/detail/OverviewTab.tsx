@@ -237,7 +237,7 @@ function DeleteRequestCard({ ctx }: { ctx: DetailContext }) {
   }
 
   return (
-    <Card className="border-destructive/40">
+    <Card className="mt-4 border-destructive/40">
       <CardHeader>
         <CardTitle className="text-base">Danger zone</CardTitle>
         <CardDescription>Hard-deletes this request with all versions, documents and notifications.</CardDescription>

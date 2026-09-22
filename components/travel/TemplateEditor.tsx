@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import axios from "axios";
+import { X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -310,6 +311,10 @@ export default function TemplateEditor({ templateId, role }: { templateId: strin
       subtitle="Edit template content; changes apply to future instantiations only."
       role={role}
       current="templates"
+      breadcrumb={[
+        { label: "Templates", href: "/travel/templates" },
+        { label: template?.code ?? "…" },
+      ]}
     >
       {!template || !version ? (
         <Card>
@@ -346,7 +351,7 @@ export default function TemplateEditor({ templateId, role }: { templateId: strin
                       </SelectContent>
                     </Select>
                   </div>
-                  <Badge variant={version.status === "ACTIVE" ? "default" : "outline"}>{version.status}</Badge>
+                  <Badge variant={version.status === "ACTIVE" ? "success" : "neutral"}>{version.status}</Badge>
                   <span className="pb-2 text-xs text-muted-foreground">
                     will save as {previewNights}n/{scenarios && scenarios.length > 0 ? previewNights + 1 : days.length}d
                   </span>
@@ -384,7 +389,7 @@ export default function TemplateEditor({ templateId, role }: { templateId: strin
             </CardHeader>
             <CardContent className="space-y-3">
               {days.map((d, di) => (
-                <div key={di} className="rounded-md border p-3">
+                <div key={di} className="rounded-lg border bg-muted/10 p-3">
                   <div className="mb-2 flex items-center justify-between">
                     <span className="text-sm font-medium">Day {di + 1}</span>
                     <Button
@@ -395,7 +400,7 @@ export default function TemplateEditor({ templateId, role }: { templateId: strin
                         setDirty(true);
                       }}
                     >
-                      ✕
+                      <X className="h-4 w-4" />
                     </Button>
                   </div>
                   <div className="grid gap-2 sm:grid-cols-[1fr_200px]">
@@ -413,7 +418,7 @@ export default function TemplateEditor({ templateId, role }: { templateId: strin
                   </div>
                   <div className="mt-2 space-y-1">
                     {d.services.map((s, si) => (
-                      <div key={si} className="flex items-center gap-2 rounded border bg-muted/20 px-2 py-1 text-sm">
+                      <div key={si} className="flex items-center gap-2 rounded-lg border bg-card px-2 py-1 text-sm">
                         <span className="flex-1">
                           {s.label}
                           {vehicleName(s.vehicleTypeId) && (
@@ -446,7 +451,7 @@ export default function TemplateEditor({ templateId, role }: { templateId: strin
                             setDirty(true);
                           }}
                         >
-                          ✕
+                          <X className="h-4 w-4" />
                         </Button>
                       </div>
                     ))}
@@ -536,7 +541,7 @@ export default function TemplateEditor({ templateId, role }: { templateId: strin
                 </p>
               )}
               {scenarios?.map((s, si) => (
-                <div key={si} className="rounded-md border p-3">
+                <div key={si} className="rounded-lg border bg-muted/10 p-3">
                   <div className="mb-2 flex items-center gap-2">
                     <Input
                       className="w-56"
@@ -579,13 +584,13 @@ export default function TemplateEditor({ templateId, role }: { templateId: strin
                           setDirty(true);
                         }}
                       >
-                        ✕
+                        <X className="h-4 w-4" />
                       </Button>
                     </div>
                   </div>
                   <div className="space-y-2">
                     {s.stays.map((st, ti) => (
-                      <div key={ti} className="rounded border bg-muted/20 p-2">
+                      <div key={ti} className="rounded-lg border bg-card p-2">
                         <div className="grid items-end gap-2 sm:grid-cols-[1fr_90px_110px_110px_90px_auto]">
                           <div>
                             <span className="text-xs text-muted-foreground">Hotel</span>
@@ -657,7 +662,7 @@ export default function TemplateEditor({ templateId, role }: { templateId: strin
                             }}
                             disabled={s.stays.length <= 1}
                           >
-                            ✕
+                            <X className="h-4 w-4" />
                           </Button>
                         </div>
                         {!st.hotelProductId && (
@@ -723,7 +728,7 @@ export default function TemplateEditor({ templateId, role }: { templateId: strin
                                 }
                                 disabled={st.allocations.length <= 1}
                               >
-                                ✕
+                                <X className="h-4 w-4" />
                               </Button>
                             </div>
                           ))}

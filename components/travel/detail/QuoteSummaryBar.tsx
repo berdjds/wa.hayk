@@ -43,7 +43,7 @@ export default function QuoteSummaryBar({ ctx }: { ctx: DetailContext }) {
                   <>
                     <StateBadge value={r.valid ? "READY" : "FAILED"} />
                     <span>
-                      Sell: <strong>{money(r.sell, currency)}</strong>
+                      Sell: <strong className="[font-variant-numeric:tabular-nums]">{money(r.sell, currency)}</strong>
                     </span>
                     {r.perPayingPerson && (
                       <span className="text-muted-foreground">

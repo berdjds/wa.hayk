@@ -170,7 +170,7 @@ export default function SettingsPanel({ role, userId }: SettingsPanelProps) {
                     assigned as validator on new requests. Decision rights always belong to the single assigned
                     validator.
                   </p>
-                  <div className="mt-2 max-h-48 space-y-1 overflow-auto rounded-md border p-2">
+                  <div className="mt-2 max-h-48 space-y-1 overflow-auto rounded-lg border bg-card p-2">
                     {assignableUsers.length === 0 && (
                       <p className="text-xs text-muted-foreground">No active users found.</p>
                     )}

@@ -1,7 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import axios from "axios";
+import { ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -28,6 +30,10 @@ interface RequestDetailProps {
   role: string;
   userId: string;
 }
+
+/** Underline-style trigger for page-level tab bars (segmented is the ui default). */
+const PAGE_TAB_CLASS =
+  "rounded-none border-b-2 border-transparent px-3 py-2 text-sm text-muted-foreground data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:font-medium data-[state=active]:text-foreground data-[state=active]:shadow-none";
 
 export interface DetailContext {
   detail: TravelRequestDetail;
@@ -182,19 +188,26 @@ export default function RequestDetail({ requestId, role, userId }: RequestDetail
 
   return (
     <>
-      {/* Sticky request header: identity + version pills stay visible while
-          scrolling long itinerary/scenario tabs (sits under the h-14 layout
-          header). */}
-      <Card className="sticky top-14 z-30 mb-4 shadow-sm">
+      <nav aria-label="Breadcrumb" className="mb-3 flex items-center gap-1 text-[13px] text-muted-foreground">
+        <Link href="/travel" className="transition-colors hover:text-foreground">
+          Requests
+        </Link>
+        <ChevronRight className="h-3.5 w-3.5 text-muted-foreground/50" />
+        <span className="font-mono text-foreground">{detail.packageCode}</span>
+      </nav>
+      {/* Sticky request header: identity + version switch stay visible while
+          scrolling long itinerary/scenario tabs. top-14 clears the mobile top
+          bar; on desktop the sidebar leaves the viewport top free. */}
+      <Card className="sticky top-14 z-30 mb-4 lg:top-3">
         <CardHeader>
-          <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="space-y-1">
               <div className="flex items-center gap-3">
-                <CardTitle className="font-mono text-xl">{detail.packageCode}</CardTitle>
+                <CardTitle className="font-mono text-lg">{detail.packageCode}</CardTitle>
                 <StatusBadge status={detail.status} />
               </div>
               <p className="text-sm font-medium">{detail.title}</p>
-              <p className="text-sm text-muted-foreground">
+              <p className="text-[13px] text-muted-foreground">
                 {detail.agency.shortCode} — {detail.agency.name} · {detail.startDate} → {detail.endDate} (
                 {nights} night{nights === 1 ? "" : "s"} / {nights + 1} days) · Owner:{" "}
                 {detail.owner.name || detail.owner.email} · Validator:{" "}
@@ -202,16 +215,24 @@ export default function RequestDetail({ requestId, role, userId }: RequestDetail
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              {detail.versions.map((v) => (
-                <Button
-                  key={v.id}
-                  size="sm"
-                  variant={v.id === version.id ? "default" : "outline"}
-                  onClick={() => setSelectedVersionId(v.id)}
-                >
-                  {versionLabel(v.versionNo)}
-                </Button>
-              ))}
+              {/* Version switch reads as a segmented control, not a row of
+                  primary buttons — the green accent stays off chrome. */}
+              <div className="flex items-center gap-0.5 rounded-lg bg-muted p-1">
+                {detail.versions.map((v) => (
+                  <button
+                    key={v.id}
+                    type="button"
+                    onClick={() => setSelectedVersionId(v.id)}
+                    className={
+                      v.id === version.id
+                        ? "rounded-md bg-card px-3 py-1 text-[13px] font-medium text-foreground shadow-sm"
+                        : "rounded-md px-3 py-1 text-[13px] font-medium text-muted-foreground transition-colors hover:text-foreground"
+                    }
+                  >
+                    {versionLabel(v.versionNo)}
+                  </button>
+                ))}
+              </div>
               {canRevise && (
                 <Button size="sm" variant="outline" onClick={() => setReviseOpen(true)} disabled={busy}>
                   New revision
@@ -259,12 +280,14 @@ export default function RequestDetail({ requestId, role, userId }: RequestDetail
       <QuoteSummaryBar ctx={ctx} />
 
       <Tabs defaultValue="overview" className="space-y-4">
-        <TabsList className="flex-wrap">
-          <TabsTrigger value="overview">Overview</TabsTrigger>
-          <TabsTrigger value="itinerary">Itinerary</TabsTrigger>
-          <TabsTrigger value="scenarios">Scenarios</TabsTrigger>
-          <TabsTrigger value="review">Review</TabsTrigger>
-          <TabsTrigger value="history">History</TabsTrigger>
+        {/* Page-level tabs use the underline style; the segmented default is
+            reserved for in-card tab sets (catalog admin). */}
+        <TabsList className="h-auto w-full justify-start gap-1 overflow-x-auto rounded-none border-b bg-transparent p-0">
+          {(["overview", "itinerary", "scenarios", "review", "history"] as const).map((tab) => (
+            <TabsTrigger key={tab} value={tab} className={PAGE_TAB_CLASS}>
+              {tab[0].toUpperCase() + tab.slice(1)}
+            </TabsTrigger>
+          ))}
         </TabsList>
         <TabsContent value="overview">
           <OverviewTab ctx={ctx} />

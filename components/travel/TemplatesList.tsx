@@ -2,12 +2,14 @@
 
 import { useEffect, useState } from "react";
 import axios from "axios";
+import { Library, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { EmptyState } from "@/components/ui/empty-state";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -82,8 +84,8 @@ export default function TemplatesList({ role }: TemplatesListProps) {
         subtitle="Reusable packages; instantiate one into a request or manage content in the editor."
         actions={
           isAdmin ? (
-            <Button size="sm" onClick={() => setNewOpen(true)}>
-              + New template
+            <Button onClick={() => setNewOpen(true)}>
+              <Plus /> New template
             </Button>
           ) : undefined
         }
@@ -155,7 +157,7 @@ export default function TemplatesList({ role }: TemplatesListProps) {
                         )}
                       </TableCell>
                       <TableCell>
-                        <Badge variant={v.status === "ACTIVE" ? "default" : "outline"}>{v.status}</Badge>
+                        <Badge variant={v.status === "ACTIVE" ? "success" : "neutral"}>{v.status}</Badge>
                       </TableCell>
                       <TableCell className="text-xs text-muted-foreground">{v.provenance ?? "—"}</TableCell>
                     </TableRow>
@@ -166,16 +168,18 @@ export default function TemplatesList({ role }: TemplatesListProps) {
           </Card>
         ))}
         {templates.length === 0 && (
-          <Card>
-            <CardContent className="py-10 text-center">
-              <p className="text-sm text-muted-foreground">No templates found.</p>
-              {isAdmin && (
-                <Button variant="outline" size="sm" className="mt-3" onClick={() => setNewOpen(true)}>
-                  Create your first template
+          <EmptyState
+            icon={Library}
+            title="No templates found"
+            description="Reusable packages live here — create one, then instantiate it into requests."
+            action={
+              isAdmin ? (
+                <Button variant="outline" size="sm" onClick={() => setNewOpen(true)}>
+                  <Plus /> Create your first template
                 </Button>
-              )}
-            </CardContent>
-          </Card>
+              ) : undefined
+            }
+          />
         )}
       </div>
 
@@ -560,8 +564,8 @@ function BatchDialog({
                 <TableRow>
                   <TableHead>Pax</TableHead>
                   <TableHead>Valid</TableHead>
-                  <TableHead>Sell</TableHead>
-                  <TableHead>Per person</TableHead>
+                  <TableHead className="text-right">Sell</TableHead>
+                  <TableHead className="text-right">Per person</TableHead>
                   <TableHead>Issues</TableHead>
                 </TableRow>
               </TableHeader>
@@ -572,8 +576,8 @@ function BatchDialog({
                     <TableCell>
                       <StateBadge value={r.valid ? "READY" : "FAILED"} />
                     </TableCell>
-                    <TableCell>{r.sell ? money(r.sell, quoteCurrency) : "—"}</TableCell>
-                    <TableCell>{r.perPayingPerson ? money(r.perPayingPerson, quoteCurrency) : "—"}</TableCell>
+                    <TableCell className="text-right">{r.sell ? money(r.sell, quoteCurrency) : "—"}</TableCell>
+                    <TableCell className="text-right">{r.perPayingPerson ? money(r.perPayingPerson, quoteCurrency) : "—"}</TableCell>
                     <TableCell className="text-xs">
                       {r.issues.map((i, j) => (
                         <div key={j}>

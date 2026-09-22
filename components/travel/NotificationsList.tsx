@@ -111,12 +111,15 @@ export default function NotificationsList({ role }: NotificationsListProps) {
               {deliveries.map((d) => (
                 <TableRow key={d.id}>
                   <TableCell>
-                    <a className="underline" href={`/travel/requests/${d.event.requestId}`}>
+                    <a
+                      className="font-medium text-primary underline-offset-4 hover:underline"
+                      href={`/travel/requests/${d.event.requestId}`}
+                    >
                       {d.event.type.replace(/_/g, " ")}
                     </a>
                   </TableCell>
                   <TableCell>
-                    <Badge variant={d.channel === "WHATSAPP" ? "default" : "secondary"}>{d.channel}</Badge>
+                    <Badge variant={d.channel === "WHATSAPP" ? "success" : "neutral"}>{d.channel}</Badge>
                   </TableCell>
                   <TableCell>
                     <StateBadge value={d.status} />

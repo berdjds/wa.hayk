@@ -89,7 +89,7 @@ export default function TravelerSetupEditor({ value, onChange }: TravelerSetupEd
       {value.children > 0 && (
         <div className="grid gap-2 sm:grid-cols-2">
           {Array.from({ length: value.children }, (_, i) => (
-            <div key={i} className="flex items-center justify-between gap-2 rounded-md border px-3 py-1.5">
+            <div key={i} className="flex items-center justify-between gap-2 rounded-lg border bg-card px-3 py-1.5">
               <span className="text-sm">Child {i + 1} — age at return</span>
               <Select
                 value={String(value.childAges?.[i] ?? DEFAULT_CHILD_AGE)}
@@ -126,7 +126,7 @@ export default function TravelerSetupEditor({ value, onChange }: TravelerSetupEd
 
 function StepperRow({ label, count, onStep }: { label: string; count: number; onStep: (delta: number) => void }) {
   return (
-    <div className="flex items-center justify-between rounded-md border px-3 py-1.5">
+    <div className="flex items-center justify-between rounded-lg border bg-card px-3 py-1.5">
       <span className="text-sm">{label}</span>
       <div className="flex items-center gap-2">
         <Button type="button" variant="outline" size="sm" className="h-7 w-7 p-0" onClick={() => onStep(-1)}>
