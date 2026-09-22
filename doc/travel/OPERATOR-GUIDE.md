@@ -166,6 +166,16 @@ group of up to 5" / "per group of up to 10" in the service pickers). The group s
 paying traveler count unless a service line overrides participants. Existing databases pick
 this up by re-running the catalog seed (`npx tsx scripts/seed-travel-catalog.ts` — idempotent).
 
+### Catalog ordering (v0.13.1)
+
+Hotels and Services lists support **drag-and-drop ordering** via the grip handle in the first
+column. The order set here is the order advisors see everywhere: hotel dropdowns in Scenarios
+and the template editor, and the service picker when pinning services to itinerary days.
+Dragging is disabled while a search filter is active (reordering a filtered subset is
+meaningless); on the Services tab, with a category filter selected, reordering applies within
+that category only and leaves the rest of the catalog untouched. Keyboard reordering works
+too: focus the handle, press Space to lift the row, arrow keys to move it, Space to drop.
+
 ## Rollout / rollback
 
 - Rollout is additive: new tables, routes and pages; existing WhatsApp/chat features are

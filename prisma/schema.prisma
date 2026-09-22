@@ -281,6 +281,9 @@ model HotelProduct {
   cotAllowed       Boolean  @default(false)
   boardOptions     String? // JSON array, e.g. ["BB","HB","FB"]
   active           Boolean  @default(true)
+  // Admin-defined display order in catalog lists and pickers; 0 for legacy rows,
+  // tie-broken by name (see v0.13.1 reorder endpoints).
+  sortOrder        Int      @default(0)
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
@@ -312,8 +315,10 @@ model ServiceProduct {
   weekdays           String? // JSON array of ISO weekdays [1..7] for shared departures
   includedComponents String? // JSON array of included ticket/meal keys
   language           String?
-  durationVariant    String? // half_day | full_day | transfer
+  durationVariant      String? // half_day | full_day | transfer
   active             Boolean  @default(true)
+  // Admin-defined display order in catalog lists and pickers (v0.13.1).
+  sortOrder          Int      @default(0)
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 

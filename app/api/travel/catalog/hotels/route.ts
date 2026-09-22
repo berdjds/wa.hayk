@@ -40,7 +40,7 @@ export async function GET(req: NextRequest) {
         ...(includeInactive ? {} : { active: true }),
         ...(q ? { OR: [{ name: { contains: q } }, { city: { contains: q } }] } : {}),
       },
-      orderBy: { name: "asc" },
+      orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
       include: {
         supplier: { select: { id: true, name: true } },
         rates: {

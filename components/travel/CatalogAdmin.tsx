@@ -2,6 +2,25 @@
 
 import { Fragment, useCallback, useEffect, useState } from "react";
 import axios from "axios";
+import {
+  DndContext,
+  KeyboardSensor,
+  PointerSensor,
+  closestCenter,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  arrayMove,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+import { GripVertical } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -95,6 +114,89 @@ const OCCUPANCIES = ["SGL", "DBL", "TPL", "EXTRA_BED", "UNIT"] as const;
 const DURATION_VARIANTS = ["half_day", "full_day", "transfer"] as const;
 /** Radix Select rejects empty-string values, so "no value" uses a sentinel. */
 const NONE = "__none__";
+
+// ---------------------------------------------------------------------------
+// Drag-and-drop ordering (v0.13.1) — admin-defined sortOrder, persisted via
+// the catalog reorder endpoints; every picker consumes the same GET order.
+// ---------------------------------------------------------------------------
+
+function SortableTableRow({
+  id,
+  disabled,
+  className,
+  children,
+}: {
+  id: string;
+  disabled?: boolean;
+  className?: string;
+  children: React.ReactNode;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id,
+    disabled,
+  });
+  return (
+    <TableRow
+      ref={setNodeRef}
+      style={{ transform: CSS.Transform.toString(transform), transition }}
+      className={cn(className, isDragging && "relative z-10 bg-card shadow-md")}
+    >
+      <TableCell className="w-8 px-2">
+        <button
+          type="button"
+          aria-label="Drag to reorder"
+          disabled={disabled}
+          {...attributes}
+          {...listeners}
+          className={cn(
+            "inline-flex size-6 items-center justify-center rounded text-muted-foreground",
+            disabled
+              ? "cursor-not-allowed opacity-30"
+              : "cursor-grab hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:cursor-grabbing"
+          )}
+        >
+          <GripVertical className="size-4" />
+        </button>
+      </TableCell>
+      {children}
+    </TableRow>
+  );
+}
+
+/** Shared DnD wiring for the Hotels/Services tables: sensors + optimistic reorder. */
+function useCatalogReorder<T extends { id: string }>(
+  items: T[],
+  setItems: React.Dispatch<React.SetStateAction<T[]>>,
+  endpoint: string
+) {
+  const { toast } = useToast();
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+  );
+
+  const onDragEnd = useCallback(
+    (event: DragEndEvent) => {
+      const { active, over } = event;
+      if (!over || active.id === over.id) return;
+      const oldIndex = items.findIndex((i) => i.id === active.id);
+      const newIndex = items.findIndex((i) => i.id === over.id);
+      if (oldIndex < 0 || newIndex < 0) return;
+      const next = arrayMove(items, oldIndex, newIndex);
+      setItems(next);
+      axios
+        .post(endpoint, { ids: next.map((i) => i.id) })
+        .then(() => toast("Order saved — pickers now show this order.", "success"))
+        .catch((err) => {
+          setItems(items);
+          toast(apiError(err, "Failed to save order"), "error");
+        });
+    },
+    [items, setItems, endpoint, toast]
+  );
+
+  return { sensors, onDragEnd };
+}
 
 function weekdaysSummary(raw: string | null | undefined): string {
   const days = parseJson<number[]>(raw, []);
@@ -980,6 +1082,10 @@ function HotelsTab() {
     return () => clearTimeout(t);
   }, [load]);
 
+  // Reordering a search-filtered subset is meaningless — drag is search-gated.
+  const reorderDisabled = q.trim() !== "";
+  const reorder = useCatalogReorder(hotels, setHotels, "/api/travel/catalog/hotels/reorder");
+
   return (
     <Card>
       <CardHeader className="flex flex-row items-start justify-between gap-4 space-y-0">
@@ -992,89 +1098,104 @@ function HotelsTab() {
         <Button onClick={() => setHotelDialog({ open: true, hotel: null })}>Add hotel</Button>
       </CardHeader>
       <CardContent className="space-y-4">
-        <Input placeholder="Search hotels..." value={q} onChange={(e) => setQ(e.target.value)} className="max-w-xs" />
-        <div className="overflow-x-auto rounded-lg border">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Name</TableHead>
-                <TableHead>City</TableHead>
-                <TableHead>Country</TableHead>
-                <TableHead>Kind</TableHead>
-                <TableHead>Capacity</TableHead>
-                <TableHead>Boards</TableHead>
-                <TableHead>Price validity</TableHead>
-                <TableHead>Supplier</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {hotels.map((h) => (
-                <Fragment key={h.id}>
-                  <TableRow className={h.active ? "" : "text-muted-foreground"}>
-                    <TableCell>{hotelDisplayName(h)}</TableCell>
-                    <TableCell>{h.city ?? "—"}</TableCell>
-                    <TableCell>{h.country}</TableCell>
-                    <TableCell>{h.kind}</TableCell>
-                    <TableCell>
-                      {h.capacityAdults}A/{h.capacityChildren}C (max {h.capacityTotal})
-                      {h.extraBedAllowed ? " +EB" : ""}
-                    </TableCell>
-                    <TableCell>{parseJson<string[]>(h.boardOptions, []).join(", ") || "—"}</TableCell>
-                    <TableCell className="text-xs whitespace-nowrap">{validitySummary(h.rates)}</TableCell>
-                    <TableCell>{h.supplier?.name ?? "—"}</TableCell>
-                    <TableCell><Badge variant={h.active ? "success" : "neutral"}>{h.active ? "Active" : "Inactive"}</Badge></TableCell>
-                    <TableCell>
-                      <div className="flex gap-1">
-                        <Button size="sm" variant="outline" onClick={() => setHotelDialog({ open: true, hotel: h })}>
-                          Edit
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => setExpandedId(expandedId === h.id ? null : h.id)}
-                        >
-                          {expandedId === h.id ? "Hide rates" : `Rates (${h.rates.length})`}
-                        </Button>
-                      </div>
+        <div className="space-y-1">
+          <Input placeholder="Search hotels..." value={q} onChange={(e) => setQ(e.target.value)} className="max-w-xs" />
+          {reorderDisabled && (
+            <p className="text-xs text-muted-foreground">Drag to reorder is disabled while a search filter is active.</p>
+          )}
+        </div>
+        <DndContext
+          sensors={reorder.sensors}
+          collisionDetection={closestCenter}
+          onDragStart={() => setExpandedId(null)}
+          onDragEnd={reorder.onDragEnd}
+        >
+          <div className="overflow-x-auto rounded-lg border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-8 px-2"><span className="sr-only">Reorder</span></TableHead>
+                  <TableHead>Name</TableHead>
+                  <TableHead>City</TableHead>
+                  <TableHead>Country</TableHead>
+                  <TableHead>Kind</TableHead>
+                  <TableHead>Capacity</TableHead>
+                  <TableHead>Boards</TableHead>
+                  <TableHead>Price validity</TableHead>
+                  <TableHead>Supplier</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                <SortableContext items={hotels.map((h) => h.id)} strategy={verticalListSortingStrategy}>
+                  {hotels.map((h) => (
+                    <Fragment key={h.id}>
+                      <SortableTableRow id={h.id} disabled={reorderDisabled} className={h.active ? "" : "text-muted-foreground"}>
+                        <TableCell>{hotelDisplayName(h)}</TableCell>
+                        <TableCell>{h.city ?? "—"}</TableCell>
+                        <TableCell>{h.country}</TableCell>
+                        <TableCell>{h.kind}</TableCell>
+                        <TableCell>
+                          {h.capacityAdults}A/{h.capacityChildren}C (max {h.capacityTotal})
+                          {h.extraBedAllowed ? " +EB" : ""}
+                        </TableCell>
+                        <TableCell>{parseJson<string[]>(h.boardOptions, []).join(", ") || "—"}</TableCell>
+                        <TableCell className="text-xs whitespace-nowrap">{validitySummary(h.rates)}</TableCell>
+                        <TableCell>{h.supplier?.name ?? "—"}</TableCell>
+                        <TableCell><Badge variant={h.active ? "success" : "neutral"}>{h.active ? "Active" : "Inactive"}</Badge></TableCell>
+                        <TableCell>
+                          <div className="flex gap-1">
+                            <Button size="sm" variant="outline" onClick={() => setHotelDialog({ open: true, hotel: h })}>
+                              Edit
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => setExpandedId(expandedId === h.id ? null : h.id)}
+                            >
+                              {expandedId === h.id ? "Hide rates" : `Rates (${h.rates.length})`}
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </SortableTableRow>
+                      {expandedId === h.id && (
+                        <TableRow>
+                          <TableCell colSpan={11} className="bg-muted/30 px-4 py-3">
+                            <div className="mb-2 flex items-center justify-between">
+                              <p className="text-xs font-medium text-muted-foreground">
+                                Price brackets — {h.name}
+                                {h.city ? ` (${h.city})` : ""}
+                              </p>
+                              <Button
+                                size="sm"
+                                onClick={() => setRateDialog({ open: true, hotelId: h.id, rate: null })}
+                              >
+                                Add rate
+                              </Button>
+                            </div>
+                            <RateTable
+                              rates={h.rates}
+                              productType="HOTEL"
+                              onEdit={(r) => setRateDialog({ open: true, hotelId: h.id, rate: r })}
+                            />
+                          </TableCell>
+                        </TableRow>
+                      )}
+                    </Fragment>
+                  ))}
+                </SortableContext>
+                {hotels.length === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={11} className="py-6 text-center text-muted-foreground">
+                      No hotels found.
                     </TableCell>
                   </TableRow>
-                  {expandedId === h.id && (
-                    <TableRow>
-                      <TableCell colSpan={10} className="bg-muted/30 px-4 py-3">
-                        <div className="mb-2 flex items-center justify-between">
-                          <p className="text-xs font-medium text-muted-foreground">
-                            Price brackets — {h.name}
-                            {h.city ? ` (${h.city})` : ""}
-                          </p>
-                          <Button
-                            size="sm"
-                            onClick={() => setRateDialog({ open: true, hotelId: h.id, rate: null })}
-                          >
-                            Add rate
-                          </Button>
-                        </div>
-                        <RateTable
-                          rates={h.rates}
-                          productType="HOTEL"
-                          onEdit={(r) => setRateDialog({ open: true, hotelId: h.id, rate: r })}
-                        />
-                      </TableCell>
-                    </TableRow>
-                  )}
-                </Fragment>
-              ))}
-              {hotels.length === 0 && (
-                <TableRow>
-                  <TableCell colSpan={10} className="py-6 text-center text-muted-foreground">
-                    No hotels found.
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
-        </div>
+                )}
+              </TableBody>
+            </Table>
+          </div>
+        </DndContext>
       </CardContent>
       <HotelDialog
         hotel={hotelDialog.hotel}
@@ -1128,6 +1249,11 @@ function ServicesTab() {
     return () => clearTimeout(t);
   }, [load]);
 
+  // Search-gated like hotels; with a category filter the reorder posts just
+  // that subset and the server keeps the rest of the catalog in place.
+  const reorderDisabled = q.trim() !== "";
+  const reorder = useCatalogReorder(services, setServices, "/api/travel/catalog/services/reorder");
+
   return (
     <Card>
       <CardHeader className="flex flex-row items-start justify-between gap-4 space-y-0">
@@ -1138,92 +1264,107 @@ function ServicesTab() {
         <Button onClick={() => setServiceDialog({ open: true, service: null })}>Add service</Button>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="flex gap-2">
-          <Input placeholder="Search services..." value={q} onChange={(e) => setQ(e.target.value)} className="max-w-xs" />
-          <Select value={category} onValueChange={setCategory}>
-            <SelectTrigger className="w-56">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="ALL">All categories</SelectItem>
-              {COST_CATEGORIES.map((c) => (
-                <SelectItem key={c} value={c}>
-                  {c.replace(/_/g, " ")}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+        <div className="space-y-1">
+          <div className="flex gap-2">
+            <Input placeholder="Search services..." value={q} onChange={(e) => setQ(e.target.value)} className="max-w-xs" />
+            <Select value={category} onValueChange={setCategory}>
+              <SelectTrigger className="w-56">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ALL">All categories</SelectItem>
+                {COST_CATEGORIES.map((c) => (
+                  <SelectItem key={c} value={c}>
+                    {c.replace(/_/g, " ")}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          {reorderDisabled && (
+            <p className="text-xs text-muted-foreground">Drag to reorder is disabled while a search filter is active.</p>
+          )}
         </div>
-        <div className="overflow-x-auto rounded-lg border">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Name</TableHead>
-                <TableHead>Category</TableHead>
-                <TableHead>Basis</TableHead>
-                <TableHead>Weekdays</TableHead>
-                <TableHead>Supplier</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {services.map((s) => (
-                <Fragment key={s.id}>
-                  <TableRow className={s.active ? "" : "text-muted-foreground"}>
-                    <TableCell>{s.name}</TableCell>
-                    <TableCell>{s.category.replace(/_/g, " ")}</TableCell>
-                    <TableCell>{basisLabel(s.basis, s.capacity)}</TableCell>
-                    <TableCell className="text-xs">{weekdaysSummary(s.weekdays)}</TableCell>
-                    <TableCell>{s.supplier?.name ?? "—"}</TableCell>
-                    <TableCell><Badge variant={s.active ? "success" : "neutral"}>{s.active ? "Active" : "Inactive"}</Badge></TableCell>
-                    <TableCell>
-                      <div className="flex gap-1">
-                        <Button size="sm" variant="outline" onClick={() => setServiceDialog({ open: true, service: s })}>
-                          Edit
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => setExpandedId(expandedId === s.id ? null : s.id)}
-                        >
-                          {expandedId === s.id ? "Hide rates" : `Rates (${s.rates.length})`}
-                        </Button>
-                      </div>
+        <DndContext
+          sensors={reorder.sensors}
+          collisionDetection={closestCenter}
+          onDragStart={() => setExpandedId(null)}
+          onDragEnd={reorder.onDragEnd}
+        >
+          <div className="overflow-x-auto rounded-lg border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-8 px-2"><span className="sr-only">Reorder</span></TableHead>
+                  <TableHead>Name</TableHead>
+                  <TableHead>Category</TableHead>
+                  <TableHead>Basis</TableHead>
+                  <TableHead>Weekdays</TableHead>
+                  <TableHead>Supplier</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                <SortableContext items={services.map((s) => s.id)} strategy={verticalListSortingStrategy}>
+                  {services.map((s) => (
+                    <Fragment key={s.id}>
+                      <SortableTableRow id={s.id} disabled={reorderDisabled} className={s.active ? "" : "text-muted-foreground"}>
+                        <TableCell>{s.name}</TableCell>
+                        <TableCell>{s.category.replace(/_/g, " ")}</TableCell>
+                        <TableCell>{basisLabel(s.basis, s.capacity)}</TableCell>
+                        <TableCell className="text-xs">{weekdaysSummary(s.weekdays)}</TableCell>
+                        <TableCell>{s.supplier?.name ?? "—"}</TableCell>
+                        <TableCell><Badge variant={s.active ? "success" : "neutral"}>{s.active ? "Active" : "Inactive"}</Badge></TableCell>
+                        <TableCell>
+                          <div className="flex gap-1">
+                            <Button size="sm" variant="outline" onClick={() => setServiceDialog({ open: true, service: s })}>
+                              Edit
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => setExpandedId(expandedId === s.id ? null : s.id)}
+                            >
+                              {expandedId === s.id ? "Hide rates" : `Rates (${s.rates.length})`}
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </SortableTableRow>
+                      {expandedId === s.id && (
+                        <TableRow>
+                          <TableCell colSpan={8} className="bg-muted/30 px-4 py-3">
+                            <div className="mb-2 flex items-center justify-between">
+                              <p className="text-xs font-medium text-muted-foreground">Rates — {s.name}</p>
+                              <Button
+                                size="sm"
+                                onClick={() => setRateDialog({ open: true, serviceId: s.id, rate: null })}
+                              >
+                                Add rate
+                              </Button>
+                            </div>
+                            <RateTable
+                              rates={s.rates}
+                              productType="SERVICE"
+                              onEdit={(r) => setRateDialog({ open: true, serviceId: s.id, rate: r })}
+                            />
+                          </TableCell>
+                        </TableRow>
+                      )}
+                    </Fragment>
+                  ))}
+                </SortableContext>
+                {services.length === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={8} className="py-6 text-center text-muted-foreground">
+                      No services found.
                     </TableCell>
                   </TableRow>
-                  {expandedId === s.id && (
-                    <TableRow>
-                      <TableCell colSpan={7} className="bg-muted/30 px-4 py-3">
-                        <div className="mb-2 flex items-center justify-between">
-                          <p className="text-xs font-medium text-muted-foreground">Rates — {s.name}</p>
-                          <Button
-                            size="sm"
-                            onClick={() => setRateDialog({ open: true, serviceId: s.id, rate: null })}
-                          >
-                            Add rate
-                          </Button>
-                        </div>
-                        <RateTable
-                          rates={s.rates}
-                          productType="SERVICE"
-                          onEdit={(r) => setRateDialog({ open: true, serviceId: s.id, rate: r })}
-                        />
-                      </TableCell>
-                    </TableRow>
-                  )}
-                </Fragment>
-              ))}
-              {services.length === 0 && (
-                <TableRow>
-                  <TableCell colSpan={7} className="py-6 text-center text-muted-foreground">
-                    No services found.
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
-        </div>
+                )}
+              </TableBody>
+            </Table>
+          </div>
+        </DndContext>
       </CardContent>
       <ServiceDialog
         service={serviceDialog.service}

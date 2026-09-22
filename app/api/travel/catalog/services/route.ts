@@ -39,7 +39,7 @@ export async function GET(req: NextRequest) {
         ...(q ? { name: { contains: q } } : {}),
         ...(category ? { category } : {}),
       },
-      orderBy: { name: "asc" },
+      orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
       include: {
         supplier: { select: { id: true, name: true } },
         rates: {

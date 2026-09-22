@@ -322,6 +322,20 @@ A versioned B2B travel package costing and quotation module inside WAControl:
     money columns right-aligned with tabular-nums, and a shared `EmptyState` component
     replaces ad-hoc empty lists. Chat dashboard and admin panel were intentionally left
     untouched except for the global token changes.
+34. **Admin-defined catalog ordering (v0.13.1).** `HotelProduct.sortOrder` and
+    `ServiceProduct.sortOrder` (both `Int @default(0)`) drive every catalog list and picker:
+    the hotels/services GET endpoints order by `[{ sortOrder: "asc" }, { name: "asc" }]`, so
+    legacy all-zero rows keep their old alphabetical display until reordered. New ADMIN-only
+    endpoints `POST /api/travel/catalog/hotels/reorder` and `.../services/reorder` take
+    `{ ids: string[] }` (zod; 400 on empty/duplicates), ignore unknown ids, and rewrite
+    sortOrder in one transaction — a full-table list becomes a clean 0..n-1 sequence, while a
+    partial list (the Services tab with a category filter) keeps the existing sortOrder slots
+    of just those rows so the rest of the catalog does not move. Audit
+    `TRAVEL_CATALOG_REORDERED`. UI: CatalogAdmin Hotels/Services tables use
+    @dnd-kit (core/sortable/utilities) with a GripVertical handle column, pointer + keyboard
+    sensors, optimistic update with revert + error toast on failure; drag is disabled while a
+    search query is active (hint shown) because reordering a filtered subset is meaningless.
+    No picker re-sorts client-side, so the admin order propagates everywhere automatically.
 
 ## Known limitations
 
