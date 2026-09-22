@@ -58,17 +58,17 @@ export default function RequestsList({ role, userId }: RequestsListProps) {
   const canCreate = role === "ADMIN" || role === "ADVISOR";
   const invalidDates = form.startDate !== "" && form.endDate !== "" && !(form.endDate > form.startDate);
 
-  // Trip length drives which template versions are offered (v0.11.0).
+  // Trip length filters the offered template versions (v0.11.0); before the
+  // dates are set, all active versions are listed so the option is visible.
   const tripNights =
     form.startDate && form.endDate && !invalidDates ? nightsBetween(form.startDate, form.endDate) : null;
-  const matchingTemplates =
-    tripNights === null || !templates
-      ? []
-      : templates.flatMap((t) =>
-          t.versions
-            .filter((v) => v.status === "ACTIVE" && v.nights === tripNights)
-            .map((v) => ({ template: t, version: v })),
-        );
+  const matchingTemplates = !templates
+    ? []
+    : templates.flatMap((t) =>
+        t.versions
+          .filter((v) => v.status === "ACTIVE" && (tripNights === null || v.nights === tripNights))
+          .map((v) => ({ template: t, version: v })),
+      );
 
   const fetchRequests = useCallback(async () => {
     try {
@@ -286,9 +286,9 @@ export default function RequestsList({ role, userId }: RequestsListProps) {
               </div>
             </div>
             {invalidDates && <p className="text-xs text-red-600">End date must be after the start date.</p>}
-            {templates !== null && tripNights !== null && (
+            {templates !== null && (
               <div>
-                <Label>Template</Label>
+                <Label>Template (optional)</Label>
                 <Select value={templateVersionId || "NONE"} onValueChange={pickTemplate}>
                   <SelectTrigger>
                     <SelectValue placeholder="No template" />
@@ -302,9 +302,14 @@ export default function RequestsList({ role, userId }: RequestsListProps) {
                     ))}
                   </SelectContent>
                 </Select>
-                {matchingTemplates.length === 0 && (
+                {tripNights !== null && matchingTemplates.length === 0 && (
                   <p className="mt-1 text-xs text-muted-foreground">
                     No active template covers {tripNights} nights.
+                  </p>
+                )}
+                {tripNights === null && matchingTemplates.length > 0 && (
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    The list is filtered to the trip length once the dates are set.
                   </p>
                 )}
               </div>
