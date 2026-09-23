@@ -106,14 +106,17 @@ jobs:
           docker compose up -d wacontrol_app
 
           # db push happens in docker-entrypoint.sh at container start.
-          # Seeds are idempotent and MUST be loud on failure — a silently
+          # Seeds are bootstrap-only and MUST be loud on failure — a silently
           # skipped seed once left the production catalog empty.
           # `< /dev/null` is critical: this script arrives on ssh stdin, and
           # `docker compose exec` forwards stdin by default — without it the
           # first exec eats the remaining lines of this script.
           docker compose exec -T wacontrol_app npm run db:seed < /dev/null
-          # Travel module master data (idempotent; demo users skipped in production).
-          docker compose exec -T wacontrol_app npx tsx scripts/import-workbook.ts < /dev/null
+          # Travel module master data: bootstrap-only. The catalog seed
+          # self-skips when the catalog is populated (deleted/edited items
+          # must not be resurrected on deploy); reseed deliberately with
+          # SEED_FORCE=true. The workbook import (import-workbook.ts) is
+          # manual-only — the workbook is stale vs. curated production data.
           docker compose exec -T wacontrol_app npx tsx scripts/seed-travel-catalog.ts < /dev/null
 
           docker ps | grep wacontrol-app

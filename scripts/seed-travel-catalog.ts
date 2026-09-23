@@ -804,12 +804,45 @@ export async function seedTravelCatalog(evidencePath?: string): Promise<SeedSumm
   };
 }
 
+/**
+ * CLI bootstrap-only guard: the seed upserts by name and would resurrect
+ * deleted rows and overwrite operator edits, so it must not run against a
+ * populated catalog (every deploy used to do this). SEED_FORCE=true is the
+ * deliberate escape hatch. The guard lives in the CLI entry, not in
+ * seedTravelCatalog(), because the test suites seed throwaway databases
+ * through that function.
+ */
+async function main() {
+  if (process.env.SEED_FORCE === "true") {
+    console.log("[seed-travel-catalog] SEED_FORCE=true — force mode on, seeding over the existing catalog");
+  } else {
+    const [vehicles, hotels, services] = await Promise.all([
+      prisma.vehicleType.count(),
+      prisma.hotelProduct.count(),
+      prisma.serviceProduct.count(),
+    ]);
+    if (vehicles > 0 || hotels > 0 || services > 0) {
+      console.log(
+        `[seed-travel-catalog] catalog already populated (${vehicles} vehicles, ${hotels} hotels, ${services} services) — skipping seed`,
+      );
+      console.log("[seed-travel-catalog] set SEED_FORCE=true to reseed anyway");
+      return;
+    }
+  }
+
+  return seedTravelCatalog(process.argv[2] ? path.resolve(process.argv[2]) : undefined);
+}
+
 const isMain =
   !!process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
 
 if (isMain) {
-  seedTravelCatalog(process.argv[2] ? path.resolve(process.argv[2]) : undefined)
+  main()
     .then(async (s) => {
+      if (!s) {
+        await prisma.$disconnect();
+        return;
+      }
       console.log("[seed-travel-catalog] done:");
       console.log(`  vehicle types: ${s.vehicles}`);
       console.log(`  hotel products: ${s.hotels}`);

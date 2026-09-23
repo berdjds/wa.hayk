@@ -182,8 +182,15 @@ WAControl maintains the WhatsApp client as an in-memory singleton in `lib/whatsa
    `vitest run`, `next build`.
 2. **Deploy job** (main only, serialized via concurrency group) — tars the source, uploads to
    the VPS (`213.136.80.87`, `/root/productionapp`), builds the Docker image, restarts
-   `wacontrol-app` via docker compose, seeds the admin and the travel catalog (idempotent;
-   demo users skipped in production), then health-checks `https://wa.hayk.ae/login`.
+   `wacontrol-app` via docker compose, seeds the admin user, runs the travel catalog seed,
+   then health-checks `https://wa.hayk.ae/login`.
+
+**Seeds are bootstrap-only.** Deploys never re-seed a populated travel catalog: the catalog
+seed (`scripts/seed-travel-catalog.ts`) counts vehicle/hotel/service products first and skips
+when any exist, so operator deletes and edits survive deployments. To reseed deliberately,
+run `SEED_FORCE=true npx tsx scripts/seed-travel-catalog.ts` inside the container. The
+workbook import (`scripts/import-workbook.ts`) is manual-only and no longer runs on deploy —
+the workbook is stale compared to the curated production catalog.
 
 Repository secrets: `VPS_HOST`, `VPS_USER`, `VPS_SSH_KEY` (dedicated CI keypair
 `~/.ssh/wacontrol_ci`, authorized on the VPS — revocable without touching the manual deploy
