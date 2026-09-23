@@ -510,7 +510,12 @@ function calculateScenario(sc: ScenarioEngineInput, input: EngineInput): Scenari
   let margin: Money | null = null;
   let perPayingPerson: Money | null = null;
   if (fxOk) {
-    const stage = computePolicyStage(money(costQuote), input.policy, input.fx, sc.travelers.paying, sc.ref);
+    // Min-profit floor multiplier (v0.15.1): travelers excluding infants.
+    // `children` is the 0–12 count and already includes infants (the subset
+    // with age ≤ infantMaxAge), so subtract; clamp at 0 against manual
+    // overrides that leave infants > children.
+    const floorTravelers = Math.max(0, sc.travelers.adults + sc.travelers.children - sc.travelers.infants);
+    const stage = computePolicyStage(money(costQuote), input.policy, input.fx, floorTravelers, sc.ref);
     issues.push(...stage.issues);
     trace.push(...stage.trace);
     policyTarget = stage.policyTarget;

@@ -13,8 +13,9 @@ const usdFx = FX({ quoteCurrency: "USD" });
  * helper's `sellOverride` — the same check a validator UI performs when a
  * manager types a manual selling price.
  *
- * Since v0.14.0 the min-profit floor is PER PAYING PERSON; payingPax = 1
- * reproduces the legacy flat-floor numbers exactly.
+ * Since v0.15.1 the min-profit floor is PER TRAVELER EXCLUDING INFANTS — the
+ * caller passes the derived count (`max(0, adults + children − infants)`);
+ * floorTravelers = 1 reproduces the legacy flat-floor numbers exactly.
  */
 describe("computePolicyStage floor guard", () => {
   const floorPolicy: PolicyInput = {
@@ -50,8 +51,8 @@ describe("computePolicyStage floor guard", () => {
   });
 });
 
-describe("per-paying-person floor (v0.14.0)", () => {
-  it("floor = cost + minProfit × payingPax (paying = 1 keeps the legacy flat floor)", () => {
+describe("per-traveler floor (v0.15.1)", () => {
+  it("floor = cost + minProfit × floorTravelers (count = 1 keeps the legacy flat floor)", () => {
     const res = computePolicyStage(
       "651",
       { type: "MARKUP_ON_COST", minProfit: "50", minProfitCurrency: "USD", roundingIncrement: "1" },
@@ -62,10 +63,45 @@ describe("per-paying-person floor (v0.14.0)", () => {
     expect(res.policyFloor).toBe("751"); // 651 + 2 × 50
     expect(res.sell).toBe("751");
     expect(res.profit).toBe("100");
-    expect(res.trace.some((t) => t.includes("policy floor: (2 × 50 USD) + 651 = 751"))).toBe(true);
+    expect(res.trace.some((t) => t.includes("policy floor: (2 travelers × 50 USD) + 651 = 751"))).toBe(true);
   });
 
-  it("sell = max(markup target, per-person floor) — the floor wins when higher", () => {
+  it("multiplier 3 (e.g. 2 adults + 2 children − 1 infant): (3 travelers × 50 USD) + 651 = 801", () => {
+    const res = computePolicyStage(
+      "651",
+      { type: "MARKUP_ON_COST", minProfit: "50", minProfitCurrency: "USD", roundingIncrement: "1" },
+      usdFx,
+      3,
+      "SC1",
+    );
+    expect(res.policyFloor).toBe("801");
+    expect(res.sell).toBe("801");
+    expect(res.trace.some((t) => t.includes("policy floor: (3 travelers × 50 USD) + 651 = 801"))).toBe(true);
+  });
+
+  it("multiplier 0 (clamped infants > children) → floor = bare cost", () => {
+    const res = computePolicyStage(
+      "651",
+      { type: "MARKUP_ON_COST", minProfit: "50", minProfitCurrency: "USD", roundingIncrement: "1" },
+      usdFx,
+      0,
+      "SC1",
+    );
+    expect(res.policyFloor).toBe("651");
+  });
+
+  it("singular trace wording for one traveler", () => {
+    const res = computePolicyStage(
+      "1000",
+      { type: "MARKUP_ON_COST", minProfit: "200", minProfitCurrency: "USD", roundingIncrement: "1" },
+      usdFx,
+      1,
+      "SC1",
+    );
+    expect(res.trace.some((t) => t.includes("(1 traveler × 200 USD)"))).toBe(true);
+  });
+
+  it("sell = max(markup target, per-traveler floor) — the floor wins when higher", () => {
     const res = computePolicyStage(
       "651",
       { type: "MARKUP_ON_COST", rate: "0.14", minProfit: "50", minProfitCurrency: "USD", roundingIncrement: "1" },
@@ -79,7 +115,7 @@ describe("per-paying-person floor (v0.14.0)", () => {
     expect(res.profit).toBe("100");
   });
 
-  it("the markup target wins when it exceeds the per-person floor", () => {
+  it("the markup target wins when it exceeds the per-traveler floor", () => {
     const res = computePolicyStage(
       "1000",
       { type: "MARKUP_ON_COST", rate: "0.14", minProfit: "50", minProfitCurrency: "USD", roundingIncrement: "1" },
@@ -92,7 +128,7 @@ describe("per-paying-person floor (v0.14.0)", () => {
     expect(res.sell).toBe("1140");
   });
 
-  it("minProfit in a foreign currency converts per person before multiplying", () => {
+  it("minProfit in a foreign currency converts per traveler before multiplying", () => {
     const res = computePolicyStage(
       "1425500", // AMD cost, quote AMD
       { type: "MARKUP_ON_COST", minProfit: "50", minProfitCurrency: "USD", roundingIncrement: "1" },

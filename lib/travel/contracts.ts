@@ -116,9 +116,11 @@ export interface PolicyInput {
   type: PolicyType;
   /** Decimal fraction, e.g. "0.14". Workbook "Margin %" imports as MARKUP_ON_COST. */
   rate?: Money;
-  /** Absolute minimum profit PER PAYING PERSON (v0.14.0), in minProfitCurrency.
-   *  floor = cost + minProfit × travelers.paying. Pre-v0.14.0 snapshots used a
-   *  flat per-package amount — their frozen numbers are unchanged. */
+  /** Absolute minimum profit PER TRAVELER EXCLUDING INFANTS (v0.15.1; supersedes
+   *  the v0.14.0 per-paying-person multiplier), in minProfitCurrency.
+   *  floor = cost + minProfit × max(0, adults + children − infants) — `children`
+   *  already includes infants (age ≤ infantMaxAge subset). Snapshots frozen before
+   *  v0.15.1 keep their per-paying (or pre-v0.14.0 flat per-package) numbers. */
   minProfit?: Money;
   minProfitCurrency?: string;
   /** Revenue-based fee fraction of selling price, e.g. "0.05". Solved via division. */

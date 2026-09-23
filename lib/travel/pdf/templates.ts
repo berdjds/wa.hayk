@@ -681,7 +681,7 @@ function policyHtml(input: QuotationPdfInput, res: ScenarioResult): string {
   ];
   if (p.minProfit) {
     rows.push(
-      `<tr><th>Min profit per paying person</th><td>${internalMoney(p.minProfit, p.minProfitCurrency ?? q)}${p.belowFloorExceptionGranted ? " (below-floor exception granted)" : ""}</td></tr>`,
+      `<tr><th>Min profit per traveler (excl. infants)</th><td>${internalMoney(p.minProfit, p.minProfitCurrency ?? q)}${p.belowFloorExceptionGranted ? " (below-floor exception granted)" : ""}</td></tr>`,
     );
   }
   return `

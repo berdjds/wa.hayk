@@ -33,9 +33,11 @@ export function roundUpToIncrement(value: Decimal, increment: Decimal): Decimal 
  * The fee is a fraction of the SELLING price, so it is solved by division —
  * never by inflating the markup, which would compound the rounding error.
  *
- * The min-profit floor is PER PAYING PERSON (v0.14.0):
- * floor = cost + minProfit × payingPax. Pre-v0.14.0 snapshots were computed
- * with a flat per-package floor; their frozen numbers stand.
+ * The min-profit floor is PER TRAVELER EXCLUDING INFANTS (v0.15.1; the
+ * v0.14.0 per-paying-person multiplier is superseded):
+ * floor = cost + minProfit × floorTravelers, where the caller derives
+ * floorTravelers = max(0, adults + children − infants). Snapshots frozen
+ * before v0.15.1 keep their numbers (per-paying; pre-v0.14.0 flat).
  *
  * `sellOverride` exists so validators can manually check a hypothetical
  * selling price against the floor; the frozen EngineInput contract carries no
@@ -47,8 +49,8 @@ export function computePolicyStage(
   costQuote: Money,
   policy: PolicyInput,
   fx: FxInput,
-  /** Paying travelers — the min-profit floor multiplies by this count. */
-  payingPax: number,
+  /** Travelers excluding infants — the min-profit floor multiplies by this count. */
+  floorTravelers: number,
   scenarioRef?: string,
   sellOverride?: Money,
 ): PolicyStageResult {
@@ -127,11 +129,11 @@ export function computePolicyStage(
         push("INVALID_DENOMINATOR", "BLOCKER", `1 − feeFraction = ${money(oneMinusFee)} is not positive`, "feeFraction");
       } else {
         const minProfitQuote = minProfit.times(rCur.rate!).div(rQuote.rate!);
-        const pax = Number.isFinite(payingPax) && payingPax > 0 ? Math.floor(payingPax) : 0;
+        const pax = Number.isFinite(floorTravelers) && floorTravelers > 0 ? Math.floor(floorTravelers) : 0;
         const floorProfit = minProfitQuote.times(pax);
         floor = cost.plus(floorProfit).div(oneMinusFee);
         trace.push(
-          `policy floor: (${pax} × ${displayMoneyCeil(minProfitQuote)} ${fx.quoteCurrency}) + ${displayMoneyCeil(cost)}` +
+          `policy floor: (${pax} traveler${pax === 1 ? "" : "s"} × ${displayMoneyCeil(minProfitQuote)} ${fx.quoteCurrency}) + ${displayMoneyCeil(cost)}` +
             `${fee.gt(0) ? ` / (1 − fee ${money(fee)})` : ""} = ${displayMoneyCeil(floor)}`,
         );
       }

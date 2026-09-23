@@ -184,6 +184,12 @@ export function buildTraceRows(args: {
   // Service rows: amounts from res.lines, vehicle/capacity context from the input.
   const svcByRef = new Map((sc?.services ?? []).map((s) => [s.ref, s]));
   const defaultPax = sc?.travelers.paying ?? fallbackPayingPax;
+  // Min-profit floor multiplier (v0.15.1): travelers excluding infants
+  // (children includes the infant subset). A missing scenario input is a
+  // malformed snapshot — the paying count is the least-wrong stand-in.
+  const floorTravelers = sc
+    ? Math.max(0, sc.travelers.adults + sc.travelers.children - sc.travelers.infants)
+    : fallbackPayingPax;
   for (const line of res.lines) {
     const svc = svcByRef.get(line.ref);
     if (line.amountSource === "INCLUDED") {
@@ -298,8 +304,8 @@ export function buildTraceRows(args: {
       }
       rows.push({
         description: "Policy floor",
-        basis: `${displayMoneyCeil(minProfit)} ${minCur} per person`,
-        calculation: `(${defaultPax} × ${displayMoneyCeil(perPersonQuote)}) + ${displayMoneyCeil(res.totals.costQuote)}${feeSuffix}`,
+        basis: `${displayMoneyCeil(minProfit)} ${minCur} per traveler (excl. infants)`,
+        calculation: `(${floorTravelers} × ${displayMoneyCeil(perPersonQuote)}) + ${displayMoneyCeil(res.totals.costQuote)}${feeSuffix}`,
         amount: `${displayMoneyCeil(res.policyFloor)} ${q}`,
       });
     }

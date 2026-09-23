@@ -114,13 +114,14 @@ describe("buildTraceRows", () => {
     expect(included).toMatchObject({ basis: "included elsewhere", amount: "0 AMD" });
   });
 
-  it("emits a per-person policy floor row between markup and sell", () => {
+  it("emits a per-traveler (excl. infants) policy floor row between markup and sell", () => {
     const { input, res } = calculated();
     const rows = build(res, input);
     const floor = rows.find((r) => r.description === "Policy floor");
     expect(floor).toBeDefined();
-    expect(floor!.basis).toBe("20 USD per person");
-    // 20 USD → 7,300 AMD per person; floor = 2 × 7,300 + 101,250 net cost.
+    expect(floor!.basis).toBe("20 USD per traveler (excl. infants)");
+    // 20 USD → 7,300 AMD per traveler; floor = 2 × 7,300 + 101,250 net cost
+    // (fixture: 2 adults, no children/infants → multiplier 2).
     expect(floor!.calculation).toBe("(2 × 7,300) + 101,250");
     expect(floor!.amount).toBe(`${res.policyFloor} AMD`.replace(/\B(?=(\d{3})+(?!\d))/g, ","));
     expect(floor!.amount).toBe("115,850 AMD");

@@ -491,15 +491,16 @@ describe("scenario isolation and output shape", () => {
 });
 
 describe("pricing policy (engine level)", () => {
+  // adults 4 → floorTravelers (adults + children − infants, v0.15.1) = 4.
   const usdInput = (policy: PolicyInput, services = [makeService({ currency: "USD", basis: "GROUP", unitRate: "1000" })]) =>
-    makeInput([makeScenario({ travelers: T({ paying: 4 }), services })], {
+    makeInput([makeScenario({ travelers: T({ adults: 4, paying: 4 }), services })], {
       fx: FX({ quoteCurrency: "USD" }),
       policy,
     });
 
-  it("cost 1000 USD, MARKUP 0.14, minProfit 200/person, paying 1 → sell 1200, profit 200 (legacy flat-floor case)", () => {
+  it("cost 1000 USD, MARKUP 0.14, minProfit 200/traveler, 1 traveler → sell 1200, profit 200 (legacy flat-floor case)", () => {
     const res = calculate(
-      makeInput([makeScenario({ travelers: T({ paying: 1 }), services: [makeService({ currency: "USD", basis: "GROUP", unitRate: "1000" })] })], {
+      makeInput([makeScenario({ travelers: T({ adults: 1, paying: 1 }), services: [makeService({ currency: "USD", basis: "GROUP", unitRate: "1000" })] })], {
         fx: FX({ quoteCurrency: "USD" }),
         policy: POLICY({ minProfit: "200", minProfitCurrency: "USD" }),
       }),
@@ -515,7 +516,7 @@ describe("pricing policy (engine level)", () => {
     expect(res.perPayingPerson).toBe("1200");
   });
 
-  it("cost 1000 USD, minProfit 200/person × 4 paying → floor 1800 beats target, profit 800 (v0.14.0)", () => {
+  it("cost 1000 USD, minProfit 200/traveler × 4 travelers → floor 1800 beats target, profit 800 (v0.14.0)", () => {
     const res = calculate(
       usdInput(POLICY({ minProfit: "200", minProfitCurrency: "USD" })),
     ).scenarios[0];
@@ -530,6 +531,48 @@ describe("pricing policy (engine level)", () => {
     expect(res.perPayingPerson).toBe("450");
   });
 
+  it("v0.15.1: floor multiplier is travelers excl. infants — 2 adults + 2 children − 1 infant → × 3", () => {
+    const res = calculate(
+      makeInput(
+        [
+          makeScenario({
+            // infants is the childAges ≤ infantMaxAge subset of children.
+            travelers: T({ adults: 2, children: 2, infants: 1, paying: 3 }),
+            services: [makeService({ currency: "USD", basis: "GROUP", unitRate: "1000" })],
+          }),
+        ],
+        {
+          fx: FX({ quoteCurrency: "USD" }),
+          policy: POLICY({ minProfit: "200", minProfitCurrency: "USD" }),
+        },
+      ),
+    ).scenarios[0];
+    expect(res.valid).toBe(true);
+    expect(res.policyFloor).toBe("1600"); // 1000 + 3 × 200
+    expect(res.sell).toBe("1600");
+    expect(res.trace.some((t) => t.includes("(3 travelers × 200 USD) + 1,000"))).toBe(true);
+  });
+
+  it("v0.15.1: infants > children (manual override) clamps the multiplier to 0 → floor = bare cost", () => {
+    const res = calculate(
+      makeInput(
+        [
+          makeScenario({
+            travelers: T({ adults: 0, children: 1, infants: 2, paying: 0 }),
+            services: [makeService({ currency: "USD", basis: "GROUP", unitRate: "1000" })],
+          }),
+        ],
+        {
+          fx: FX({ quoteCurrency: "USD" }),
+          policy: POLICY({ type: "MARKUP_ON_COST", rate: undefined, minProfit: "200", minProfitCurrency: "USD" }),
+        },
+      ),
+    ).scenarios[0];
+    expect(res.policyFloor).toBe("1000");
+    expect(res.sell).toBe("1000");
+    expect(res.trace.some((t) => t.includes("(0 travelers × 200 USD) + 1,000"))).toBe(true);
+  });
+
   it("cost 1000 USD, GROSS_MARGIN_ON_SALES 0.14, no floor → sell 1163, profit 163", () => {
     const res = calculate(usdInput(POLICY({ type: "GROSS_MARGIN_ON_SALES" }))).scenarios[0];
     expect(res.valid).toBe(true);
@@ -538,7 +581,7 @@ describe("pricing policy (engine level)", () => {
     expect(res.profit).toBe("163");
   });
 
-  it("feeFraction 0.05 with floor 200/person × 4 paying → unrounded 1894.736…, sell 1895 still ≥ floor, profit nets the fee", () => {
+  it("feeFraction 0.05 with floor 200/traveler × 4 travelers → unrounded 1894.736…, sell 1895 still ≥ floor, profit nets the fee", () => {
     const res = calculate(
       usdInput({ type: "MARKUP_ON_COST", minProfit: "200", minProfitCurrency: "USD", feeFraction: "0.05", roundingIncrement: "1" }),
     ).scenarios[0];

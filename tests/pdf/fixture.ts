@@ -62,7 +62,7 @@ export const FIXTURE_SELL_A = "1679000.00";
 export const FIXTURE_SELL_B = "1743402.00";
 export const FIXTURE_SOURCEREF = "RateVersion clx-autumn-2026";
 export const FIXTURE_NIGHTLY_RATE = "28500.75";
-/** Per-paying-person min profit (v0.14.0): 22 × 7,000 = 154,000 AMD. */
+/** Per-traveler min profit (v0.15.1): 18 adults + 4 children − 1 infant = 21 × 7,000 = 147,000 AMD. */
 export const FIXTURE_MIN_PROFIT = "7000";
 
 function buildInputs(): EngineInput {
@@ -174,7 +174,7 @@ function scenarioResultA(): ScenarioResult {
       { date: "2026-10-02", stayRef: "ST-YER", roomType: "STANDARD", rooms: 8, rate: FIXTURE_NIGHTLY_RATE, currency: "AMD", extraBeds: 0, extraBedCharge: "0", sourceRef: FIXTURE_SOURCEREF },
     ],
     policyTarget: "1678938.00",
-    policyFloor: "1625700.00", // 1,471,700 + 22 × 7,000 (per-paying-person floor, v0.14.0)
+    policyFloor: "1618700.00", // 1,471,700 + 21 × 7,000 (per-traveler excl. infants floor, v0.15.1)
     unroundedSell: "1678938.00",
     roundingAdjustment: "62.00",
     sell: FIXTURE_SELL_A,
@@ -197,7 +197,7 @@ function scenarioResultA(): ScenarioResult {
       "fx: 1,425,500 AMD → 1,425,500 AMD (rate 1 AMD/AMD, quote rate 1)",
       "fx: 120 USD → 46,200 AMD (rate 385 AMD/USD, quote rate 1)",
       "policy MARKUP_ON_COST 0.14: target = 1,471,700 × 1.14 = 1,678,938",
-      "policy floor: (22 × 7,000 AMD) + 1,471,700 = 1,625,700",
+      "policy floor: (21 travelers × 7,000 AMD) + 1,471,700 = 1,618,700",
       "sell: unrounded 1,678,938 → sell 1,679,000 (rounding adjustment 62); profit 207,300",
     ],
   };
@@ -225,7 +225,7 @@ function scenarioResultB(): ScenarioResult {
       { date: "2026-10-03", stayRef: "ST-DIL", roomType: "STANDARD", rooms: 10, rate: "31000.00", currency: "AMD", extraBeds: 0, extraBedCharge: "0", sourceRef: FIXTURE_SOURCEREF },
     ],
     policyTarget: "1743402.00",
-    policyFloor: "1683300.00", // 1,529,300 + 22 × 7,000
+    policyFloor: "1676300.00", // 1,529,300 + 21 × 7,000
     unroundedSell: "1743402.00",
     roundingAdjustment: "0.00",
     sell: FIXTURE_SELL_B,
@@ -243,7 +243,7 @@ function scenarioResultB(): ScenarioResult {
       "fx: 1,460,000 AMD → 1,460,000 AMD (rate 1 AMD/AMD, quote rate 1)",
       "fx: 180 USD → 69,300 AMD (rate 385 AMD/USD, quote rate 1)",
       "policy MARKUP_ON_COST 0.14: target = 1,529,300 × 1.14 = 1,743,402",
-      "policy floor: (22 × 7,000 AMD) + 1,529,300 = 1,683,300",
+      "policy floor: (21 travelers × 7,000 AMD) + 1,529,300 = 1,676,300",
       "sell: unrounded 1,743,402 → sell 1,743,402 (rounding adjustment 0); profit 214,102",
     ],
   };

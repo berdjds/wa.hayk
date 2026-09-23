@@ -42,10 +42,15 @@ export default function QuoteSummaryBar({ ctx }: { ctx: DetailContext }) {
                 {r ? (
                   <>
                     <StateBadge value={r.valid ? "READY" : "FAILED"} />
+                    {/* An invalid result's sell is the engine's bare-cost
+                        fallback — meaningless next to FAILED, so hide it. */}
                     <span>
-                      Sell: <strong className="[font-variant-numeric:tabular-nums]">{money(r.sell, currency)}</strong>
+                      Sell:{" "}
+                      <strong className="[font-variant-numeric:tabular-nums]">
+                        {r.valid ? money(r.sell, currency) : "—"}
+                      </strong>
                     </span>
-                    {r.perPayingPerson && (
+                    {r.valid && r.perPayingPerson && (
                       <span className="text-muted-foreground">
                         per paying person: {money(r.perPayingPerson, currency)}
                       </span>

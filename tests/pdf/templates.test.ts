@@ -375,7 +375,7 @@ describe("internal costing HTML", () => {
     expect(html).toContain("MARKUP_ON_COST");
     expect(html).toContain("1,678,938 AMD"); // policyTarget, ceiled
     expect(html).toContain("62 AMD"); // roundingAdjustment, ceiled
-    expect(html).toContain("Min profit per paying person");
+    expect(html).toContain("Min profit per traveler (excl. infants)");
   });
 
   it("contains the FX table and quote currency marker", () => {
@@ -414,9 +414,9 @@ describe("internal costing HTML", () => {
     expect(html).toContain("MARKUP_ON_COST 14%");
     expect(html).toContain("1,529,300 × 1.14");
     expect(html).toContain("Policy floor");
-    expect(html).toContain("7,000 AMD per person");
-    expect(html).toContain("(22 × 7,000) + 1,529,300");
-    expect(html).toContain("1,743,402 &gt; 1,683,300");
+    expect(html).toContain("7,000 AMD per traveler (excl. infants)");
+    expect(html).toContain("(21 × 7,000) + 1,529,300");
+    expect(html).toContain("1,743,402 &gt; 1,676,300");
     expect(html).toContain("<strong>1,743,402 AMD</strong>");
     expect(html).toContain("<strong>214,102 AMD</strong>");
     // The free-text trace strings are no longer rendered (API/debug only).

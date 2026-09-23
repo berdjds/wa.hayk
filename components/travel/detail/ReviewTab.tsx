@@ -197,18 +197,24 @@ export default function ReviewTab({ ctx }: { ctx: DetailContext }) {
                         <TableRow>
                           <TableCell className="pl-3 font-medium">{r.label}</TableCell>
                           <TableCell>{r.valid ? "yes" : "no"}</TableCell>
-                          {/* Costing columns: absent from advisor-redacted results. */}
+                          {/* Costing columns: absent from advisor-redacted results.
+                              Sell-side figures are the engine's bare-cost fallback
+                              when invalid — meaningless, so show "—" (v0.15.1). */}
                           <TableCell className="text-right">
                             {r.totals ? money(r.totals.costQuote, ctx.resultCurrency) : "—"}
                           </TableCell>
-                          <TableCell className="text-right font-medium">{money(r.sell, ctx.resultCurrency)}</TableCell>
-                          <TableCell className="text-right">
-                            {r.profit != null ? money(r.profit, ctx.resultCurrency) : "—"}
+                          <TableCell className="text-right font-medium">
+                            {r.valid ? money(r.sell, ctx.resultCurrency) : "—"}
                           </TableCell>
                           <TableCell className="text-right">
-                            {r.margin != null ? `${(Number(r.margin) * 100).toFixed(1)}%` : "—"}
+                            {r.valid && r.profit != null ? money(r.profit, ctx.resultCurrency) : "—"}
                           </TableCell>
-                          <TableCell className="text-right">{money(r.perPayingPerson, ctx.resultCurrency)}</TableCell>
+                          <TableCell className="text-right">
+                            {r.valid && r.margin != null ? `${(Number(r.margin) * 100).toFixed(1)}%` : "—"}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            {r.valid ? money(r.perPayingPerson, ctx.resultCurrency) : "—"}
+                          </TableCell>
                           <TableCell className="pr-3 text-right">{r.issues.length}</TableCell>
                         </TableRow>
                         {trace && trace.length > 0 && (
@@ -370,9 +376,9 @@ export default function ReviewTab({ ctx }: { ctx: DetailContext }) {
                       <>
                         <StateBadge value={r.valid ? "READY" : "FAILED"} />
                         <span>
-                          Sell: <strong>{money(r.sell, ctx.resultCurrency)}</strong>
+                          Sell: <strong>{r.valid ? money(r.sell, ctx.resultCurrency) : "—"}</strong>
                         </span>
-                        {r.perPayingPerson && (
+                        {r.valid && r.perPayingPerson && (
                           <span className="text-muted-foreground">
                             per paying person: {money(r.perPayingPerson, ctx.resultCurrency)}
                           </span>

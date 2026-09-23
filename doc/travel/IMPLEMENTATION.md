@@ -344,7 +344,9 @@ A versioned B2B travel package costing and quotation module inside WAControl:
     down to the evidence parenthetical. Display-only — engine math keeps full Decimal
     precision, and issue messages are untouched.
 36. **Per-person profit floor, trace table and service details (v0.14.0).** Three changes:
-    (a) The policy min-profit floor is now **per paying person**:
+    (a) The policy min-profit floor is now **per paying person**
+    (**superseded by v0.15.1, decision 38 — the multiplier is travelers excluding
+    infants**):
     `floor = cost + minProfit × travelers.paying` (`computePolicyStage` takes the paying
     count); pre-v0.14.0 snapshots were computed with the flat per-package floor and keep
     their frozen numbers. The Catalog → FX & Policy UI labels the field "Min profit per
@@ -379,6 +381,21 @@ A versioned B2B travel package costing and quotation module inside WAControl:
     same breakdown above the Sell line. `useQuotePreview` carries a `traces` map keyed by
     scenario ref alongside `results`, wired through `DetailContext.quoteTraces` (live
     preview for editable versions, frozen snapshot rows otherwise).
+38. **Min-profit floor per traveler excluding infants (v0.15.1).** Supersedes the v0.14.0
+    per-paying-person multiplier: `floor = cost + minProfit × max(0, adults + children −
+    infants)` — `children` is the 0–12 count and already includes infants (the childAges ≤
+    `TravelSettings.infantMaxAge` subset derived in `workflow.ts`), so subtract; the clamp
+    guards manual overrides that leave infants > children. `computePolicyStage`'s parameter
+    is renamed `payingPax` → `floorTravelers` (the count is derived at the `engine.ts` call
+    site); the engine trace reads `(3 travelers × 50 USD) + 651 = 801`, and the trace-table
+    Policy floor row uses the same derivation with basis text "per traveler (excl. infants)".
+    Labels updated in Catalog → FX & Policy ("Min profit per traveler (excl. infants)" /
+    "Min profit / traveler") and the internal PDF policy table. Snapshots frozen before
+    v0.15.1 keep their per-paying floor numbers (historical record); `paying` remains the
+    denominator for per-paying-person price displays and PER_PERSON service pricing.
+    Adjacent fix: QuoteSummaryBar and the ReviewTab summary/submit dialog no longer show
+    Sell / per-paying figures for an INVALID scenario result — the engine's bare-cost
+    fallback sell was misleading next to FAILED, so they render "—".
 
 ## Known limitations
 

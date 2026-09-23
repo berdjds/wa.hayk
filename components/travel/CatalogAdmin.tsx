@@ -1686,7 +1686,7 @@ function FxPolicyTab() {
               onChange={(e) => setPolicyForm({ ...policyForm, rate: e.target.value })}
             />
             <Input
-              placeholder="Min profit per paying person (optional)"
+              placeholder="Min profit per traveler (excl. infants)"
               value={policyForm.minProfit}
               onChange={(e) => setPolicyForm({ ...policyForm, minProfit: e.target.value })}
             />
@@ -1723,7 +1723,7 @@ function FxPolicyTab() {
                   <TableHead>Name</TableHead>
                   <TableHead>Type</TableHead>
                   <TableHead>Rate</TableHead>
-                  <TableHead>Min profit / paying person</TableHead>
+                  <TableHead>Min profit / traveler</TableHead>
                   <TableHead>Fee</TableHead>
                   <TableHead>Quote ccy</TableHead>
                   <TableHead>Active</TableHead>
