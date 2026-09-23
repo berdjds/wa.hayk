@@ -39,7 +39,7 @@ export const FIXTURE_ITINERARY_DAYS: QuotationPdfItineraryDay[] = [
     overnightCity: "Yerevan / Երևան",
     services: [
       { serviceProductId: null, label: "Airport transfer" },
-      { serviceProductId: "svc-welcome-dinner", label: "Welcome dinner" },
+      { serviceProductId: "svc-welcome-dinner", label: "Welcome dinner", details: "Traditional Armenian restaurant with folk music" },
     ],
   },
   {
@@ -59,9 +59,11 @@ export const FIXTURE_ITINERARY_DAYS: QuotationPdfItineraryDay[] = [
 ];
 
 export const FIXTURE_SELL_A = "1679000.00";
-export const FIXTURE_SELL_B = "1842500.00";
+export const FIXTURE_SELL_B = "1743402.00";
 export const FIXTURE_SOURCEREF = "RateVersion clx-autumn-2026";
 export const FIXTURE_NIGHTLY_RATE = "28500.75";
+/** Per-paying-person min profit (v0.14.0): 22 × 7,000 = 154,000 AMD. */
+export const FIXTURE_MIN_PROFIT = "7000";
 
 function buildInputs(): EngineInput {
   const travelers = T({ adults: 18, children: 4, infants: 1, paying: 22, leaders: 1, staff: 1 });
@@ -141,7 +143,7 @@ function buildInputs(): EngineInput {
 
   return makeInput([scA, scB], {
     fx: FX({ rates: { USD: "385" }, quoteCurrency: "AMD" }),
-    policy: POLICY({ type: "MARKUP_ON_COST", rate: "0.14", roundingIncrement: "1", minProfit: "150000", minProfitCurrency: "AMD" }),
+    policy: POLICY({ type: "MARKUP_ON_COST", rate: "0.14", roundingIncrement: "1", minProfit: FIXTURE_MIN_PROFIT, minProfitCurrency: "AMD" }),
   });
 }
 
@@ -163,7 +165,8 @@ function scenarioResultA(): ScenarioResult {
         TICKETS: { AMD: "55000.00" },
         GUEST_MEALS: { AMD: "33000.00" },
       },
-      costByCurrency: { AMD: "1425500.00", USD: "120.00" },
+      costByCurrency: { AMD: "1425500.00", USD: "46200.00" },
+      bySourceCurrency: { AMD: "1425500.00", USD: "120.00" },
       costQuote: "1471700.00",
     },
     nightly: [
@@ -171,14 +174,19 @@ function scenarioResultA(): ScenarioResult {
       { date: "2026-10-02", stayRef: "ST-YER", roomType: "STANDARD", rooms: 8, rate: FIXTURE_NIGHTLY_RATE, currency: "AMD", extraBeds: 0, extraBedCharge: "0", sourceRef: FIXTURE_SOURCEREF },
     ],
     policyTarget: "1678938.00",
-    policyFloor: "1621700.00",
-    unroundedSell: "1678874.00",
-    roundingAdjustment: "126.00",
+    policyFloor: "1625700.00", // 1,471,700 + 22 × 7,000 (per-paying-person floor, v0.14.0)
+    unroundedSell: "1678938.00",
+    roundingAdjustment: "62.00",
     sell: FIXTURE_SELL_A,
     profit: "207300.00",
     margin: "0.1235",
     perPayingPerson: "76318.18",
-    lines: [],
+    lines: [
+      { ref: "L-TRF", label: "Airport transfers (round trip)", category: "TRANSPORTATION", basis: "VEHICLE_TRIP", currency: "USD", unitRate: "60.00", quantity: "2", participants: null, amountSource: "MANUAL", amount: "120.00", amountAmd: "46200.00", amountQuote: "46200.00" },
+      { ref: "L-GUIDE", label: "Yerevan city tour with guide", category: "GUIDES", basis: "GUIDE_DAY", currency: "AMD", unitRate: "30000.00", quantity: "5", participants: null, amountSource: "MANUAL", amount: "150000.00", amountAmd: "150000.00", amountQuote: "150000.00" },
+      { ref: "L-DINNER", label: "Welcome dinner", category: "GUEST_MEALS", basis: "PERSON_MEAL", currency: "AMD", unitRate: "4000.00", quantity: "1", participants: 22, amountSource: "INCLUDED", amount: "0", amountAmd: "0", amountQuote: "0" },
+      { ref: "L-MUSEUM", label: "Museum entrance fees", category: "TICKETS", basis: "PER_PERSON", currency: "AMD", unitRate: "2500.00", quantity: "1", participants: 22, amountSource: "OVERRIDE", amount: "55000.00", amountAmd: "55000.00", amountQuote: "55000.00" },
+    ],
     trace: [
       "Grand Hotel Yerevan / Գրանդ Հյուրանոց — STANDARD, 2026-10-01 → 2026-10-05 (5 nights): 8 rooms × 28,501 AMD/night = 1,140,030 AMD (RateVersion clx-autumn-2026)",
       "Grand Hotel Yerevan / Գրանդ Հյուրանոց — TRIPLE, 2026-10-01 → 2026-10-05 (5 nights): 2 rooms × 36,500 AMD/night = 365,000 AMD (RateVersion clx-autumn-2026)",
@@ -189,8 +197,8 @@ function scenarioResultA(): ScenarioResult {
       "fx: 1,425,500 AMD → 1,425,500 AMD (rate 1 AMD/AMD, quote rate 1)",
       "fx: 120 USD → 46,200 AMD (rate 385 AMD/USD, quote rate 1)",
       "policy MARKUP_ON_COST 0.14: target = 1,471,700 × 1.14 = 1,678,938",
-      "policy floor: (1,471,700 + minProfit 150,000 AMD) = 1,621,700",
-      "sell: unrounded 1,678,874 → sell 1,679,000 (rounding adjustment 126); profit 207,300",
+      "policy floor: (22 × 7,000 AMD) + 1,471,700 = 1,625,700",
+      "sell: unrounded 1,678,938 → sell 1,679,000 (rounding adjustment 62); profit 207,300",
     ],
   };
 }
@@ -209,21 +217,25 @@ function scenarioResultB(): ScenarioResult {
         TRANSPORTATION: { USD: "180.00" },
         GUIDES: { AMD: "150000.00" },
       },
-      costByCurrency: { AMD: "1460000.00", USD: "180.00" },
+      costByCurrency: { AMD: "1460000.00", USD: "69300.00" },
+      bySourceCurrency: { AMD: "1460000.00", USD: "180.00" },
       costQuote: "1529300.00",
     },
     nightly: [
       { date: "2026-10-03", stayRef: "ST-DIL", roomType: "STANDARD", rooms: 10, rate: "31000.00", currency: "AMD", extraBeds: 0, extraBedCharge: "0", sourceRef: FIXTURE_SOURCEREF },
     ],
     policyTarget: "1743402.00",
-    policyFloor: "1679300.00",
-    unroundedSell: "1742488.00",
-    roundingAdjustment: "12.00",
+    policyFloor: "1683300.00", // 1,529,300 + 22 × 7,000
+    unroundedSell: "1743402.00",
+    roundingAdjustment: "0.00",
     sell: FIXTURE_SELL_B,
-    profit: "313200.00",
-    margin: "0.1700",
-    perPayingPerson: "83750.00",
-    lines: [],
+    profit: "214102.00",
+    margin: "0.1228",
+    perPayingPerson: "79245.55",
+    lines: [
+      { ref: "L-TRF", label: "Airport transfers (round trip)", category: "TRANSPORTATION", basis: "VEHICLE_TRIP", currency: "USD", unitRate: "60.00", quantity: "3", participants: null, amountSource: "MANUAL", amount: "180.00", amountAmd: "69300.00", amountQuote: "69300.00" },
+      { ref: "L-GUIDE", label: "Yerevan city tour with guide", category: "GUIDES", basis: "GUIDE_DAY", currency: "AMD", unitRate: "30000.00", quantity: "5", participants: null, amountSource: "MANUAL", amount: "150000.00", amountAmd: "150000.00", amountQuote: "150000.00" },
+    ],
     trace: [
       "Grand Hotel Yerevan / Գրանդ Հյուրանոց — STANDARD, 2026-10-01 → 2026-10-02 (2 nights): 8 rooms × 28,501 AMD/night = 456,012 AMD (RateVersion clx-autumn-2026)",
       "Dilijan Forest Resort — STANDARD, 2026-10-03 → 2026-10-04 (2 nights): 10 rooms × 31,000 AMD/night = 620,000 AMD (RateVersion clx-autumn-2026)",
@@ -231,8 +243,8 @@ function scenarioResultB(): ScenarioResult {
       "fx: 1,460,000 AMD → 1,460,000 AMD (rate 1 AMD/AMD, quote rate 1)",
       "fx: 180 USD → 69,300 AMD (rate 385 AMD/USD, quote rate 1)",
       "policy MARKUP_ON_COST 0.14: target = 1,529,300 × 1.14 = 1,743,402",
-      "policy floor: (1,529,300 + minProfit 150,000 AMD) = 1,679,300",
-      "sell: unrounded 1,742,488 → sell 1,842,500 (rounding adjustment 12); profit 313,200",
+      "policy floor: (22 × 7,000 AMD) + 1,529,300 = 1,683,300",
+      "sell: unrounded 1,743,402 → sell 1,743,402 (rounding adjustment 0); profit 214,102",
     ],
   };
 }

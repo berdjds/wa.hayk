@@ -102,12 +102,12 @@ Implement explicit policy types:
 
 - `MARKUP_ON_COST`: `target = cost × (1 + rate)`.
 - `GROSS_MARGIN_ON_SALES`: `target = cost / (1 - rate)` with a valid rate below 1.
-- Absolute minimum package profit in a specified currency: `floor = cost + minProfit` after consistent conversion.
+- Absolute minimum package profit in a specified currency: `floor = cost + minProfit` after consistent conversion. **(v0.14.0: per paying person — `floor = cost + minProfit × payingPax`.)**
 - Before sales taxes and revenue-based charges, `sell = roundUpToIncrement(max(target,floor))`.
 
 The admin configures the default policy, percentage, minimum profit, quote currency/FX, rounding and exception rights. Import the workbook's “Margin %” as legacy **markup**, because its formulas multiply cost by the percentage. Do not silently turn its 14% markup into 14% gross margin. Require missing production policy settings rather than guessing them.
 
-Round the final selling amount at the configured stage and recompute actual profit and actual margin. Preserve unrounded intermediates and any legacy rounding fixtures. Apply the minimum once per scenario/package, not per hotel segment. If supporting a per-paying-PAX floor, expose it as a separate explicit policy.
+Round the final selling amount at the configured stage and recompute actual profit and actual margin. Preserve unrounded intermediates and any legacy rounding fixtures. Apply the minimum once per scenario/package, not per hotel segment. If supporting a per-paying-PAX floor, expose it as a separate explicit policy. **(v0.14.0: the floor IS per paying PAX — the single minProfit field is labelled per paying person.)**
 
 Fixed bank fees belong in costs. For a fee fraction `f` of selling revenue, use a solved formula: markup/floor targets divide by `(1-f)`; a gross margin `m` after those fees needs `cost/(1-f-m)`, and the absolute profit floor needs `(cost+minProfit)/(1-f)`. Validate denominators. Do not copy the legacy commission formula. Treat supplier commission-inclusive terms and taxes as explicit configured rules using existing application tax logic where available.
 

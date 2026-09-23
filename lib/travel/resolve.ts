@@ -373,6 +373,7 @@ function resolveServiceLine(
   serviceRateRows: RateVersion[],
   referenceDate: string,
   issues: ResolutionIssue[],
+  vehicleTypeName?: string,
 ): ServiceLineInput {
   let unitRate = line.unitRate;
   let currency = line.currency;
@@ -421,6 +422,7 @@ function resolveServiceLine(
     override,
     sourceRef,
     vehicleTypeId: line.vehicleTypeId ?? undefined,
+    vehicleTypeName: vehicleTypeName ?? undefined,
     serviceProductId: line.serviceProductId ?? undefined,
     date: line.date ?? undefined,
   };
@@ -533,6 +535,16 @@ export async function buildEngineInputForVersion(
 
   const sharedLines = version.serviceLines.filter((l) => l.scenarioId === null);
 
+  // Vehicle display names are frozen into the engine input so the internal
+  // costing sheet can print "35,000 per Sedan" without a live catalog lookup.
+  const lineVehicleIds = Array.from(
+    new Set(version.serviceLines.map((l) => l.vehicleTypeId).filter((id): id is string => !!id)),
+  );
+  const vehicleRows = lineVehicleIds.length
+    ? await prisma.vehicleType.findMany({ where: { id: { in: lineVehicleIds } } })
+    : [];
+  const vehicleNameById = new Map(vehicleRows.map((v) => [v.id, v.name]));
+
   const scenarios = version.scenarios.map((sc) => {
     const stays: StaySegmentInput[] = sc.stays.map((stay) => ({
       ref: stay.id,
@@ -565,6 +577,7 @@ export async function buildEngineInputForVersion(
           // to the tour start, the same snapshot date that fixes the FX map.
           l.date ?? version.request.startDate,
           issues,
+          l.vehicleTypeId ? vehicleNameById.get(l.vehicleTypeId) : undefined,
         ),
       ),
       // vehicleChecks: intentionally omitted — no version-level vehicle

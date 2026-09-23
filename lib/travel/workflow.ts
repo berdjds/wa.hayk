@@ -264,12 +264,13 @@ export const serviceLineContentSchema = z
     }
   });
 
-/** A day service is normally a structured item; legacy string items (pre-Phase-3 payloads and template JSON) are accepted and normalized. `quantity` (v0.11.0) is written onto the linked ServiceLine by the day-linked sync below (keyed on product+date+vehicle, default "1"). */
+/** A day service is normally a structured item; legacy string items (pre-Phase-3 payloads and template JSON) are accepted and normalized. `quantity` (v0.11.0) is written onto the linked ServiceLine by the day-linked sync below (keyed on product+date+vehicle, default "1"). `details` (v0.14.0) is the client-facing long description — display data, never a pricing input. */
 const dayServiceItemSchema = z.preprocess(
   (value) => (typeof value === "string" ? { label: value } : value),
   z.object({
     serviceProductId: z.string().nullish(),
     label: shortString,
+    details: longString.nullish(),
     vehicleTypeId: z.string().nullish(),
     quantity: z.number().int().min(1).nullish(),
   }),

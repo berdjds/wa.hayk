@@ -497,9 +497,12 @@ describe("pricing policy (engine level)", () => {
       policy,
     });
 
-  it("cost 1000 USD, MARKUP 0.14, minProfit 200, rounding 1 → sell 1200, profit 200", () => {
+  it("cost 1000 USD, MARKUP 0.14, minProfit 200/person, paying 1 → sell 1200, profit 200 (legacy flat-floor case)", () => {
     const res = calculate(
-      usdInput(POLICY({ minProfit: "200", minProfitCurrency: "USD" })),
+      makeInput([makeScenario({ travelers: T({ paying: 1 }), services: [makeService({ currency: "USD", basis: "GROUP", unitRate: "1000" })] })], {
+        fx: FX({ quoteCurrency: "USD" }),
+        policy: POLICY({ minProfit: "200", minProfitCurrency: "USD" }),
+      }),
     ).scenarios[0];
     expect(res.valid).toBe(true);
     expect(res.policyTarget).toBe("1140");
@@ -509,7 +512,22 @@ describe("pricing policy (engine level)", () => {
     expect(res.roundingAdjustment).toBe("0");
     expect(res.profit).toBe("200");
     expect(Number(res.margin)).toBeCloseTo(0.16667, 4);
-    expect(res.perPayingPerson).toBe("300");
+    expect(res.perPayingPerson).toBe("1200");
+  });
+
+  it("cost 1000 USD, minProfit 200/person × 4 paying → floor 1800 beats target, profit 800 (v0.14.0)", () => {
+    const res = calculate(
+      usdInput(POLICY({ minProfit: "200", minProfitCurrency: "USD" })),
+    ).scenarios[0];
+    expect(res.valid).toBe(true);
+    expect(res.policyTarget).toBe("1140");
+    expect(res.policyFloor).toBe("1800"); // 1000 + 4 × 200
+    expect(res.unroundedSell).toBe("1800");
+    expect(res.sell).toBe("1800");
+    expect(res.roundingAdjustment).toBe("0");
+    expect(res.profit).toBe("800");
+    expect(Number(res.margin)).toBeCloseTo(0.44444, 4);
+    expect(res.perPayingPerson).toBe("450");
   });
 
   it("cost 1000 USD, GROSS_MARGIN_ON_SALES 0.14, no floor → sell 1163, profit 163", () => {
@@ -520,23 +538,24 @@ describe("pricing policy (engine level)", () => {
     expect(res.profit).toBe("163");
   });
 
-  it("feeFraction 0.05 with floor 200 → unrounded 1263.157…, sell 1264 still ≥ floor, profit nets the fee", () => {
+  it("feeFraction 0.05 with floor 200/person × 4 paying → unrounded 1894.736…, sell 1895 still ≥ floor, profit nets the fee", () => {
     const res = calculate(
       usdInput({ type: "MARKUP_ON_COST", minProfit: "200", minProfitCurrency: "USD", feeFraction: "0.05", roundingIncrement: "1" }),
     ).scenarios[0];
     expect(res.valid).toBe(true);
-    expect(Number(res.policyFloor)).toBeCloseTo(1263.1578947368, 8);
+    // (1000 + 4 × 200) / 0.95 = 1894.7368…
+    expect(Number(res.policyFloor)).toBeCloseTo(1894.7368421053, 8);
     expect(res.unroundedSell).toBe(res.policyFloor);
-    expect(res.sell).toBe("1264");
+    expect(res.sell).toBe("1895");
     expect(Number(res.sell)).toBeGreaterThanOrEqual(Number(res.policyFloor));
-    expect(res.profit).toBe("200.8"); // 1264 − 1000 − 1264×0.05
+    expect(res.profit).toBe("800.25"); // 1895 − 1000 − 1895×0.05
   });
 
   it("rounding increment \"0.5\" rounds up to the nearest half unit", () => {
     const res = calculate(
       usdInput({ type: "MARKUP_ON_COST", minProfit: "200", minProfitCurrency: "USD", feeFraction: "0.05", roundingIncrement: "0.5" }),
     ).scenarios[0];
-    expect(res.sell).toBe("1263.5");
+    expect(res.sell).toBe("1895");
     expect(Number(res.sell)).toBeGreaterThanOrEqual(Number(res.policyFloor));
   });
 

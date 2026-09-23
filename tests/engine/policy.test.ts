@@ -12,6 +12,9 @@ const usdFx = FX({ quoteCurrency: "USD" });
  * BELOW_FLOOR guard is therefore exercised through the exported policy-stage
  * helper's `sellOverride` — the same check a validator UI performs when a
  * manager types a manual selling price.
+ *
+ * Since v0.14.0 the min-profit floor is PER PAYING PERSON; payingPax = 1
+ * reproduces the legacy flat-floor numbers exactly.
  */
 describe("computePolicyStage floor guard", () => {
   const floorPolicy: PolicyInput = {
@@ -22,7 +25,7 @@ describe("computePolicyStage floor guard", () => {
   };
 
   it("a manual sell below the floor → BELOW_FLOOR blocker", () => {
-    const res = computePolicyStage("1000", floorPolicy, usdFx, "SC1", "1100");
+    const res = computePolicyStage("1000", floorPolicy, usdFx, 1, "SC1", "1100");
     expect(res.policyFloor).toBe("1200");
     expect(res.issues.some((i) => i.code === "BELOW_FLOOR" && i.severity === "BLOCKER")).toBe(true);
   });
@@ -32,6 +35,7 @@ describe("computePolicyStage floor guard", () => {
       "1000",
       { ...floorPolicy, belowFloorExceptionGranted: true },
       usdFx,
+      1,
       "SC1",
       "1100",
     );
@@ -40,9 +44,64 @@ describe("computePolicyStage floor guard", () => {
   });
 
   it("normally rounded sell is never below the floor", () => {
-    const res = computePolicyStage("1000", floorPolicy, usdFx, "SC1");
+    const res = computePolicyStage("1000", floorPolicy, usdFx, 1, "SC1");
     expect(res.sell).toBe("1200");
     expect(res.issues).toEqual([]);
+  });
+});
+
+describe("per-paying-person floor (v0.14.0)", () => {
+  it("floor = cost + minProfit × payingPax (paying = 1 keeps the legacy flat floor)", () => {
+    const res = computePolicyStage(
+      "651",
+      { type: "MARKUP_ON_COST", minProfit: "50", minProfitCurrency: "USD", roundingIncrement: "1" },
+      usdFx,
+      2,
+      "SC1",
+    );
+    expect(res.policyFloor).toBe("751"); // 651 + 2 × 50
+    expect(res.sell).toBe("751");
+    expect(res.profit).toBe("100");
+    expect(res.trace.some((t) => t.includes("policy floor: (2 × 50 USD) + 651 = 751"))).toBe(true);
+  });
+
+  it("sell = max(markup target, per-person floor) — the floor wins when higher", () => {
+    const res = computePolicyStage(
+      "651",
+      { type: "MARKUP_ON_COST", rate: "0.14", minProfit: "50", minProfitCurrency: "USD", roundingIncrement: "1" },
+      usdFx,
+      2,
+      "SC1",
+    );
+    expect(Number(res.policyTarget)).toBeCloseTo(742.14, 2); // 651 × 1.14
+    expect(res.policyFloor).toBe("751");
+    expect(res.sell).toBe("751");
+    expect(res.profit).toBe("100");
+  });
+
+  it("the markup target wins when it exceeds the per-person floor", () => {
+    const res = computePolicyStage(
+      "1000",
+      { type: "MARKUP_ON_COST", rate: "0.14", minProfit: "50", minProfitCurrency: "USD", roundingIncrement: "1" },
+      usdFx,
+      2,
+      "SC1",
+    );
+    expect(res.policyFloor).toBe("1100"); // 1000 + 2 × 50
+    expect(res.policyTarget).toBe("1140");
+    expect(res.sell).toBe("1140");
+  });
+
+  it("minProfit in a foreign currency converts per person before multiplying", () => {
+    const res = computePolicyStage(
+      "1425500", // AMD cost, quote AMD
+      { type: "MARKUP_ON_COST", minProfit: "50", minProfitCurrency: "USD", roundingIncrement: "1" },
+      FX({ rates: { USD: "365" }, quoteCurrency: "AMD" }),
+      22,
+      "SC1",
+    );
+    // 50 USD × 365 = 18,250 AMD per person × 22 = 401,500 + 1,425,500 = 1,827,000
+    expect(res.policyFloor).toBe("1827000");
   });
 });
 

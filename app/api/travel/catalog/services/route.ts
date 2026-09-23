@@ -7,12 +7,14 @@ import {
   durationVariantField,
   pricingBasisField,
   serviceCategoryField,
+  serviceDetailsField,
   toWeekdaysJson,
   weekdaysField,
 } from "../schemas";
 
 const createServiceSchema = z.object({
   name: z.string().trim().min(1),
+  details: serviceDetailsField,
   category: serviceCategoryField,
   basis: pricingBasisField,
   capacity: z.number().int().positive().nullish(),
@@ -76,6 +78,7 @@ export async function POST(req: NextRequest) {
     const service = await prisma.serviceProduct.create({
       data: {
         ...rest,
+        details: rest.details?.trim() ? rest.details.trim() : null,
         supplierId: supplierId ?? null,
         weekdays: toWeekdaysJson(weekdays) ?? null,
       },

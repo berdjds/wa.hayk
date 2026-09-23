@@ -20,7 +20,8 @@ Verification: `npx tsc --noEmit`, `npm test` (vitest), `npm run build`.
 
 1. **Admin → Travel → Catalog → FX & Policy**: add current FX rates (AMD per 1 currency unit)
    and create + activate a pricing policy: type (markup on cost vs true gross margin), rate,
-   minimum profit + currency, rounding increment, quote currency. The imported workbook 14%
+   minimum profit **per paying person** + currency (the floor is `cost + minProfit × paying
+   travelers` since v0.14.0), rounding increment, quote currency. The imported workbook 14%
    is a **legacy markup**, seeded inactive on purpose.
 2. **Agencies**: create each client agency with its uppercase short code (required before any
    request can be created for that client; package codes embed it). Managed from

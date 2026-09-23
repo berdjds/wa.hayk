@@ -38,8 +38,8 @@ describe("client quotation HTML", () => {
   });
 
   it("never sums scenario totals into a grand total", () => {
-    // 1679000.00 + 1842500.00 — scenarios are alternatives, not additive.
-    expect(html).not.toContain("3521500.00");
+    // 1679000.00 + 1743402.00 — scenarios are alternatives, not additive.
+    expect(html).not.toContain("3422402.00");
     expect(html).not.toContain("Grand total");
   });
 
@@ -249,10 +249,13 @@ describe("client quotation day-by-day itinerary", () => {
     expect(html).toContain("Arrival in Yerevan, transfer to the hotel and welcome dinner.");
     expect(html).toContain("Overnight: Yerevan / Երևան");
     expect(html).toContain("<li>Airport transfer</li>");
-    expect(html).toContain("<li>Welcome dinner</li>");
+    expect(html).toContain("<li>Welcome dinner — Traditional Armenian restaurant with folk music</li>");
     expect(html).toContain("<li>Yerevan city tour</li>");
   });
 
+  it("omits the details suffix for services without a description", () => {
+    expect(html).toContain("<li>Airport transfer</li>"); // no trailing " — "
+  });
   it("sits above the per-scenario stay tables", () => {
     const daySection = html.indexOf("Day-by-Day Itinerary");
     const stayTable = html.indexOf("Check-in");
@@ -327,6 +330,22 @@ describe("normalizeDayServices", () => {
     ]);
   });
 
+  it("carries the v0.14.0 details field when present", () => {
+    expect(
+      normalizeDayServices(
+        JSON.stringify([
+          { serviceProductId: "svc-1", label: "City tour", details: "Victory Park · Cascade" },
+          { label: "No details", details: "" },
+          { label: "Wrong type", details: 42 },
+        ]),
+      ),
+    ).toEqual([
+      { serviceProductId: "svc-1", label: "City tour", details: "Victory Park · Cascade" },
+      { serviceProductId: null, label: "No details" },
+      { serviceProductId: null, label: "Wrong type" },
+    ]);
+  });
+
   it("returns [] for missing or unparseable JSON", () => {
     expect(normalizeDayServices(null)).toEqual([]);
     expect(normalizeDayServices(undefined)).toEqual([]);
@@ -343,18 +362,20 @@ describe("internal costing HTML", () => {
     expect(html).toContain("INTERNAL — NOT FOR CLIENT DISTRIBUTION");
   });
 
-  it("contains category totals, costQuote, policy and profit/margin", () => {
+  it("contains category totals, costQuote, policy and profit/margin — all ceiled, margin as percent (v0.14.0)", () => {
     expect(html).toContain("costQuote");
-    expect(html).toContain("1,471,700.00 AMD");
+    expect(html).toContain("<strong>1,471,700 AMD</strong>"); // costQuote, ceiled
     expect(html).toContain("ACCOMMODATION");
-    expect(html).toContain("1,187,500.00");
+    expect(html).toContain("1,187,500"); // category total, ceiled
     expect(html).toContain("Profit");
-    expect(html).toContain("207,300.00 AMD");
+    expect(html).toContain("207,300 AMD"); // policy table profit, ceiled
     expect(html).toContain("Margin");
-    expect(html).toContain("0.1235");
+    expect(html).toContain("12.4%"); // margin 0.1235 rendered as a percentage
+    expect(html).not.toContain("0.1235");
     expect(html).toContain("MARKUP_ON_COST");
-    expect(html).toContain("1,678,938.00 AMD"); // policyTarget
-    expect(html).toContain("126.00 AMD"); // roundingAdjustment
+    expect(html).toContain("1,678,938 AMD"); // policyTarget, ceiled
+    expect(html).toContain("62 AMD"); // roundingAdjustment, ceiled
+    expect(html).toContain("Min profit per paying person");
   });
 
   it("contains the FX table and quote currency marker", () => {
@@ -365,24 +386,49 @@ describe("internal costing HTML", () => {
 
   it("contains the nightly rate trace with source references", () => {
     expect(html).toContain(FIXTURE_SOURCEREF);
-    expect(html).toContain(`${groupMoney(FIXTURE_NIGHTLY_RATE)} AMD`);
+    expect(html).toContain("28,501 AMD"); // nightly rate ceiled (28500.75 → 28,501)
     expect(html).toContain("Nightly rate trace");
   });
 
-  it("renders the calculation trace consolidated, grouped and without internal ids", () => {
+  it("renders the calculation trace as a structured table from snapshot data (v0.14.0)", () => {
     expect(html).toContain("Calculation trace");
-    expect(html).toContain(
-      "Dilijan Forest Resort — STANDARD, 2026-10-03 → 2026-10-04 (2 nights): 10 rooms × 31,000 AMD/night = 620,000 AMD (RateVersion clx-autumn-2026)",
-    );
-    expect(html).toContain("policy MARKUP_ON_COST 0.14: target = 1,529,300 × 1.14 = 1,743,402");
-    expect(html).toContain("sell: unrounded 1,742,488 → sell 1,842,500 (rounding adjustment 12); profit 313,200");
+    expect(html).toContain("<th>Description</th><th>Basis</th><th>Calculation</th><th>Amount</th>");
+    expect(html).toContain("Tour 2026-10-01 → 2026-10-06: 5 night(s) / 6 day(s)");
+    // Consolidated accommodation row from the nightly rows.
+    expect(html).toContain("Grand Hotel Yerevan / Գրանդ Հյուրանոց — STANDARD, 2026-10-01 → 2026-10-02 (2 nights)");
+    expect(html).toContain("8 rooms × 28,501 AMD/night");
+    expect(html).toContain("2 nights × 8 rooms × 28,501");
+    expect(html).toContain("456,012 AMD");
+    // Service rows: short title, per-basis text, formula, ceiled amount.
+    expect(html).toContain("2,500 per person");
+    expect(html).toContain("22 Pax × 2,500");
+    expect(html).toContain("55,000 AMD");
+    expect(html).toContain("60 per vehicle trip");
+    expect(html).toContain("included elsewhere");
+    // Summary rows: source totals, FX, quote total, policy, bold Sell/Profit.
+    expect(html).toContain("Total Net USD");
+    expect(html).toContain("FX USD → AMD");
+    expect(html).toContain("rate 385 AMD/USD · quote rate 1");
+    expect(html).toContain("Total Net AMD (quote)");
+    expect(html).toContain("Markup");
+    expect(html).toContain("MARKUP_ON_COST 14%");
+    expect(html).toContain("1,529,300 × 1.14");
+    expect(html).toContain("Policy floor");
+    expect(html).toContain("7,000 AMD per person");
+    expect(html).toContain("(22 × 7,000) + 1,529,300");
+    expect(html).toContain("1,743,402 &gt; 1,683,300");
+    expect(html).toContain("<strong>1,743,402 AMD</strong>");
+    expect(html).toContain("<strong>214,102 AMD</strong>");
+    // The free-text trace strings are no longer rendered (API/debug only).
+    expect(html).not.toContain("policy MARKUP_ON_COST 0.14: target");
+    expect(html).not.toContain("sell: unrounded");
   });
 
   it("contains issues and override notes", () => {
     expect(html).toContain("UNUSED_BEDS");
     expect(html).toContain("2 bed(s) allocated but unused");
     expect(html).toContain("Group discount negotiated");
-    expect(html).toContain("3000.00"); // original rate before override
+    expect(html).toContain("3,000 AMD"); // original rate before override, ceiled
   });
 
   it("keeps the client-facing sell totals as well", () => {

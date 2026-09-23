@@ -24,6 +24,7 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -584,6 +585,7 @@ function RateTable({
 
 interface ServiceFormState {
   name: string;
+  details: string;
   category: string;
   basis: string;
   capacity: string;
@@ -596,6 +598,7 @@ interface ServiceFormState {
 
 const EMPTY_SERVICE_FORM: ServiceFormState = {
   name: "",
+  details: "",
   category: "EXTRA_SERVICES",
   basis: "PER_PERSON",
   capacity: "",
@@ -609,6 +612,7 @@ const EMPTY_SERVICE_FORM: ServiceFormState = {
 function serviceToForm(s: ServiceProductView): ServiceFormState {
   return {
     name: s.name,
+    details: s.details ?? "",
     category: s.category,
     basis: s.basis,
     capacity: s.capacity != null ? String(s.capacity) : "",
@@ -655,6 +659,7 @@ function ServiceDialog({
     setSaving(true);
     const payload = {
       name: form.name.trim(),
+      details: form.details.trim() || null,
       category: form.category,
       basis: form.basis,
       capacity: intOrNull(form.capacity),
@@ -692,6 +697,15 @@ function ServiceDialog({
           <div>
             <Label>Name</Label>
             <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required />
+          </div>
+          <div>
+            <Label>Details (optional — long description shown on the client quotation; the name stays the short title)</Label>
+            <Textarea
+              rows={3}
+              value={form.details}
+              onChange={(e) => setForm({ ...form, details: e.target.value })}
+              placeholder="e.g. Zvartnots Airport · Victory Park · Cascade Complex"
+            />
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
             <div>
@@ -1310,7 +1324,10 @@ function ServicesTab() {
                   {services.map((s) => (
                     <Fragment key={s.id}>
                       <SortableTableRow id={s.id} disabled={reorderDisabled} className={s.active ? "" : "text-muted-foreground"}>
-                        <TableCell>{s.name}</TableCell>
+                        <TableCell>
+                          {s.name}
+                          {s.details && <p className="mt-0.5 max-w-md truncate text-xs text-muted-foreground">{s.details}</p>}
+                        </TableCell>
                         <TableCell>{s.category.replace(/_/g, " ")}</TableCell>
                         <TableCell>{basisLabel(s.basis, s.capacity)}</TableCell>
                         <TableCell className="text-xs">{weekdaysSummary(s.weekdays)}</TableCell>
@@ -1669,7 +1686,7 @@ function FxPolicyTab() {
               onChange={(e) => setPolicyForm({ ...policyForm, rate: e.target.value })}
             />
             <Input
-              placeholder="Min profit (optional)"
+              placeholder="Min profit per paying person (optional)"
               value={policyForm.minProfit}
               onChange={(e) => setPolicyForm({ ...policyForm, minProfit: e.target.value })}
             />
@@ -1706,7 +1723,7 @@ function FxPolicyTab() {
                   <TableHead>Name</TableHead>
                   <TableHead>Type</TableHead>
                   <TableHead>Rate</TableHead>
-                  <TableHead>Min profit</TableHead>
+                  <TableHead>Min profit / paying person</TableHead>
                   <TableHead>Fee</TableHead>
                   <TableHead>Quote ccy</TableHead>
                   <TableHead>Active</TableHead>

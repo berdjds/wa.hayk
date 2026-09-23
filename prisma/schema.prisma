@@ -309,6 +309,7 @@ model ServiceProduct {
   id                 String   @id @default(cuid())
   supplierId         String?
   name               String
+  details            String? // long description for the client quotation; `name` stays the short title (v0.14.0)
   category           String // CostCategory
   basis              String // PricingBasis
   capacity           Int? // for CAPACITY_BLOCK / group capacity notes

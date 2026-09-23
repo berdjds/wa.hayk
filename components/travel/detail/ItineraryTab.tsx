@@ -281,6 +281,7 @@ export default function ItineraryTab({ ctx }: { ctx: DetailContext }) {
           services: d.services.map((s) => ({
             serviceProductId: s.serviceProductId,
             label: s.label,
+            details: s.details ?? null,
             vehicleTypeId: s.vehicleTypeId ?? null,
             quantity: s.quantity ?? null,
           })),

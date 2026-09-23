@@ -134,9 +134,13 @@ child at return, 0–12; one entry per child, validated by `travelerSchema` in
 Phase 3/4 additions: `ServiceLine` gained nullable `serviceProductId` (catalog link) and `date`
 (YYYY-MM-DD) columns — a linked line is shared (`scenarioId = null`), keeps `unitRate = null`,
 and is priced from SERVICE RateVersions covering its date. `ItineraryDay.services` items are
-now `{ serviceProductId: string | null; label: string; vehicleTypeId?: string | null;
-quantity?: number }` objects (quantity drives the synced ServiceLine quantity since v0.11.0);
-legacy plain-string arrays are normalized on read by `normalizeDayServices()`.
+now `{ serviceProductId: string | null; label: string; details?: string | null;
+vehicleTypeId?: string | null; quantity?: number }` objects (quantity drives the synced
+ServiceLine quantity since v0.11.0; `details` is the client-facing long description since
+v0.14.0); legacy plain-string arrays are normalized on read by `normalizeDayServices()`.
+Since v0.14.0 `ServiceProduct` also gained a nullable `details` column — the catalog's long
+client-facing description, with `name` kept as the short title; day-service picks copy it
+onto the itinerary item.
 
 Per-vehicle pricing addition: `ServiceLine` gained a nullable `vehicleTypeId` (indexed;
 selected fleet vehicle for the line). SERVICE RateVersions may carry a `vehicleTypeId` —

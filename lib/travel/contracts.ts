@@ -116,7 +116,9 @@ export interface PolicyInput {
   type: PolicyType;
   /** Decimal fraction, e.g. "0.14". Workbook "Margin %" imports as MARKUP_ON_COST. */
   rate?: Money;
-  /** Absolute minimum profit per scenario/package, in minProfitCurrency. */
+  /** Absolute minimum profit PER PAYING PERSON (v0.14.0), in minProfitCurrency.
+   *  floor = cost + minProfit × travelers.paying. Pre-v0.14.0 snapshots used a
+   *  flat per-package amount — their frozen numbers are unchanged. */
   minProfit?: Money;
   minProfitCurrency?: string;
   /** Revenue-based fee fraction of selling price, e.g. "0.05". Solved via division. */
@@ -234,6 +236,9 @@ export interface ServiceLineInput {
   sourceRef?: string;
   /** Selected fleet vehicle (per-vehicle SERVICE rates); undefined = base rate. */
   vehicleTypeId?: string;
+  /** Frozen display name of the selected vehicle (v0.14.0) — the internal
+   *  costing sheet prints "35,000 per Sedan" without a live catalog lookup. */
+  vehicleTypeName?: string;
   /** Catalog link; echoed into ScenarioResult.lines so editors can key by (product, date, vehicle). */
   serviceProductId?: string;
   /** YYYY-MM-DD of the itinerary day this line is pinned to; undefined = not day-linked. */
@@ -325,6 +330,10 @@ export interface CategoryCurrencyTotals {
   byCategory: Record<string, Record<string, Money>>;
   /** currency -> converted total in quote currency. */
   costByCurrency: Record<string, Money>;
+  /** currency -> total in that SOURCE currency (v0.14.0, for the internal
+   *  costing sheet's "Total Net <currency>" rows). Absent in older snapshots —
+   *  renderers fall back to summing byCategory. */
+  bySourceCurrency?: Record<string, Money>;
   /** Total cost in quote currency. */
   costQuote: Money;
 }
@@ -359,6 +368,9 @@ export interface ScenarioResultLine {
   quantity: Money;
   participants: number | null;
   amountSource: AmountSource;
+  /** Line total in the line's own (source) currency; null when unpriced.
+   *  Added v0.14.0 — absent in older snapshots. */
+  amount?: Money | null;
   /** Line total converted to AMD; null when the line could not be priced or FX failed. */
   amountAmd: Money | null;
   /** Line total converted to the quote currency; null likewise. */
@@ -476,6 +488,9 @@ export type ImportRowStatus = (typeof IMPORT_ROW_STATUSES)[number];
 export interface DayServiceItem {
   serviceProductId: string | null;
   label: string;
+  /** Long description shown on the client quotation (v0.14.0) — the catalog
+   *  ServiceProduct.details at pick time. The label stays the short title. */
+  details?: string | null;
   vehicleTypeId?: string | null;
   /** Times the service is consumed (e.g. 2 ticket groups); defaults to 1. v0.11.0. */
   quantity?: number;
@@ -504,9 +519,11 @@ export function normalizeDayServices(json: string | null | undefined): DayServic
       const pid = (item as { serviceProductId?: unknown }).serviceProductId;
       const vid = (item as { vehicleTypeId?: unknown }).vehicleTypeId;
       const qty = (item as { quantity?: unknown }).quantity;
+      const det = (item as { details?: unknown }).details;
       out.push({
         serviceProductId: typeof pid === "string" && pid ? pid : null,
         label: (item as { label: string }).label,
+        ...(typeof det === "string" && det ? { details: det } : {}),
         ...(typeof vid === "string" && vid ? { vehicleTypeId: vid } : {}),
         ...(typeof qty === "number" && Number.isInteger(qty) && qty >= 1 ? { quantity: qty } : {}),
       });

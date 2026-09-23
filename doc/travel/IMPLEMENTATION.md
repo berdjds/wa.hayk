@@ -336,6 +336,32 @@ A versioned B2B travel package costing and quotation module inside WAControl:
     sensors, optimistic update with revert + error toast on failure; drag is disabled while a
     search query is active (hint shown) because reordering a filtered subset is meaningless.
     No picker re-sorts client-side, so the admin order propagates everywhere automatically.
+35. **Readable internal trace (v0.13.2).** The engine's free-text `res.trace` strings and the
+    PDF money cells were reformatted for the internal costing sheet: money in trace lines is
+    ceiling-rounded and comma-grouped (`displayMoneyCeil`/`groupMoney` in
+    `lib/travel/engine/money.ts`), per-night stay lines consolidated into one line per
+    (roomType, rate, currency, sourceRef) group, and `RateVersion <cuid>` prefixes stripped
+    down to the evidence parenthetical. Display-only — engine math keeps full Decimal
+    precision, and issue messages are untouched.
+36. **Per-person profit floor, trace table and service details (v0.14.0).** Three changes:
+    (a) The policy min-profit floor is now **per paying person**:
+    `floor = cost + minProfit × travelers.paying` (`computePolicyStage` takes the paying
+    count); pre-v0.14.0 snapshots were computed with the flat per-package floor and keep
+    their frozen numbers. The Catalog → FX & Policy UI labels the field "Min profit per
+    paying person". (b) The internal costing PDF renders ALL money via `displayMoneyCeil`
+    (margin as a 1-decimal percentage instead) and replaces the bullet-list calculation
+    trace with a structured **Description | Basis | Calculation | Amount** table built purely
+    from snapshot data (`res.nightly`, `res.lines`, `res.totals`, policy fields) — the
+    free-text `res.trace` strings stay in the snapshot for API/debug but are no longer
+    rendered. Contract additions backing it: `CategoryCurrencyTotals.bySourceCurrency`,
+    `ScenarioResultLine.amount` (source-currency line total) and
+    `ServiceLineInput.vehicleTypeName` (frozen at resolution for "35,000 per Sedan" basis
+    text). The client quotation keeps `groupMoney` (decimals preserved). (c) `ServiceProduct`
+    gained a nullable `details` column — the long client-facing description; `name` is now
+    the short title. Day service items carry `details` end-to-end (picker →
+    `ItineraryDay.services` JSON → frozen `displayJson` → client quotation
+    "label — details"), and `scripts/split-service-details.ts` splits existing catalog names
+    on the first ": " into name/details (run once on the server after deploy).
 
 ## Known limitations
 

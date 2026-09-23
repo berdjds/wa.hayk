@@ -454,7 +454,11 @@ function calculateScenario(sc: ScenarioEngineInput, input: EngineInput): Scenari
   });
 
   const costByCurrency: Record<string, Money> = {};
+  const bySourceCurrency: Record<string, Money> = {};
   let costQuote = new Decimal(0);
+  curTotals.forEach((total, cur) => {
+    bySourceCurrency[cur] = money(total);
+  });
   if (fxOk) {
     const rQuote = fxRates.get(input.fx.quoteCurrency)!;
     curTotals.forEach((total, cur) => {
@@ -484,6 +488,7 @@ function calculateScenario(sc: ScenarioEngineInput, input: EngineInput): Scenari
     quantity: line.quantity,
     participants: line.participants ?? null,
     amountSource,
+    amount: amount === null ? null : money(amount),
     ...(amount === null ? { amountAmd: null, amountQuote: null } : convert(amount, line.currency)),
     ...(line.serviceProductId ? { serviceProductId: line.serviceProductId } : {}),
     ...(line.date ? { date: line.date } : {}),
@@ -505,7 +510,7 @@ function calculateScenario(sc: ScenarioEngineInput, input: EngineInput): Scenari
   let margin: Money | null = null;
   let perPayingPerson: Money | null = null;
   if (fxOk) {
-    const stage = computePolicyStage(money(costQuote), input.policy, input.fx, sc.ref);
+    const stage = computePolicyStage(money(costQuote), input.policy, input.fx, sc.travelers.paying, sc.ref);
     issues.push(...stage.issues);
     trace.push(...stage.trace);
     policyTarget = stage.policyTarget;
@@ -527,7 +532,7 @@ function calculateScenario(sc: ScenarioEngineInput, input: EngineInput): Scenari
     issues,
     nights,
     days,
-    totals: { byCategory, costByCurrency, costQuote: money(costQuote) },
+    totals: { byCategory, costByCurrency, bySourceCurrency, costQuote: money(costQuote) },
     nightly: nightlyOut,
     lines,
     policyTarget,

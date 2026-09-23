@@ -33,6 +33,10 @@ export function roundUpToIncrement(value: Decimal, increment: Decimal): Decimal 
  * The fee is a fraction of the SELLING price, so it is solved by division —
  * never by inflating the markup, which would compound the rounding error.
  *
+ * The min-profit floor is PER PAYING PERSON (v0.14.0):
+ * floor = cost + minProfit × payingPax. Pre-v0.14.0 snapshots were computed
+ * with a flat per-package floor; their frozen numbers stand.
+ *
  * `sellOverride` exists so validators can manually check a hypothetical
  * selling price against the floor; the frozen EngineInput contract carries no
  * selling-override field, so calculate() never passes one. With round-up
@@ -43,6 +47,8 @@ export function computePolicyStage(
   costQuote: Money,
   policy: PolicyInput,
   fx: FxInput,
+  /** Paying travelers — the min-profit floor multiplies by this count. */
+  payingPax: number,
   scenarioRef?: string,
   sellOverride?: Money,
 ): PolicyStageResult {
@@ -121,9 +127,11 @@ export function computePolicyStage(
         push("INVALID_DENOMINATOR", "BLOCKER", `1 − feeFraction = ${money(oneMinusFee)} is not positive`, "feeFraction");
       } else {
         const minProfitQuote = minProfit.times(rCur.rate!).div(rQuote.rate!);
-        floor = cost.plus(minProfitQuote).div(oneMinusFee);
+        const pax = Number.isFinite(payingPax) && payingPax > 0 ? Math.floor(payingPax) : 0;
+        const floorProfit = minProfitQuote.times(pax);
+        floor = cost.plus(floorProfit).div(oneMinusFee);
         trace.push(
-          `policy floor: (${displayMoneyCeil(cost)} + minProfit ${displayMoneyCeil(minProfitQuote)} ${fx.quoteCurrency})` +
+          `policy floor: (${pax} × ${displayMoneyCeil(minProfitQuote)} ${fx.quoteCurrency}) + ${displayMoneyCeil(cost)}` +
             `${fee.gt(0) ? ` / (1 − fee ${money(fee)})` : ""} = ${displayMoneyCeil(floor)}`,
         );
       }

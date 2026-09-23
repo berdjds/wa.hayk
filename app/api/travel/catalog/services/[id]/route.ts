@@ -7,6 +7,7 @@ import {
   durationVariantField,
   pricingBasisField,
   serviceCategoryField,
+  serviceDetailsField,
   toWeekdaysJson,
   weekdaysField,
 } from "../../schemas";
@@ -14,6 +15,7 @@ import {
 const patchServiceSchema = z
   .object({
     name: z.string().trim().min(1),
+    details: serviceDetailsField,
     category: serviceCategoryField,
     basis: pricingBasisField,
     capacity: z.number().int().positive().nullish(),
@@ -52,6 +54,8 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       where: { id: params.id },
       data: {
         ...rest,
+        // undefined = unchanged; ""/whitespace clears the description.
+        ...(rest.details !== undefined ? { details: rest.details?.trim() ? rest.details.trim() : null } : {}),
         ...(supplierId !== undefined ? { supplierId } : {}),
         ...(weekdays !== undefined ? { weekdays: toWeekdaysJson(weekdays) ?? null } : {}),
       },

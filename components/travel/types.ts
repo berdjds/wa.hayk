@@ -220,6 +220,7 @@ export interface HotelProductView {
 export interface ServiceProductView {
   id: string;
   name: string;
+  details: string | null; // long client-facing description (v0.14.0); name is the short title
   category: string;
   basis: string;
   capacity: number | null;

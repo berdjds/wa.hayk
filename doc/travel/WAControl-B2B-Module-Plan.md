@@ -267,13 +267,13 @@ Recommended simple policy, before sales taxes and any revenue-based charges:
 
 - Markup mode: `targetSell = cost × (1 + markupRate)`.
 - Gross-margin mode: `targetSell = cost / (1 - marginRate)`, with `0 ≤ marginRate < 1`.
-- Minimum profit: `floorSell = cost + minimumProfit`, in the configured policy currency converted using the frozen FX.
+- Minimum profit: `floorSell = cost + minimumProfit`, in the configured policy currency converted using the frozen FX. **(Superseded in v0.14.0: the floor is per paying person — `floorSell = cost + minimumProfit × payingTravelers`. Pre-v0.14.0 snapshots keep their frozen flat-floor numbers.)**
 - `unroundedSell = max(targetSell, floorSell)`.
 - Round the final selling total up to the configured increment (e.g. 1 USD), once. Then recompute actual profit and margin from the final authoritative price.
 
 Imported workbook percentages use **MARKUP_ON_COST** explicitly. New default policy may be true gross margin, but the admin must choose before production activation. Do not silently reinterpret historical 14% values.
 
-Minimum profit applies per scenario/package version, not once per hotel segment or per displayed comparison. An optional per-paying-traveler floor must be a separate policy with a clear label. No production amount is supplied by the user; require admin configuration rather than inventing one.
+Minimum profit applies per scenario/package version, not once per hotel segment or per displayed comparison. An optional per-paying-traveler floor must be a separate policy with a clear label. No production amount is supplied by the user; require admin configuration rather than inventing one. **(v0.14.0: the per-paying-traveler floor became THE floor semantics — one policy field, labelled "Min profit per paying person".)**
 
 Include all nine original cost categories and explicit other costs. Fixed bank fees belong in cost. If a fee/commission is a percentage `f` of selling revenue, it cannot be treated as a fixed additive cost: markup/floor targets require dividing by `(1-f)`; true margin after such fees requires `sell ≥ cost/(1-f-margin)`, and the profit floor requires `(cost+floor)/(1-f)`. Reject non-positive denominators. Enable such policies only after the basis is confirmed. Supplier commission-inclusive rates require an explicit receivable/net-cost treatment; do not subtract commission automatically.
 

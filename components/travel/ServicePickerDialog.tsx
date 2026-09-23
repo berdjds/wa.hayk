@@ -15,6 +15,8 @@ export type ServicePickerTab = "tours" | "tickets" | "services";
 export interface PickedService {
   serviceProductId: string | null;
   label: string;
+  /** Catalog long description (v0.14.0); the client quotation prints it next to the label. */
+  details?: string | null;
   vehicleTypeId: string | null;
 }
 
@@ -145,7 +147,7 @@ export default function ServicePickerDialog({
       setPickerVehicle((prev) => prev || vehicles[0].id);
       return;
     }
-    onPick({ serviceProductId: p.id, label: p.name, vehicleTypeId: null });
+    onPick({ serviceProductId: p.id, label: p.name, details: p.details ?? null, vehicleTypeId: null });
   }
 
   function confirmVehicleProduct() {
@@ -153,6 +155,7 @@ export default function ServicePickerDialog({
     onPick({
       serviceProductId: pendingVehicleProduct.id,
       label: pendingVehicleProduct.name,
+      details: pendingVehicleProduct.details ?? null,
       vehicleTypeId: pickerVehicle,
     });
     setPendingVehicleProduct(null);
@@ -240,6 +243,9 @@ export default function ServicePickerDialog({
                       onClick={() => pickProduct(p)}
                     >
                       {p.name}
+                      {p.details && (
+                        <span className="mt-0.5 block truncate text-xs text-muted-foreground">{p.details}</span>
+                      )}
                       <span className="ml-2 text-xs text-muted-foreground">
                         {basisLabel(p.basis, p.capacity)}
                         {p.durationVariant ? ` · ${p.durationVariant.replace(/_/g, " ")}` : ""}

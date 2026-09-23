@@ -41,6 +41,8 @@ export function toWeekdaysJson(v: number[] | null | undefined): string | null | 
 export const serviceCategoryField = z.enum(COST_CATEGORIES);
 export const pricingBasisField = z.enum(PRICING_BASES);
 export const durationVariantField = z.enum(["half_day", "full_day", "transfer"]);
+/** Long client-facing description for a catalog service (v0.14.0); empty string clears. */
+export const serviceDetailsField = z.string().trim().max(2000).nullish();
 export const hotelKindField = z.enum(["ROOM", "COTTAGE_UNIT"]);
 export const occupancyField = z.enum(["SGL", "DBL", "TPL", "EXTRA_BED", "UNIT"]);
 export const productTypeField = z.enum(["HOTEL", "VEHICLE", "SERVICE"]);
