@@ -170,7 +170,7 @@ export default function ServicePickerDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-3xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
           {description && <DialogDescription>{description}</DialogDescription>}
@@ -242,11 +242,11 @@ export default function ServicePickerDialog({
                       }`}
                       onClick={() => pickProduct(p)}
                     >
-                      {p.name}
+                      <span className="break-words">{p.name}</span>
                       {p.details && (
-                        <span className="mt-0.5 block truncate text-xs text-muted-foreground">{p.details}</span>
+                        <span className="mt-0.5 block text-xs text-muted-foreground line-clamp-2">{p.details}</span>
                       )}
-                      <span className="ml-2 text-xs text-muted-foreground">
+                      <span className="mt-0.5 block text-xs text-muted-foreground">
                         {basisLabel(p.basis, p.capacity)}
                         {p.durationVariant ? ` · ${p.durationVariant.replace(/_/g, " ")}` : ""}
                         {needsVehicle(p) ? " · per vehicle" : ""}

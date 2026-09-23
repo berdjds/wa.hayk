@@ -21,6 +21,8 @@ interface DayDraft {
   dayOffset: number;
   date: string;
   narrative: string;
+  /** Narrative as loaded from the version — template text the user never edited counts as auto-managed. */
+  initialNarrative: string;
   overnightCity: string;
   services: DayServiceItem[];
 }
@@ -62,6 +64,7 @@ export default function ItineraryTab({ ctx }: { ctx: DetailContext }) {
       dayOffset: d.dayOffset,
       date: d.date,
       narrative: d.narrative ?? "",
+      initialNarrative: d.narrative ?? "",
       overnightCity: d.overnightCity ?? "",
       services: normalizeDayServices(d.services),
     }));
@@ -224,6 +227,7 @@ export default function ItineraryTab({ ctx }: { ctx: DetailContext }) {
       dayOffset: i,
       date: addDays(ctx.detail.startDate, i),
       narrative: "",
+      initialNarrative: "",
       overnightCity: "",
       services: [],
     }));
@@ -249,7 +253,7 @@ export default function ItineraryTab({ ctx }: { ctx: DetailContext }) {
     setDays(
       rederiveDates([
         ...days,
-        { dayOffset: days.length, date: addDays(ctx.detail.startDate, days.length), narrative: "", overnightCity: "", services: [] },
+        { dayOffset: days.length, date: addDays(ctx.detail.startDate, days.length), narrative: "", initialNarrative: "", overnightCity: "", services: [] },
       ]),
     );
     setDirty(true);
@@ -264,11 +268,13 @@ export default function ItineraryTab({ ctx }: { ctx: DetailContext }) {
     const day = days[idx];
     const patch: Partial<DayDraft> = { services: [...day.services, item] };
     // Narrative auto-fill is tracked by string equality only: fill from the
-    // added tour's details when the narrative is blank or still verbatim-equal
-    // to a tour added earlier — a narrative the user typed over never moves.
+    // added tour's details when the narrative is blank, still verbatim-equal
+    // to a tour added earlier, or still the untouched template narrative the
+    // day loaded with — text the user typed over any of these never moves.
     if (item.details && categoryOf(item) === "TRANSPORTATION") {
       const untouched =
         day.narrative === "" ||
+        day.narrative === day.initialNarrative ||
         day.services.some((s) => categoryOf(s) === "TRANSPORTATION" && s.details != null && s.details === day.narrative);
       if (untouched) patch.narrative = item.details;
     }
