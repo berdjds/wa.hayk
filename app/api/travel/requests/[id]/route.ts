@@ -3,7 +3,9 @@ import { unlink } from "node:fs/promises";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { ROLE_ADMIN, ROLE_ADVISOR, ROLE_VALIDATOR } from "@/lib/travel/contracts";
+import type { EngineInput, ScenarioResult } from "@/lib/travel/contracts";
 import { publicDocumentView, redactScenarioResultJson } from "@/lib/travel/redact";
+import { buildTraceRows, type TraceRow } from "@/lib/travel/trace-table";
 import { updateDraft, updateDraftSchema } from "@/lib/travel/workflow";
 import { writeAuditLog } from "@/lib/audit";
 import { getTravelActor, travelError, unauthorized } from "../../guard";
@@ -36,7 +38,9 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
             itineraryDays: { orderBy: { dayOffset: "asc" } },
             serviceLines: true,
             snapshot: {
-              select: { id: true, hash: true, engineVersion: true, createdAt: true, displayJson: true },
+              // inputsJson is consumed server-side to rebuild the frozen trace
+              // rows (v0.15.0); snapshotPublic below never returns it.
+              select: { id: true, hash: true, engineVersion: true, createdAt: true, displayJson: true, inputsJson: true },
             },
             decisions: { orderBy: { createdAt: "desc" } },
             documents: {
@@ -77,6 +81,16 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
     // non-owner advisor; they are 404'd above, so this is defense in depth.
     const redactResults = advisorView && request.ownerId !== actor.id;
 
+    // Fallback paying-pax for trace rows when a frozen scenario input lacks
+    // its own traveler counts (mirrors the PDF renderer's request-level fallback).
+    let requestPayingPax = 1;
+    try {
+      const t = JSON.parse(request.travelers);
+      if (typeof t.paying === "number" && t.paying > 0) requestPayingPax = t.paying;
+    } catch {
+      requestPayingPax = 1;
+    }
+
     const sanitized = {
       ...request,
       versions: request.versions.map((v) => {
@@ -91,6 +105,16 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
             quoteCurrency = null;
           }
         }
+        // Frozen engine input for rebuilding the v0.15.0 trace rows. Never
+        // returned — only snapshotPublic leaves this route.
+        let snapshotInputs: EngineInput | null = null;
+        if (!redactResults && v.snapshot?.inputsJson) {
+          try {
+            snapshotInputs = JSON.parse(v.snapshot.inputsJson) as EngineInput;
+          } catch {
+            snapshotInputs = null;
+          }
+        }
         const snapshotPublic = v.snapshot
           ? {
               id: v.snapshot.id,
@@ -103,10 +127,33 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
           ...v,
           quoteCurrency,
           snapshot: snapshotPublic,
-          scenarios: v.scenarios.map((sc) => ({
-            ...sc,
-            resultJson: redactResults ? redactScenarioResultJson(sc.resultJson) : sc.resultJson,
-          })),
+          scenarios: v.scenarios.map((sc) => {
+            // traceRows (v0.15.0): the frozen calculation breakdown, rebuilt
+            // from the snapshot's inputs + this scenario's frozen result —
+            // the same rows the internal costing PDF renders. Full costing,
+            // so they follow the resultJson redaction rule exactly.
+            let traceRows: TraceRow[] | undefined;
+            if (snapshotInputs && sc.resultJson) {
+              try {
+                const result = JSON.parse(sc.resultJson) as ScenarioResult;
+                traceRows = buildTraceRows({
+                  quoteCurrency: snapshotInputs.fx.quoteCurrency,
+                  fxRates: snapshotInputs.fx.rates,
+                  policy: snapshotInputs.policy,
+                  result,
+                  scenario: snapshotInputs.scenarios.find((s) => s.ref === sc.id),
+                  fallbackPayingPax: requestPayingPax,
+                });
+              } catch {
+                traceRows = undefined;
+              }
+            }
+            return {
+              ...sc,
+              resultJson: redactResults ? redactScenarioResultJson(sc.resultJson) : sc.resultJson,
+              traceRows,
+            };
+          }),
           documents: v.documents
             // INTERNAL documents carry margins — advisors never see them,
             // not even as list metadata.

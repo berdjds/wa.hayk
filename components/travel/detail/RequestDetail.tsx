@@ -17,6 +17,7 @@ import { nightsBetween } from "@/lib/travel/engine/dates";
 import { StatusBadge, apiError, money, parseJson } from "../utils";
 import type { TravelRequestDetail, VersionDetail } from "../types";
 import type { ScenarioResult } from "@/lib/travel/contracts";
+import type { TraceRow } from "@/lib/travel/trace-table";
 import OverviewTab from "./OverviewTab";
 import ItineraryTab from "./ItineraryTab";
 import ScenariosTab from "./ScenariosTab";
@@ -53,6 +54,9 @@ export interface DetailContext {
   canEditRequest: boolean;
   /** Scenario id → result: live preview for editable versions, persisted snapshot otherwise. */
   quoteResults: Map<string, ScenarioResult> | null;
+  /** Scenario id → calculation breakdown rows (v0.15.0): live preview trace
+   *  for editable versions, frozen snapshot trace otherwise. */
+  quoteTraces: Map<string, TraceRow[]> | null;
   quoteLoading: boolean;
   quoteError: string | null;
   recalculateQuote: () => void;
@@ -125,6 +129,16 @@ export default function RequestDetail({ requestId, role, userId }: RequestDetail
   }, [version]);
   const quoteResults =
     editableVersion && preview.results.size > 0 ? preview.results : persistedResults;
+  const persistedTraces = useMemo(() => {
+    if (!version) return null;
+    const map = new Map<string, TraceRow[]>();
+    for (const sc of version.scenarios) {
+      if (sc.traceRows) map.set(sc.id, sc.traceRows);
+    }
+    return map;
+  }, [version]);
+  const quoteTraces =
+    editableVersion && preview.traces.size > 0 ? preview.traces : persistedTraces;
 
   if (!detail || !version) {
     return (
@@ -160,6 +174,7 @@ export default function RequestDetail({ requestId, role, userId }: RequestDetail
     canEditVersion,
     canEditRequest,
     quoteResults,
+    quoteTraces,
     quoteLoading: editableVersion ? preview.loading : false,
     quoteError: editableVersion ? preview.error : null,
     recalculateQuote: preview.recalculate,

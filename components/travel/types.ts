@@ -5,6 +5,8 @@
  * strings here and are parsed at render time.
  */
 
+import type { TraceRow } from "@/lib/travel/trace-table";
+
 export interface TravelUser {
   id: string;
   email: string;
@@ -58,6 +60,9 @@ export interface ScenarioDetail {
   label: string;
   valid: boolean;
   resultJson: string | null; // JSON ScenarioResult
+  /** Frozen calculation breakdown (v0.15.0) — present on submitted versions
+   *  for viewers who may see full costing; undefined otherwise. */
+  traceRows?: TraceRow[];
   stays: StayDetail[];
 }
 

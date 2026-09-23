@@ -5,6 +5,7 @@ import { POLICY_TYPES, ROLE_ADMIN, ROLE_ADVISOR, ROLE_VALIDATOR } from "@/lib/tr
 import { calculate } from "@/lib/travel/engine";
 import { redactScenarioResult } from "@/lib/travel/redact";
 import { buildEngineInputForVersion } from "@/lib/travel/resolve";
+import { buildTraceRows } from "@/lib/travel/trace-table";
 import { getTravelActor, travelError, unauthorized } from "../../../guard";
 
 const moneyField = z.string().trim().regex(/^\d+(\.\d+)?$/, "expected a non-negative decimal string");
@@ -80,7 +81,8 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       // Sell-side fields only: internal costing never leaves this route for a
       // non-owner advisor (v0.11.0: the OWNER prices their own request and sees
       // the full result, including per-line net costs). Non-owner advisors are
-      // already 404'd above — this branch is defense in depth.
+      // already 404'd above — this branch is defense in depth. traceRows carry
+      // the full costing breakdown, so they are never attached here either.
       return NextResponse.json({
         valid: result.valid,
         engineVersion: result.engineVersion,
@@ -88,7 +90,22 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
         scenarios: result.scenarios.map(redactScenarioResult),
       });
     }
-    return NextResponse.json({ ...result, quoteCurrency });
+    // traceRows (v0.15.0): response-only calculation breakdown per scenario —
+    // the same rows the internal costing PDF renders. NOT part of the frozen
+    // ScenarioResult contract; never persisted into snapshots.
+    const fallbackPayingPax = input.scenarios[0]?.travelers.paying ?? 1;
+    const scenarios = result.scenarios.map((res) => ({
+      ...res,
+      traceRows: buildTraceRows({
+        quoteCurrency,
+        fxRates: input.fx.rates,
+        policy: input.policy,
+        result: res,
+        scenario: input.scenarios.find((s) => s.ref === res.ref),
+        fallbackPayingPax,
+      }),
+    }));
+    return NextResponse.json({ ...result, scenarios, quoteCurrency });
   } catch (err) {
     return travelError(err, "[API /travel/versions/[id]/calculate]");
   }

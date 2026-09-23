@@ -362,6 +362,23 @@ A versioned B2B travel package costing and quotation module inside WAControl:
     `ItineraryDay.services` JSON → frozen `displayJson` → client quotation
     "label — details"), and `scripts/split-service-details.ts` splits existing catalog names
     on the first ": " into name/details (run once on the server after deploy).
+37. **Shared trace rows in the web Review tab (v0.15.0).** The v0.14.0 calculation-trace
+    table is no longer PDF-only: row building moved from `pdf/templates.ts` into pure
+    `lib/travel/trace-table.ts` (`buildTraceRows` + `TraceRow`, which adds an optional
+    `muted` flag on Total Net/FX subtotal rows — the PDF renderer ignores it, keeping PDF
+    output content-identical). `POST /api/travel/versions/[id]/calculate` attaches a
+    response-only `traceRows` array per scenario (NOT part of the frozen `ScenarioResult`
+    contract, never persisted, and withheld from the advisor-redacted branch like all
+    costing internals). `GET /api/travel/requests/[id]` rebuilds the same rows at read time
+    from the frozen `CalculationSnapshot.inputsJson` + each scenario's `resultJson` and
+    exposes them as `scenarios[].traceRows`, following the exact resultJson redaction rule
+    (`inputsJson` itself is consumed server-side only). The Review tab summary table gained
+    Cost / Profit / Margin % columns plus a per-scenario collapsible "Calculation
+    breakdown" (`components/travel/TraceTable.tsx`, shadcn Table with right-aligned
+    tabular-nums amounts, bold Sell/Profit, muted subtotals); the submit dialog offers the
+    same breakdown above the Sell line. `useQuotePreview` carries a `traces` map keyed by
+    scenario ref alongside `results`, wired through `DetailContext.quoteTraces` (live
+    preview for editable versions, frozen snapshot rows otherwise).
 
 ## Known limitations
 

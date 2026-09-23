@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import axios from "axios";
+import { ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -13,6 +14,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { useToast } from "@/components/ui/toast";
 import { versionLabel, type EngineIssue, type ScenarioResult } from "@/lib/travel/contracts";
 import { StateBadge, StatusBadge, apiError, formatDateTime, money, parseJson, shortHash } from "../utils";
+import TraceTable from "../TraceTable";
 import DocumentsTab from "./DocumentsTab";
 import type { TravelUser } from "../types";
 import type { DetailContext } from "./RequestDetail";
@@ -179,21 +181,52 @@ export default function ReviewTab({ ctx }: { ctx: DetailContext }) {
                   <TableRow>
                     <TableHead className="pl-3">Scenario</TableHead>
                     <TableHead>Valid</TableHead>
+                    <TableHead className="text-right">Cost</TableHead>
                     <TableHead className="text-right">Sell</TableHead>
+                    <TableHead className="text-right">Profit</TableHead>
+                    <TableHead className="text-right">Margin %</TableHead>
                     <TableHead className="text-right">Per paying person</TableHead>
                     <TableHead className="pr-3 text-right">Issues</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {results.map((r) => (
-                    <TableRow key={r.ref}>
-                      <TableCell className="pl-3 font-medium">{r.label}</TableCell>
-                      <TableCell>{r.valid ? "yes" : "no"}</TableCell>
-                      <TableCell className="text-right font-medium">{money(r.sell, ctx.resultCurrency)}</TableCell>
-                      <TableCell className="text-right">{money(r.perPayingPerson, ctx.resultCurrency)}</TableCell>
-                      <TableCell className="pr-3 text-right">{r.issues.length}</TableCell>
-                    </TableRow>
-                  ))}
+                  {results.map((r) => {
+                    const trace = ctx.quoteTraces?.get(r.ref);
+                    return (
+                      <Fragment key={r.ref}>
+                        <TableRow>
+                          <TableCell className="pl-3 font-medium">{r.label}</TableCell>
+                          <TableCell>{r.valid ? "yes" : "no"}</TableCell>
+                          {/* Costing columns: absent from advisor-redacted results. */}
+                          <TableCell className="text-right">
+                            {r.totals ? money(r.totals.costQuote, ctx.resultCurrency) : "—"}
+                          </TableCell>
+                          <TableCell className="text-right font-medium">{money(r.sell, ctx.resultCurrency)}</TableCell>
+                          <TableCell className="text-right">
+                            {r.profit != null ? money(r.profit, ctx.resultCurrency) : "—"}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            {r.margin != null ? `${(Number(r.margin) * 100).toFixed(1)}%` : "—"}
+                          </TableCell>
+                          <TableCell className="text-right">{money(r.perPayingPerson, ctx.resultCurrency)}</TableCell>
+                          <TableCell className="pr-3 text-right">{r.issues.length}</TableCell>
+                        </TableRow>
+                        {trace && trace.length > 0 && (
+                          <TableRow className="hover:bg-transparent">
+                            <TableCell colSpan={8} className="bg-muted/30 px-3 py-2">
+                              <details>
+                                <summary className="flex cursor-pointer select-none items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground [&::-webkit-details-marker]:hidden">
+                                  <ChevronRight className="h-3.5 w-3.5 transition-transform [details[open]_&]:rotate-90" />
+                                  Calculation breakdown
+                                </summary>
+                                <TraceTable rows={trace} className="mt-2 bg-background" />
+                              </details>
+                            </TableCell>
+                          </TableRow>
+                        )}
+                      </Fragment>
+                    );
+                  })}
                 </TableBody>
               </Table>
             </div>
@@ -318,9 +351,19 @@ export default function ReviewTab({ ctx }: { ctx: DetailContext }) {
           <div className="space-y-3">
             {version.scenarios.map((sc) => {
               const r = ctx.quoteResults?.get(sc.id) ?? null;
+              const trace = ctx.quoteTraces?.get(sc.id);
               const blockers = r ? r.issues.filter((i) => i.severity === "BLOCKER") : [];
               return (
                 <div key={sc.id} className="rounded-lg border p-3 text-sm [font-variant-numeric:tabular-nums]">
+                  {trace && trace.length > 0 && (
+                    <details className="mb-2">
+                      <summary className="flex cursor-pointer select-none items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground [&::-webkit-details-marker]:hidden">
+                        <ChevronRight className="h-3.5 w-3.5 transition-transform [details[open]_&]:rotate-90" />
+                        Calculation breakdown
+                      </summary>
+                      <TraceTable rows={trace} className="mt-2" />
+                    </details>
+                  )}
                   <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
                     <span className="font-medium">{sc.label}</span>
                     {r ? (

@@ -3,11 +3,15 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import axios from "axios";
 import type { ScenarioResult } from "@/lib/travel/contracts";
+import type { TraceRow } from "@/lib/travel/trace-table";
 import { apiError } from "../utils";
 
 export interface QuotePreview {
   /** Scenario id → sell-side result (advisor-redacted when the viewer is an advisor). */
   results: Map<string, ScenarioResult>;
+  /** Scenario id → calculation breakdown rows (v0.15.0); empty when the
+   *  response carries no traceRows (redacted or pre-v0.15.0 server). */
+  traces: Map<string, TraceRow[]>;
   currency: string | null;
   loading: boolean;
   error: string | null;
@@ -26,6 +30,7 @@ export interface QuotePreview {
  */
 export function useQuotePreview(versionId: string, revision: number, enabled: boolean): QuotePreview {
   const [results, setResults] = useState<Map<string, ScenarioResult>>(new Map());
+  const [traces, setTraces] = useState<Map<string, TraceRow[]>>(new Map());
   const [currency, setCurrency] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -38,6 +43,7 @@ export function useQuotePreview(versionId: string, revision: number, enabled: bo
       // Different version: old scenario ids cannot match, drop them at once.
       loadedFor.current = versionId;
       setResults(new Map());
+      setTraces(new Map());
       setCurrency(null);
     }
     setLoading(true);
@@ -45,8 +51,18 @@ export function useQuotePreview(versionId: string, revision: number, enabled: bo
     try {
       const res = await axios.post(`/api/travel/versions/${versionId}/calculate`, {});
       if (runId !== runCounter.current) return; // superseded by a newer run
-      const data = res.data as { scenarios?: ScenarioResult[]; quoteCurrency?: string };
+      const data = res.data as {
+        scenarios?: (ScenarioResult & { traceRows?: TraceRow[] })[];
+        quoteCurrency?: string;
+      };
       setResults(new Map((data.scenarios ?? []).map((sc) => [sc.ref, sc])));
+      setTraces(
+        new Map(
+          (data.scenarios ?? [])
+            .filter((sc) => sc.traceRows !== undefined)
+            .map((sc) => [sc.ref, sc.traceRows as TraceRow[]]),
+        ),
+      );
       setCurrency(data.quoteCurrency ?? null);
     } catch (err) {
       if (runId !== runCounter.current) return;
@@ -63,6 +79,7 @@ export function useQuotePreview(versionId: string, revision: number, enabled: bo
       runCounter.current++;
       loadedFor.current = null;
       setResults(new Map());
+      setTraces(new Map());
       setCurrency(null);
       setError(null);
       setLoading(false);
@@ -71,5 +88,5 @@ export function useQuotePreview(versionId: string, revision: number, enabled: bo
     void run();
   }, [enabled, revision, run]);
 
-  return { results, currency, loading, error, recalculate: run };
+  return { results, traces, currency, loading, error, recalculate: run };
 }
