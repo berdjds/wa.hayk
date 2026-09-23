@@ -50,11 +50,20 @@ export default function ReviewTab({ ctx }: { ctx: DetailContext }) {
   const canOutcome = (ctx.isOwner || ctx.isAdmin) && version.status === "ISSUED";
   const canAssign = (ctx.isOwner || ctx.isAdmin) && ["DRAFT", "CHANGES_REQUESTED"].includes(detail.status);
 
-  const results: ScenarioResult[] = version.scenarios
-    .map((sc) => parseJson<ScenarioResult | null>(sc.resultJson, null))
-    .filter((r): r is ScenarioResult => !!r);
-  const allIssues: (EngineIssue & { scenarioLabel?: string })[] = results.flatMap((r) =>
-    r.issues.map((i) => ({ ...i, scenarioLabel: r.label })),
+  // Summary rows: the persisted snapshot result first; on an editable version
+  // without one, fall back to the live quote preview (v0.15.2) so the
+  // calculation trace is visible BEFORE submitting binds a snapshot.
+  const scenarioRows = version.scenarios.map((sc) => {
+    const persisted = parseJson<ScenarioResult | null>(sc.resultJson, null);
+    const result = persisted ?? ctx.quoteResults?.get(sc.id) ?? null;
+    return { id: sc.id, result, isPreview: persisted === null && result !== null };
+  });
+  const shownRows = scenarioRows.filter(
+    (r): r is { id: string; result: ScenarioResult; isPreview: boolean } => r.result !== null,
+  );
+  const showingPreview = shownRows.some((r) => r.isPreview);
+  const allIssues: (EngineIssue & { scenarioLabel?: string })[] = shownRows.flatMap((r) =>
+    r.result.issues.map((i) => ({ ...i, scenarioLabel: r.result.label })),
   );
   const belowFloor = allIssues.some((i) => i.code === "BELOW_FLOOR");
 
@@ -158,6 +167,11 @@ export default function ReviewTab({ ctx }: { ctx: DetailContext }) {
             <div>
               <CardTitle>
                 {versionLabel(version.versionNo)} — <StatusBadge status={version.status} />
+                {showingPreview && (
+                  <span className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 align-middle text-[10px] font-semibold text-amber-800">
+                    LIVE PREVIEW
+                  </span>
+                )}
               </CardTitle>
               <CardDescription>
                 {version.submittedAt && <>Submitted {formatDateTime(version.submittedAt)} · </>}
@@ -174,7 +188,12 @@ export default function ReviewTab({ ctx }: { ctx: DetailContext }) {
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
-          {results.length > 0 && (
+          {showingPreview && (
+            <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+              Live preview of current content — not submitted yet; submitting binds this calculation.
+            </p>
+          )}
+          {shownRows.length > 0 && (
             <div className="overflow-x-auto rounded-lg border">
               <Table>
                 <TableHeader>
@@ -190,10 +209,11 @@ export default function ReviewTab({ ctx }: { ctx: DetailContext }) {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {results.map((r) => {
-                    const trace = ctx.quoteTraces?.get(r.ref);
+                  {shownRows.map((row) => {
+                    const r = row.result;
+                    const trace = ctx.quoteTraces?.get(row.id);
                     return (
-                      <Fragment key={r.ref}>
+                      <Fragment key={row.id}>
                         <TableRow>
                           <TableCell className="pl-3 font-medium">{r.label}</TableCell>
                           <TableCell>{r.valid ? "yes" : "no"}</TableCell>
@@ -249,8 +269,12 @@ export default function ReviewTab({ ctx }: { ctx: DetailContext }) {
               ))}
             </ul>
           )}
-          {!version.snapshot && (
-            <p className="text-sm text-muted-foreground">No calculation snapshot yet — submit to calculate and bind one.</p>
+          {shownRows.length === 0 && (
+            <p className="text-sm text-muted-foreground">
+              {ctx.quoteLoading
+                ? "Calculating…"
+                : "No calculation snapshot yet — submit to calculate and bind one."}
+            </p>
           )}
         </CardContent>
       </Card>
