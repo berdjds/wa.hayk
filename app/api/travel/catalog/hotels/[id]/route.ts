@@ -64,3 +64,42 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     return travelError(err, "[API /travel/catalog/hotels/[id]]");
   }
 }
+
+// Hard delete of a hotel product AND its rate versions (ADMIN). Blocked while
+// any itinerary stay still links the catalog product — stays freeze the hotel
+// name for display but keep the FK for rate resolution, so deleting would
+// orphan them.
+export async function DELETE(_req: Request, { params }: { params: { id: string } }) {
+  const actor = await getTravelActor();
+  if (!actor) return unauthorized();
+  if (actor.role !== "ADMIN") {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  try {
+    const hotel = await prisma.hotelProduct.findUnique({ where: { id: params.id } });
+    if (!hotel) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+    const stays = await prisma.staySegment.count({ where: { hotelProductId: hotel.id } });
+    if (stays > 0) {
+      return NextResponse.json(
+        { error: `Cannot delete ${hotel.name}: used by ${stays} itinerary stay(s)` },
+        { status: 409 },
+      );
+    }
+
+    const rates = await prisma.rateVersion.count({ where: { hotelProductId: hotel.id } });
+    await prisma.$transaction([
+      prisma.rateVersion.deleteMany({ where: { hotelProductId: hotel.id } }),
+      prisma.hotelProduct.delete({ where: { id: hotel.id } }),
+    ]);
+    await writeAuditLog(
+      "HOTEL_DELETED",
+      actor.id,
+      `Deleted hotel ${hotel.name} (${hotel.id}) with ${rates} rate version(s)`,
+    );
+    return NextResponse.json({ ok: true });
+  } catch (err) {
+    return travelError(err, "[API /travel/catalog/hotels/[id] DELETE]");
+  }
+}

@@ -16,6 +16,15 @@ interface SettingsPanelProps {
   userId: string;
 }
 
+/** Policy rate/fee fractions are stored as decimals (0.16) — display as percents (16%). */
+function formatFractionPercent(value: string | null): string {
+  if (value == null || value === "") return "—";
+  const pct = Number(value) * 100;
+  if (!Number.isFinite(pct)) return value;
+  // toFixed-then-Number trims both float noise (0.16 → 16.000…004) and trailing zeros.
+  return `${Number(pct.toFixed(4))}%`;
+}
+
 export default function SettingsPanel({ role, userId }: SettingsPanelProps) {
   const { toast } = useToast();
   const [settings, setSettings] = useState<TravelSettingsView | null>(null);
@@ -323,7 +332,7 @@ export default function SettingsPanel({ role, userId }: SettingsPanelProps) {
                   <dd>
                     {activePolicy ? (
                       <>
-                        {activePolicy.name} — {activePolicy.type.replace(/_/g, " ")}, rate {activePolicy.rate ?? "—"},
+                        {activePolicy.name} — {activePolicy.type.replace(/_/g, " ")}, rate {formatFractionPercent(activePolicy.rate)},
                         quote currency {activePolicy.quoteCurrency}
                       </>
                     ) : (

@@ -170,7 +170,7 @@ export default function ServicePickerDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-xl">
+      <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
           {description && <DialogDescription>{description}</DialogDescription>}
@@ -219,7 +219,7 @@ export default function ServicePickerDialog({
             </div>
           )}
           <Input placeholder="Search services…" value={query} onChange={(e) => setQuery(e.target.value)} />
-          <div className="max-h-72 space-y-3 overflow-y-auto">
+          <div className="max-h-[55vh] space-y-3 overflow-y-auto">
             {products !== null && visibleSections.length === 0 && (
               <p className="text-sm text-muted-foreground">
                 {queryLower

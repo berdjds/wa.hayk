@@ -330,7 +330,9 @@ A versioned B2B travel package costing and quotation module inside WAControl:
     `{ ids: string[] }` (zod; 400 on empty/duplicates), ignore unknown ids, and rewrite
     sortOrder in one transaction — a full-table list becomes a clean 0..n-1 sequence, while a
     partial list (the Services tab with a category filter) keeps the existing sortOrder slots
-    of just those rows so the rest of the catalog does not move. Audit
+    of just those rows so the rest of the catalog does not move (**partial-list slot reuse
+    superseded in v0.16.0, decision 39** — it collided across categories on legacy all-zero
+    rows). Audit
     `TRAVEL_CATALOG_REORDERED`. UI: CatalogAdmin Hotels/Services tables use
     @dnd-kit (core/sortable/utilities) with a GripVertical handle column, pointer + keyboard
     sensors, optimistic update with revert + error toast on failure; drag is disabled while a
@@ -396,6 +398,28 @@ A versioned B2B travel package costing and quotation module inside WAControl:
     Adjacent fix: QuoteSummaryBar and the ReviewTab summary/submit dialog no longer show
     Sell / per-paying figures for an INVALID scenario result — the engine's bare-cost
     fallback sell was misleading next to FAILED, so they render "—".
+39. **Catalog deletes, reorder fix, dd-mmm-yyyy dates, dialog layout, narrative auto-fill
+    (v0.16.0).** A UI-batch release: (a) Hard deletes with guards — DELETE on catalog
+    hotels/services (409 while stays/service lines still link the product; rate versions go
+    along, audited `HOTEL_DELETED`/`SERVICE_DELETED`), FX rates (409 on the last rate of a
+    currency, `TRAVEL_FX_DELETED`) and policy versions (409 on the active or last policy;
+    a stale `TravelSettings.defaultPolicyId` is cleared in the same transaction,
+    `TRAVEL_POLICY_DELETED`). (b) Catalog reorder moved to shared `lib/travel/reorder.ts`
+    (`applyCatalogReorder`): the submitted ids are spliced into the positions they already
+    occupy in the canonical `[sortOrder, name]` sequence, then the WHOLE column is rewritten
+    to 0..n-1 in one transaction — the v0.13.1 partial-list slot reuse collided with other
+    categories' values on legacy all-zero rows. (c) All user-facing dates render as
+    dd-mmm-yyyy via `formatDisplayDate`/`formatDisplayDateRange` (`lib/travel/engine/dates.ts`;
+    passthrough, never throws) and every `<Input type="date">` is replaced by
+    `components/travel/DateField.tsx` — a dependency-free calendar popover (no popover
+    primitive exists in components/ui) with min/max day disabling; engine issue messages and
+    package codes keep quoting raw ISO input verbatim. (d) The new-request dialog
+    (RequestsList) groups agency + dates + template, filters the template picker to versions
+    matching the trip length once dates are set, and guards empty dates in submit (DateField
+    has no native `required`). (e) ItineraryTab narrative auto-fill: adding a TRANSPORTATION
+    service with catalog `details` fills a blank (or verbatim-auto-filled) day narrative from
+    it, and removing that service clears the narrative only while untouched — tracked by
+    string equality, so user-typed text never moves.
 
 ## Known limitations
 

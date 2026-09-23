@@ -9,6 +9,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/components/ui/toast";
+import { formatDisplayDateRange } from "@/lib/travel/engine/dates";
+import DateField from "../DateField";
 import { apiError, formatDateTime, parseJson } from "../utils";
 import TravelerSetupEditor from "../TravelerSetupEditor";
 import type { TravelerSetupView } from "../types";
@@ -137,7 +139,7 @@ export default function OverviewTab({ ctx }: { ctx: DetailContext }) {
             <Field label="Title" value={detail.title} />
             <Field label="Agency ref" value={detail.agencyRef} />
             <Field label="Destinations" value={destinations.length ? destinations.join(", ") : null} />
-            <Field label="Dates" value={`${detail.startDate} → ${detail.endDate}`} />
+            <Field label="Dates" value={formatDisplayDateRange(detail.startDate, detail.endDate)} />
             <Field
               label="Travelers"
               value={travelerSummary(travelers)}
@@ -169,11 +171,12 @@ export default function OverviewTab({ ctx }: { ctx: DetailContext }) {
               <div className="grid grid-cols-2 gap-2">
                 <div>
                   <Label>Start</Label>
-                  <Input type="date" value={form.startDate} onChange={(e) => setForm({ ...form, startDate: e.target.value })} required />
+                  <DateField value={form.startDate} onChange={(iso) => setForm({ ...form, startDate: iso })} />
                 </div>
                 <div>
                   <Label>End</Label>
-                  <Input type="date" value={form.endDate} onChange={(e) => setForm({ ...form, endDate: e.target.value })} required />
+                  {/* min pins the end to the start; strict "end after start" stays on invalidDates below. */}
+                  <DateField value={form.endDate} min={form.startDate} onChange={(iso) => setForm({ ...form, endDate: iso })} />
                 </div>
               </div>
             </div>

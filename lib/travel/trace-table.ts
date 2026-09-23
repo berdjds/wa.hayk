@@ -17,7 +17,7 @@ import type {
   ScenarioResultLine,
   ServiceLineInput,
 } from "@/lib/travel/contracts";
-import { nightsBetween } from "./engine/dates";
+import { formatDisplayDateRange, nightsBetween } from "./engine/dates";
 import { displayMoneyCeil, parseMoney } from "./engine/money";
 
 export interface TraceRow {
@@ -156,7 +156,7 @@ export function buildTraceRows(args: {
       g.extraBeds > 0 ? ` + ${g.extraBeds} extra bed${g.extraBeds === 1 ? "" : "s"}` : "";
     rows.push({
       description:
-        `${stayName(stayRef)} — ${key.split("|")[1]}, ${g.firstNight} → ${g.lastNight} ` +
+        `${stayName(stayRef)} — ${key.split("|")[1]}, ${formatDisplayDateRange(g.firstNight, g.lastNight)} ` +
         `(${g.nights} night${g.nights === 1 ? "" : "s"})`,
       basis:
         `${g.rooms} ${g.rooms === 1 ? "room" : "rooms"} × ${displayMoneyCeil(g.rate)} ${g.currency}/night` +

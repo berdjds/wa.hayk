@@ -15,8 +15,9 @@ import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/toast";
 import { QUOTE_STATUSES } from "@/lib/travel/contracts";
-import { nightsBetween } from "@/lib/travel/engine/dates";
+import { formatDisplayDateRange, nightsBetween } from "@/lib/travel/engine/dates";
 import { PageHeader } from "./TravelShell";
+import DateField from "./DateField";
 import TravelerSetupEditor from "./TravelerSetupEditor";
 import { StatusBadge, apiError } from "./utils";
 import type { Agency, RequestListItem, TemplateView, TravelerSetupView } from "./types";
@@ -132,6 +133,11 @@ export default function RequestsList({ role, userId }: RequestsListProps) {
     e.preventDefault();
     if (!form.agencyId) {
       toast("Pick an agency", "error");
+      return;
+    }
+    // DateField has no native `required` enforcement, so guard the dates here.
+    if (!form.startDate || !form.endDate) {
+      toast("Pick start and end dates", "error");
       return;
     }
     setSaving(true);
@@ -264,7 +270,7 @@ export default function RequestsList({ role, userId }: RequestsListProps) {
                     {r.agency.shortCode} — {r.agency.name}
                   </TableCell>
                   <TableCell className="whitespace-nowrap text-muted-foreground">
-                    {r.startDate} → {r.endDate}
+                    {formatDisplayDateRange(r.startDate, r.endDate)}
                   </TableCell>
                   <TableCell>{r.owner.name || r.owner.email}</TableCell>
                   <TableCell>{r.validator ? r.validator.name || r.validator.email : "—"}</TableCell>
@@ -304,9 +310,9 @@ export default function RequestsList({ role, userId }: RequestsListProps) {
           </DialogHeader>
           <form onSubmit={handleCreate} className="space-y-4">
             <div>
-              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Agency &amp; dates</p>
+              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Agency, dates &amp; template</p>
               <div className="grid gap-3 sm:grid-cols-2">
-                <div>
+                <div className="sm:col-span-2">
                   <Label>Agency</Label>
                   <Select value={form.agencyId} onValueChange={(v) => setForm({ ...form, agencyId: v })}>
                     <SelectTrigger>
@@ -322,51 +328,53 @@ export default function RequestsList({ role, userId }: RequestsListProps) {
                   </Select>
                 </div>
                 <div>
-                  <Label>Title</Label>
-                  <Input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} required />
-                </div>
-                <div>
                   <Label>Start date</Label>
-                  <Input type="date" value={form.startDate} onChange={(e) => setForm({ ...form, startDate: e.target.value })} required />
+                  <DateField value={form.startDate} onChange={(iso) => setForm({ ...form, startDate: iso })} />
                 </div>
                 <div>
                   <Label>End date</Label>
-                  <Input type="date" value={form.endDate} onChange={(e) => setForm({ ...form, endDate: e.target.value })} required />
+                  {/* End date can't precede the start date; the picker disables those days. */}
+                  <DateField
+                    value={form.endDate}
+                    onChange={(iso) => setForm({ ...form, endDate: iso })}
+                    min={form.startDate || undefined}
+                  />
+                </div>
+                {templates !== null && (
+                  <div className="sm:col-span-2">
+                    <Label>Template</Label>
+                    <Select value={templateVersionId || "NONE"} onValueChange={pickTemplate}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="No template" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="NONE">No template</SelectItem>
+                        {matchingTemplates.map(({ template: t, version: v }) => (
+                          <SelectItem key={v.id} value={v.id}>
+                            {t.code} — {t.name} — {v.nights} nights (v{v.versionNo})
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    {tripNights !== null && matchingTemplates.length === 0 && (
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        No active template covers {tripNights} nights.
+                      </p>
+                    )}
+                    {tripNights === null && matchingTemplates.length > 0 && (
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        The list is filtered to the trip length once the dates are set.
+                      </p>
+                    )}
+                  </div>
+                )}
+                <div className="sm:col-span-2">
+                  <Label>Title</Label>
+                  <Input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} required />
                 </div>
               </div>
               {invalidDates && <p className="mt-2 text-xs text-red-600">End date must be after the start date.</p>}
             </div>
-            {templates !== null && (
-              <>
-                <Separator />
-                <div>
-                  <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Template</p>
-                  <Select value={templateVersionId || "NONE"} onValueChange={pickTemplate}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="No template" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="NONE">No template</SelectItem>
-                      {matchingTemplates.map(({ template: t, version: v }) => (
-                        <SelectItem key={v.id} value={v.id}>
-                          {t.name} — {v.nights} nights (v{v.versionNo})
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  {tripNights !== null && matchingTemplates.length === 0 && (
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      No active template covers {tripNights} nights.
-                    </p>
-                  )}
-                  {tripNights === null && matchingTemplates.length > 0 && (
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      The list is filtered to the trip length once the dates are set.
-                    </p>
-                  )}
-                </div>
-              </>
-            )}
             <Separator />
             <div>
               <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Travelers</p>

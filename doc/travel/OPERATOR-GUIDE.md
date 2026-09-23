@@ -147,6 +147,12 @@ products, and add rate versions per product. Every new rate starts as NEEDS_REVI
 ignored by pricing until an admin verifies it (Rates tab), so adding a rate is always safe;
 rates are edited or archived, never deleted.
 
+Hotels and services can be **deleted** (v0.16.0, trash action per row) with guards: a hotel
+that any itinerary stay still links, or a service referenced by any service line, cannot be
+deleted (409 — remove those references first); deleting a product takes its rate versions
+along. On the FX & Policy tab, FX rates and policy versions are deletable too — except the
+last rate of a currency and the active/last policy (the engine always needs both).
+
 Transportation tours are priced **per vehicle type**: Sedan and Minivan rates are the catalog
 unit prices; Sprinter and Big bus currently carry the same values pending update. To set a
 fleet-specific price, open the transportation service in Catalog → Services → Rates and add

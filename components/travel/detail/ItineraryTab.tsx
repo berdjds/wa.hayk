@@ -9,8 +9,9 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { EmptyState } from "@/components/ui/empty-state";
 import { useToast } from "@/components/ui/toast";
-import { addDays, daysBetween } from "@/lib/travel/engine/dates";
+import { addDays, daysBetween, formatDisplayDate, formatDisplayDateRange } from "@/lib/travel/engine/dates";
 import { normalizeDayServices, type DayServiceItem, type ScenarioResultLine } from "@/lib/travel/contracts";
+import DateField from "@/components/travel/DateField";
 import ServicePickerDialog, { type ServicePickerTab } from "../ServicePickerDialog";
 import { apiError, money } from "../utils";
 import type { RateView, ServiceProductView, VehicleTypeView } from "../types";
@@ -260,11 +261,30 @@ export default function ItineraryTab({ ctx }: { ctx: DetailContext }) {
   }
 
   function addService(idx: number, item: DayServiceItem) {
-    update(idx, { services: [...days[idx].services, item] });
+    const day = days[idx];
+    const patch: Partial<DayDraft> = { services: [...day.services, item] };
+    // Narrative auto-fill is tracked by string equality only: fill from the
+    // added tour's details when the narrative is blank or still verbatim-equal
+    // to a tour added earlier — a narrative the user typed over never moves.
+    if (item.details && categoryOf(item) === "TRANSPORTATION") {
+      const untouched =
+        day.narrative === "" ||
+        day.services.some((s) => categoryOf(s) === "TRANSPORTATION" && s.details != null && s.details === day.narrative);
+      if (untouched) patch.narrative = item.details;
+    }
+    update(idx, patch);
   }
 
   function removeService(dayIdx: number, svcIdx: number) {
-    update(dayIdx, { services: days[dayIdx].services.filter((_, i) => i !== svcIdx) });
+    const day = days[dayIdx];
+    const removed = day.services[svcIdx];
+    const patch: Partial<DayDraft> = { services: day.services.filter((_, i) => i !== svcIdx) };
+    // Clear the narrative only while it still holds the removed tour's
+    // auto-filled details verbatim; user-edited text survives the removal.
+    if (removed?.details && categoryOf(removed) === "TRANSPORTATION" && day.narrative === removed.details) {
+      patch.narrative = "";
+    }
+    update(dayIdx, patch);
   }
 
   /** Persists an explicit day list — callers pass the list so an auto-save right after generation never depends on setState timing. */
@@ -353,7 +373,7 @@ export default function ItineraryTab({ ctx }: { ctx: DetailContext }) {
             <EmptyState
               icon={CalendarDays}
               title="No itinerary days yet"
-              description={`Generate one day per travel date (${ctx.detail.startDate} → ${ctx.detail.endDate}) or add days manually.`}
+              description={`Generate one day per travel date (${formatDisplayDateRange(ctx.detail.startDate, ctx.detail.endDate)}) or add days manually.`}
               action={<Button onClick={generateFromTravelDates}>Generate days from travel dates</Button>}
             />
           ) : (
@@ -401,7 +421,7 @@ export default function ItineraryTab({ ctx }: { ctx: DetailContext }) {
                   {rail}
                   <div className="min-w-0 flex-1 rounded-xl border bg-card p-4 text-sm shadow-[0_1px_2px_rgb(0_0_0/0.04)]">
                     <div className="mb-1 flex items-center gap-3 font-medium">
-                      <span className="text-muted-foreground">{d.date}</span>
+                      <span className="text-muted-foreground">{formatDisplayDate(d.date)}</span>
                       {d.overnightCity && <span className="text-muted-foreground">· {d.overnightCity}</span>}
                     </div>
                     {d.narrative && <p className="whitespace-pre-wrap">{d.narrative}</p>}
@@ -496,11 +516,10 @@ export default function ItineraryTab({ ctx }: { ctx: DetailContext }) {
                 {rail}
                 <div className="min-w-0 flex-1 rounded-xl border bg-card p-4 shadow-[0_1px_2px_rgb(0_0_0/0.04)]">
                   <div className="flex flex-wrap items-center gap-2">
-                    <Input
-                      type="date"
-                      className="h-8 w-[150px] text-[13px]"
+                    <DateField
+                      className="w-[150px]"
                       value={d.date}
-                      onChange={(e) => update(i, { date: e.target.value })}
+                      onChange={(iso) => update(i, { date: iso })}
                     />
                     <div className="min-w-[180px] flex-1">
                       <Input

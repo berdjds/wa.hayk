@@ -40,6 +40,8 @@ import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useToast } from "@/components/ui/toast";
 import { COST_CATEGORIES, PRICING_BASES, RATE_STATUSES } from "@/lib/travel/contracts";
+import { formatDisplayDate } from "@/lib/travel/engine/dates";
+import DateField from "./DateField";
 import TravelShell from "./TravelShell";
 import { StateBadge, apiError, basisLabel, formatDateTime, hotelDisplayName, money, parseJson } from "./utils";
 import type {
@@ -199,6 +201,20 @@ function useCatalogReorder<T extends { id: string }>(
   return { sensors, onDragEnd };
 }
 
+/** Rates/fees are stored as decimal fractions; display as trimmed percent (0.14 → "14%"). */
+function fractionPercent(value: string | null): string {
+  if (!value) return "—";
+  const n = Number(value) * 100;
+  if (!Number.isFinite(n)) return value;
+  // toFixed + Number drops binary-float noise and trailing zeros (0.16 → 16, not 16.000000000000004).
+  return `${Number(n.toFixed(4))}%`;
+}
+
+/** Validity band display: ISO dates formatted, open ends shown as "…". */
+function validityLabel(from: string | null, to: string | null): string {
+  return `${from ? formatDisplayDate(from) : "…"} → ${to ? formatDisplayDate(to) : "…"}`;
+}
+
 function weekdaysSummary(raw: string | null | undefined): string {
   const days = parseJson<number[]>(raw, []);
   return days.length ? days.map((n) => WEEKDAY_LABELS[n - 1] ?? String(n)).join(", ") : "—";
@@ -281,6 +297,62 @@ function SupplierSelect({
 function intOrNull(v: string): number | null {
   const t = v.trim();
   return t === "" ? null : Number(t);
+}
+
+/**
+ * Shared confirm-delete dialog for catalog entities — the template-delete
+ * pattern (shadcn Dialog + destructive button + axios.delete + toast), so
+ * every Delete affordance behaves identically. Server guards surface as
+ * readable error toasts via apiError.
+ */
+function ConfirmDeleteDialog({
+  title,
+  description,
+  endpoint,
+  successMessage,
+  onClose,
+  onDeleted,
+}: {
+  title: string;
+  description: string;
+  endpoint: string;
+  successMessage: string;
+  onClose: () => void;
+  onDeleted: () => Promise<void> | void;
+}) {
+  const { toast } = useToast();
+  const [busy, setBusy] = useState(false);
+
+  async function handleDelete() {
+    setBusy(true);
+    try {
+      await axios.delete(endpoint);
+      toast(successMessage, "success");
+      await onDeleted();
+    } catch (err) {
+      toast(apiError(err, "Delete failed"), "error");
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>{title}</DialogTitle>
+          <DialogDescription>{description}</DialogDescription>
+        </DialogHeader>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose} disabled={busy}>
+            Cancel
+          </Button>
+          <Button variant="destructive" onClick={handleDelete} disabled={busy}>
+            {busy ? "Deleting..." : "Delete"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -487,11 +559,15 @@ function RateDialog({
             </div>
             <div>
               <Label>Valid from (optional)</Label>
-              <Input type="date" value={form.validFrom} onChange={(e) => setForm({ ...form, validFrom: e.target.value })} />
+              <DateField value={form.validFrom} onChange={(iso) => setForm({ ...form, validFrom: iso })} />
             </div>
             <div>
               <Label>Valid to (exclusive, optional)</Label>
-              <Input type="date" value={form.validTo} onChange={(e) => setForm({ ...form, validTo: e.target.value })} />
+              <DateField
+                value={form.validTo}
+                onChange={(iso) => setForm({ ...form, validTo: iso })}
+                min={form.validFrom || undefined}
+              />
             </div>
             <div>
               <Label>Min stay (nights, optional)</Label>
@@ -559,9 +635,7 @@ function RateTable({
             {productType === "SERVICE" && <TableCell>{r.vehicleType?.name ?? "—"}</TableCell>}
             <TableCell>{r.board ?? "—"}</TableCell>
             <TableCell className="whitespace-nowrap text-right">{r.amount == null ? "TBC" : money(r.amount, r.currency)}</TableCell>
-            <TableCell className="whitespace-nowrap">
-              {r.validFrom ?? "…"} → {r.validTo ?? "…"}
-            </TableCell>
+            <TableCell className="whitespace-nowrap">{validityLabel(r.validFrom, r.validTo)}</TableCell>
             <TableCell>{weekdaysSummary(r.weekdays)}</TableCell>
             <TableCell>{r.minStay ?? "—"}</TableCell>
             <TableCell>
@@ -1060,7 +1134,7 @@ function HotelDialog({
 function validitySummary(rates: RateView[]): string {
   const bands = new Set<string>();
   for (const r of rates) {
-    bands.add(`${r.validFrom ?? "…"} → ${r.validTo ?? "…"}`);
+    bands.add(validityLabel(r.validFrom, r.validTo));
   }
   if (bands.size === 0) return "No rates";
   const list = Array.from(bands);
@@ -1082,6 +1156,7 @@ function HotelsTab() {
     hotelId: "",
     rate: null,
   });
+  const [deleteHotel, setDeleteHotel] = useState<HotelProductView | null>(null);
 
   // Admins manage active flags here, so the list must include inactive rows.
   const load = useCallback(() => {
@@ -1170,6 +1245,9 @@ function HotelsTab() {
                             >
                               {expandedId === h.id ? "Hide rates" : `Rates (${h.rates.length})`}
                             </Button>
+                            <Button size="sm" variant="outline" onClick={() => setDeleteHotel(h)}>
+                              Delete
+                            </Button>
                           </div>
                         </TableCell>
                       </SortableTableRow>
@@ -1226,6 +1304,19 @@ function HotelsTab() {
         onOpenChange={(open) => setRateDialog((d) => ({ ...d, open }))}
         onSaved={load}
       />
+      {deleteHotel && (
+        <ConfirmDeleteDialog
+          title={`Delete hotel ${hotelDisplayName(deleteHotel)}?`}
+          description={`Deletes the hotel and its ${deleteHotel.rates.length} rate version(s). Blocked while any itinerary stay references it. This cannot be undone.`}
+          endpoint={`/api/travel/catalog/hotels/${deleteHotel.id}`}
+          successMessage={`Deleted hotel ${deleteHotel.name}`}
+          onClose={() => setDeleteHotel(null)}
+          onDeleted={() => {
+            setDeleteHotel(null);
+            load();
+          }}
+        />
+      )}
     </Card>
   );
 }
@@ -1246,6 +1337,7 @@ function ServicesTab() {
     serviceId: "",
     rate: null,
   });
+  const [deleteService, setDeleteService] = useState<ServiceProductView | null>(null);
 
   const load = useCallback(() => {
     const params = new URLSearchParams();
@@ -1345,6 +1437,9 @@ function ServicesTab() {
                             >
                               {expandedId === s.id ? "Hide rates" : `Rates (${s.rates.length})`}
                             </Button>
+                            <Button size="sm" variant="outline" onClick={() => setDeleteService(s)}>
+                              Delete
+                            </Button>
                           </div>
                         </TableCell>
                       </SortableTableRow>
@@ -1398,6 +1493,19 @@ function ServicesTab() {
         onOpenChange={(open) => setRateDialog((d) => ({ ...d, open }))}
         onSaved={load}
       />
+      {deleteService && (
+        <ConfirmDeleteDialog
+          title={`Delete service ${deleteService.name}?`}
+          description={`Deletes the service and its ${deleteService.rates.length} rate version(s). Blocked while any itinerary service line references it. This cannot be undone.`}
+          endpoint={`/api/travel/catalog/services/${deleteService.id}`}
+          successMessage={`Deleted service ${deleteService.name}`}
+          onClose={() => setDeleteService(null)}
+          onDeleted={() => {
+            setDeleteService(null);
+            load();
+          }}
+        />
+      )}
     </Card>
   );
 }
@@ -1499,9 +1607,7 @@ function RatesTab() {
                   </TableCell>
                   <TableCell>{r.productType === "VEHICLE" ? "—" : (r.vehicleType?.name ?? "—")}</TableCell>
                   <TableCell className="text-right">{r.amount == null ? "TBC" : money(r.amount, r.currency)}</TableCell>
-                  <TableCell className="whitespace-nowrap text-xs">
-                    {r.validFrom ?? "…"} → {r.validTo ?? "…"}
-                  </TableCell>
+                  <TableCell className="whitespace-nowrap text-xs">{validityLabel(r.validFrom, r.validTo)}</TableCell>
                   <TableCell className="text-xs">{r.evidenceRef ?? "—"}</TableCell>
                   <TableCell className="text-xs">{r.notes ?? "—"}</TableCell>
                   <TableCell>
@@ -1542,6 +1648,8 @@ function FxPolicyTab() {
   const { toast } = useToast();
   const [fx, setFx] = useState<FxVersionView[]>([]);
   const [policies, setPolicies] = useState<PolicyView[]>([]);
+  const [deleteFx, setDeleteFx] = useState<FxVersionView | null>(null);
+  const [deletePolicy, setDeletePolicy] = useState<PolicyView | null>(null);
   const [fxForm, setFxForm] = useState({ currency: "", amdPerUnit: "", effectiveFrom: "" });
   const [policyForm, setPolicyForm] = useState({
     name: "",
@@ -1567,6 +1675,11 @@ function FxPolicyTab() {
 
   async function addFx(e: React.FormEvent) {
     e.preventDefault();
+    // DateField has no `required` attribute — guard the date before POST.
+    if (!fxForm.effectiveFrom) {
+      toast("Pick an effective-from date", "error");
+      return;
+    }
     try {
       await axios.post("/api/travel/fx", fxForm);
       toast("FX rate added", "success");
@@ -1582,10 +1695,12 @@ function FxPolicyTab() {
     try {
       await axios.post("/api/travel/policies", {
         ...policyForm,
-        rate: policyForm.rate || null,
+        // The form speaks percent (what admins quote); the API/engine store
+        // decimal fractions — convert at the boundary.
+        rate: policyForm.rate ? String(Number(policyForm.rate) / 100) : null,
         minProfit: policyForm.minProfit || null,
         minProfitCurrency: policyForm.minProfit ? policyForm.minProfitCurrency : null,
-        feeFraction: policyForm.feeFraction || null,
+        feeFraction: policyForm.feeFraction ? String(Number(policyForm.feeFraction) / 100) : null,
       });
       toast("Policy version created (inactive until activated)", "success");
       setPolicyForm({ ...policyForm, name: "", rate: "", minProfit: "", feeFraction: "" });
@@ -1606,7 +1721,8 @@ function FxPolicyTab() {
   }
 
   return (
-    <div className="grid gap-4 lg:grid-cols-2">
+    // Stacked full-width: the policies table is too wide to share a row with FX.
+    <div className="grid gap-4">
       <Card>
         <CardHeader>
           <CardTitle>FX rates</CardTitle>
@@ -1627,11 +1743,9 @@ function FxPolicyTab() {
               onChange={(e) => setFxForm({ ...fxForm, amdPerUnit: e.target.value })}
               required
             />
-            <Input
-              type="date"
+            <DateField
               value={fxForm.effectiveFrom}
-              onChange={(e) => setFxForm({ ...fxForm, effectiveFrom: e.target.value })}
-              required
+              onChange={(iso) => setFxForm({ ...fxForm, effectiveFrom: iso })}
             />
             <Button type="submit">Add</Button>
           </form>
@@ -1642,6 +1756,7 @@ function FxPolicyTab() {
                   <TableHead>Currency</TableHead>
                   <TableHead>AMD per unit</TableHead>
                   <TableHead>Effective from</TableHead>
+                  <TableHead />
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -1649,7 +1764,12 @@ function FxPolicyTab() {
                   <TableRow key={f.id}>
                     <TableCell className="font-medium">{f.currency}</TableCell>
                     <TableCell>{f.amdPerUnit}</TableCell>
-                    <TableCell>{f.effectiveFrom}</TableCell>
+                    <TableCell>{formatDisplayDate(f.effectiveFrom)}</TableCell>
+                    <TableCell>
+                      <Button size="sm" variant="outline" onClick={() => setDeleteFx(f)}>
+                        Delete
+                      </Button>
+                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -1681,7 +1801,7 @@ function FxPolicyTab() {
               </SelectContent>
             </Select>
             <Input
-              placeholder="Rate fraction (e.g. 0.14)"
+              placeholder="Rate % (e.g. 16)"
               value={policyForm.rate}
               onChange={(e) => setPolicyForm({ ...policyForm, rate: e.target.value })}
             />
@@ -1691,7 +1811,7 @@ function FxPolicyTab() {
               onChange={(e) => setPolicyForm({ ...policyForm, minProfit: e.target.value })}
             />
             <Input
-              placeholder="Fee fraction (optional)"
+              placeholder="Fee % (optional)"
               value={policyForm.feeFraction}
               onChange={(e) => setPolicyForm({ ...policyForm, feeFraction: e.target.value })}
             />
@@ -1735,17 +1855,22 @@ function FxPolicyTab() {
                   <TableRow key={p.id}>
                     <TableCell>{p.name}</TableCell>
                     <TableCell className="text-xs">{p.type.replace(/_/g, " ")}</TableCell>
-                    <TableCell>{p.rate ?? "—"}</TableCell>
+                    <TableCell>{fractionPercent(p.rate)}</TableCell>
                     <TableCell>{p.minProfit ? money(p.minProfit, p.minProfitCurrency) : "—"}</TableCell>
-                    <TableCell>{p.feeFraction ?? "—"}</TableCell>
+                    <TableCell>{fractionPercent(p.feeFraction)}</TableCell>
                     <TableCell>{p.quoteCurrency}</TableCell>
                     <TableCell>{p.active ? <StateBadge value="READY" /> : "—"}</TableCell>
                     <TableCell>
-                      {!p.active && (
-                        <Button size="sm" variant="outline" onClick={() => activatePolicy(p.id)}>
-                          Activate
+                      <div className="flex gap-1">
+                        {!p.active && (
+                          <Button size="sm" variant="outline" onClick={() => activatePolicy(p.id)}>
+                            Activate
+                          </Button>
+                        )}
+                        <Button size="sm" variant="outline" onClick={() => setDeletePolicy(p)}>
+                          Delete
                         </Button>
-                      )}
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))}
@@ -1754,6 +1879,33 @@ function FxPolicyTab() {
           </div>
         </CardContent>
       </Card>
+
+      {deleteFx && (
+        <ConfirmDeleteDialog
+          title={`Delete FX rate for ${deleteFx.currency}?`}
+          description={`Deletes the rate ${deleteFx.amdPerUnit} AMD per ${deleteFx.currency} effective ${formatDisplayDate(deleteFx.effectiveFrom)}. Blocked when it is the currency's last rate. This cannot be undone.`}
+          endpoint={`/api/travel/fx/${deleteFx.id}`}
+          successMessage={`Deleted FX rate for ${deleteFx.currency}`}
+          onClose={() => setDeleteFx(null)}
+          onDeleted={() => {
+            setDeleteFx(null);
+            load();
+          }}
+        />
+      )}
+      {deletePolicy && (
+        <ConfirmDeleteDialog
+          title={`Delete policy ${deletePolicy.name}?`}
+          description="Deletes this policy version. The active policy and the last remaining policy cannot be deleted. This cannot be undone."
+          endpoint={`/api/travel/policies/${deletePolicy.id}`}
+          successMessage={`Deleted policy ${deletePolicy.name}`}
+          onClose={() => setDeletePolicy(null)}
+          onDeleted={() => {
+            setDeletePolicy(null);
+            load();
+          }}
+        />
+      )}
     </div>
   );
 }

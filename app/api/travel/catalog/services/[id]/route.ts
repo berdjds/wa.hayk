@@ -66,3 +66,41 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     return travelError(err, "[API /travel/catalog/services/[id]]");
   }
 }
+
+// Hard delete of a service product AND its rate versions (ADMIN). Blocked
+// while any quote version's service line still links the catalog product —
+// those lines resolve their rates from RateVersion via this FK.
+export async function DELETE(_req: Request, { params }: { params: { id: string } }) {
+  const actor = await getTravelActor();
+  if (!actor) return unauthorized();
+  if (actor.role !== "ADMIN") {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  try {
+    const service = await prisma.serviceProduct.findUnique({ where: { id: params.id } });
+    if (!service) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+    const lines = await prisma.serviceLine.count({ where: { serviceProductId: service.id } });
+    if (lines > 0) {
+      return NextResponse.json(
+        { error: `Cannot delete ${service.name}: used by ${lines} itinerary service line(s)` },
+        { status: 409 },
+      );
+    }
+
+    const rates = await prisma.rateVersion.count({ where: { serviceProductId: service.id } });
+    await prisma.$transaction([
+      prisma.rateVersion.deleteMany({ where: { serviceProductId: service.id } }),
+      prisma.serviceProduct.delete({ where: { id: service.id } }),
+    ]);
+    await writeAuditLog(
+      "SERVICE_DELETED",
+      actor.id,
+      `Deleted service ${service.name} (${service.id}) with ${rates} rate version(s)`,
+    );
+    return NextResponse.json({ ok: true });
+  } catch (err) {
+    return travelError(err, "[API /travel/catalog/services/[id] DELETE]");
+  }
+}

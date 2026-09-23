@@ -8,6 +8,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useToast } from "@/components/ui/toast";
+import { formatDisplayDateRange } from "@/lib/travel/engine/dates";
 import { PageHeader } from "./TravelShell";
 import { StatusBadge, apiError } from "./utils";
 import type { RequestListItem } from "./types";
@@ -71,7 +72,7 @@ export default function ReviewQueue({ role, userId }: ReviewQueueProps) {
                   <TableCell className="font-medium">{r.title}</TableCell>
                   <TableCell>{r.agency.shortCode}</TableCell>
                   <TableCell className="whitespace-nowrap text-muted-foreground">
-                    {r.startDate} → {r.endDate}
+                    {formatDisplayDateRange(r.startDate, r.endDate)}
                   </TableCell>
                   <TableCell>{r.owner.name || r.owner.email}</TableCell>
                   {role === "ADMIN" && (

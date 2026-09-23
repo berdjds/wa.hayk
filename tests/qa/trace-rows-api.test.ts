@@ -75,7 +75,7 @@ describe("calculation trace rows", () => {
     expect(Array.isArray(sc.traceRows)).toBe(true);
     const descriptions = sc.traceRows.map((r: any) => r.description);
     // 3 nights × 100 USD on the fixture hotel.
-    expect(descriptions[0]).toBe("Test Hotel — DBL, 2026-10-01 → 2026-10-03 (3 nights)");
+    expect(descriptions[0]).toBe("Test Hotel — DBL, 01-Oct-2026 → 03-Oct-2026 (3 nights)");
     expect(sc.traceRows[0].amount).toBe("300 USD");
     // Bold Sell/Profit close the table; totals are muted.
     const sell = sc.traceRows[sc.traceRows.length - 2];

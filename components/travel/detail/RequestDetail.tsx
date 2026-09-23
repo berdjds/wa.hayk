@@ -13,7 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useToast } from "@/components/ui/toast";
 import { versionLabel } from "@/lib/travel/contracts";
-import { nightsBetween } from "@/lib/travel/engine/dates";
+import { nightsBetween, formatDisplayDateRange } from "@/lib/travel/engine/dates";
 import { StatusBadge, apiError, money, parseJson } from "../utils";
 import type { TravelRequestDetail, VersionDetail } from "../types";
 import type { ScenarioResult } from "@/lib/travel/contracts";
@@ -223,7 +223,7 @@ export default function RequestDetail({ requestId, role, userId }: RequestDetail
               </div>
               <p className="text-sm font-medium">{detail.title}</p>
               <p className="text-[13px] text-muted-foreground">
-                {detail.agency.shortCode} — {detail.agency.name} · {detail.startDate} → {detail.endDate} (
+                {detail.agency.shortCode} — {detail.agency.name} · {formatDisplayDateRange(detail.startDate, detail.endDate)} (
                 {nights} night{nights === 1 ? "" : "s"} / {nights + 1} days) · Owner:{" "}
                 {detail.owner.name || detail.owner.email} · Validator:{" "}
                 {detail.validator ? detail.validator.name || detail.validator.email : "not assigned"}

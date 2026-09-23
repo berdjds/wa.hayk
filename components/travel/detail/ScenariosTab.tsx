@@ -13,7 +13,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/components/ui/toast";
 import { COST_CATEGORIES, PRICING_BASES } from "@/lib/travel/contracts";
-import { nightsBetween, splitStayIntervals } from "@/lib/travel/engine/dates";
+import { nightsBetween, splitStayIntervals, formatDisplayDate, formatDisplayDateRange } from "@/lib/travel/engine/dates";
+import DateField from "../DateField";
 import { StateBadge, apiError, basisLabel, hotelDisplayName, money, parseJson } from "../utils";
 import type { HotelProductView, VehicleTypeView } from "../types";
 import type { DetailContext } from "./RequestDetail";
@@ -625,7 +626,7 @@ export default function ScenariosTab({ ctx }: { ctx: DetailContext }) {
                           {rows.map((n, ni) => (
                             <li key={ni} className="flex items-baseline justify-between gap-4">
                               <span>
-                                {n.date} · {n.roomType} ×{n.rooms}
+                                {formatDisplayDate(n.date)} · {n.roomType} ×{n.rooms}
                                 {n.extraBeds > 0 ? ` +${n.extraBeds} bed(s)` : ""}
                               </span>
                               <span className="text-right">
@@ -729,11 +730,11 @@ export default function ScenariosTab({ ctx }: { ctx: DetailContext }) {
           <div className="grid grid-cols-2 gap-3">
             <div>
               <Label>Insert from</Label>
-              <Input type="date" value={splitFrom} onChange={(e) => setSplitFrom(e.target.value)} />
+              <DateField value={splitFrom} onChange={setSplitFrom} />
             </div>
             <div>
               <Label>Insert to (exclusive)</Label>
-              <Input type="date" value={splitTo} onChange={(e) => setSplitTo(e.target.value)} />
+              <DateField value={splitTo} onChange={setSplitTo} />
             </div>
           </div>
           {splitPreview && (
@@ -742,7 +743,7 @@ export default function ScenariosTab({ ctx }: { ctx: DetailContext }) {
                 <ul className="space-y-1">
                   {splitPreview.map((p, i) => (
                     <li key={i}>
-                      {p.checkIn} → {p.checkOut} ({nightsBetween(p.checkIn, p.checkOut)} night
+                      {formatDisplayDateRange(p.checkIn, p.checkOut)} ({nightsBetween(p.checkIn, p.checkOut)} night
                       {nightsBetween(p.checkIn, p.checkOut) === 1 ? "" : "s"})
                     </li>
                   ))}
@@ -858,8 +859,8 @@ function StayEditor({
               </SelectContent>
             </Select>
             <Input placeholder="Board" value={stay.board} onChange={(e) => onChange({ board: e.target.value })} />
-            <Input type="date" value={stay.checkIn} onChange={(e) => onChange({ checkIn: e.target.value })} />
-            <Input type="date" value={stay.checkOut} onChange={(e) => onChange({ checkOut: e.target.value })} />
+            <DateField value={stay.checkIn} onChange={(iso) => onChange({ checkIn: iso })} />
+            <DateField value={stay.checkOut} onChange={(iso) => onChange({ checkOut: iso })} />
             <div className="flex gap-1">
               <Button variant="outline" size="sm" onClick={onSplit}>
                 Split
@@ -881,7 +882,7 @@ function StayEditor({
             {stay.city && <span className="text-muted-foreground"> · {stay.city}</span>}
             <span className="text-muted-foreground">
               {" "}
-              · {stay.checkIn} → {stay.checkOut} ({nights} night{nights === 1 ? "" : "s"})
+              · {formatDisplayDateRange(stay.checkIn, stay.checkOut)} ({nights} night{nights === 1 ? "" : "s"})
               {stay.board ? ` · ${stay.board}` : ""}
             </span>
           </div>
@@ -1025,8 +1026,8 @@ function ServiceLineTable({
                   {l.serviceProductId && (
                     <>
                       {" "}
-                      <Badge variant="outline" title={l.date ? `Itinerary day ${l.date}` : "Itinerary-linked"}>
-                        itinerary{l.date ? ` · ${l.date}` : ""}
+                      <Badge variant="outline" title={l.date ? `Itinerary day ${formatDisplayDate(l.date)}` : "Itinerary-linked"}>
+                        itinerary{l.date ? ` · ${formatDisplayDate(l.date)}` : ""}
                       </Badge>
                     </>
                   )}
@@ -1053,8 +1054,8 @@ function ServiceLineTable({
         l.serviceProductId ? (
           <div key={l.key} className="flex flex-wrap items-center gap-2 rounded-lg border bg-muted/20 px-3 py-2 text-sm">
             <span className="font-medium">{l.label}</span>
-            <Badge variant="outline" title={l.date ? `Itinerary day ${l.date}` : "Itinerary-linked"}>
-              itinerary{l.date ? ` · ${l.date}` : ""}
+            <Badge variant="outline" title={l.date ? `Itinerary day ${formatDisplayDate(l.date)}` : "Itinerary-linked"}>
+              itinerary{l.date ? ` · ${formatDisplayDate(l.date)}` : ""}
             </Badge>
             <span className="text-xs text-muted-foreground">
               {basisLabel(l.basis, l.capacity ? Number(l.capacity) : null)}

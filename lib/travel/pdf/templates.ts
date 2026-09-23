@@ -22,6 +22,7 @@ import type {
 } from "@/lib/travel/contracts";
 import { buildTraceRows } from "../trace-table";
 import type { QuotationPdfInput } from "./types";
+import { formatDisplayDate, formatDisplayDateRange } from "../engine/dates";
 import { displayMoneyCeil, groupMoney } from "../engine/money";
 
 export function escapeHtml(value: string): string {
@@ -276,7 +277,8 @@ function headerHtml(input: QuotationPdfInput, docTitle: string): string {
   const contacts = brandingContacts(input)
     .map((line) => `<p class="muted">${line}</p>`)
     .join("");
-  const issued = input.issuedAt ?? new Date().toISOString();
+  // issuedAt is a full ISO timestamp; the document shows the calendar date only.
+  const issued = formatDisplayDate((input.issuedAt ?? new Date().toISOString()).slice(0, 10));
   const destinations =
     input.request.destinations && input.request.destinations.length > 0
       ? `<p class="display-subtitle">${input.request.destinations.map(escapeHtml).join(" · ")}</p>`
@@ -292,7 +294,7 @@ function headerHtml(input: QuotationPdfInput, docTitle: string): string {
             <div class="doc-title">${escapeHtml(docTitle)}</div>
             <p><strong>#${escapeHtml(input.packageCode)}</strong> ${escapeHtml(input.versionLabel)}</p>
             <p class="muted">Issued: ${escapeHtml(issued)}</p>
-            ${input.validUntil ? `<p class="muted">Valid until: ${escapeHtml(input.validUntil)}</p>` : ""}
+            ${input.validUntil ? `<p class="muted">Valid until: ${escapeHtml(formatDisplayDate(input.validUntil))}</p>` : ""}
             ${contacts}
           </td>
         </tr>
@@ -315,7 +317,7 @@ function travelSummaryHtml(input: QuotationPdfInput): string {
     ${sectionBar("Travel Summary")}
     <table>
       <tbody>
-        <tr><th>Travel dates</th><td>${escapeHtml(r.startDate)} → ${escapeHtml(r.endDate)}</td>
+        <tr><th>Travel dates</th><td>${escapeHtml(formatDisplayDateRange(r.startDate, r.endDate))}</td>
             <th>Duration</th><td>${days} days / ${nights} nights</td></tr>
         <tr><th>Destinations</th><td>${destinations}</td>
             <th>Travelers</th><td>${travelerSummary(r.travelers)}</td></tr>
@@ -359,8 +361,8 @@ function itineraryHtml(sc: ScenarioEngineInput): string {
     .map((stay) => {
       const nights = daysBetween(stay.checkIn, stay.checkOut);
       return `<tr>
-        <td>${escapeHtml(stay.checkIn)}</td>
-        <td>${escapeHtml(stay.checkOut)}</td>
+        <td>${escapeHtml(formatDisplayDate(stay.checkIn))}</td>
+        <td>${escapeHtml(formatDisplayDate(stay.checkOut))}</td>
         <td>${nights}</td>
         <td>${escapeHtml(stay.hotelName)}</td>
         <td>${escapeHtml(stay.city ?? "—")}</td>
@@ -397,7 +399,7 @@ function dayByDayHtml(input: QuotationPdfInput): string {
         : "";
       return `
         <div class="day-block">
-          <div class="day-bar">${overnight}Day ${day.dayOffset + 1} — ${escapeHtml(day.date)}</div>
+          <div class="day-bar">${overnight}Day ${day.dayOffset + 1} — ${escapeHtml(formatDisplayDate(day.date))}</div>
           ${day.narrative ? `<p class="keep-wrap">${escapeHtml(day.narrative)}</p>` : ""}
           ${services}
         </div>`;
@@ -557,7 +559,7 @@ function importantNotesHtml(input: QuotationPdfInput): string {
     "This is an offer only; no services have been booked at this stage.",
     "Availability and rates are subject to change until confirmation.",
   ];
-  if (input.validUntil) items.push(`Valid until ${escapeHtml(input.validUntil)}.`);
+  if (input.validUntil) items.push(`Valid until ${escapeHtml(formatDisplayDate(input.validUntil))}.`);
   return `
     ${sectionBar("Important Notes")}
     <div class="notes-box">
@@ -711,7 +713,7 @@ function nightlyTraceHtml(res: ScenarioResult, sc: ScenarioEngineInput | undefin
   const rows = res.nightly
     .map(
       (n) => `<tr>
-        <td>${escapeHtml(n.date)}</td>
+        <td>${escapeHtml(formatDisplayDate(n.date))}</td>
         <td>${escapeHtml(stayName(n.stayRef))}</td>
         <td>${escapeHtml(n.roomType)}</td>
         <td>${n.rooms}</td>
@@ -784,7 +786,7 @@ function calculationTableHtml(
     fallbackPayingPax: input.request.travelers.paying,
   });
   if (rows.length === 0) return "";
-  const header = sc ? `Tour ${sc.tourStart} → ${sc.tourEnd}: ${res.nights} night(s) / ${res.days} day(s)` : "";
+  const header = sc ? `Tour ${formatDisplayDateRange(sc.tourStart, sc.tourEnd)}: ${res.nights} night(s) / ${res.days} day(s)` : "";
   return `
     <h3>Calculation trace</h3>
     ${header ? `<p class="muted">${escapeHtml(header)}</p>` : ""}

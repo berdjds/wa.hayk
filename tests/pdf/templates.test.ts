@@ -23,9 +23,9 @@ describe("client quotation HTML", () => {
     expect(html).toContain("ACME-2026-09-21-0001");
     expect(html).toContain("v02");
     expect(html).toContain("Armenia Autumn Group Tour");
-    expect(html).toContain("2026-10-01");
-    expect(html).toContain("2026-10-06");
-    expect(html).toContain("Valid until: 2026-10-15");
+    expect(html).toContain("01-Oct-2026");
+    expect(html).toContain("06-Oct-2026");
+    expect(html).toContain("Valid until: 15-Oct-2026");
   });
 
   it("labels scenarios as alternatives with their own sell totals", () => {
@@ -179,7 +179,7 @@ describe("client quotation package offer structure", () => {
 
   it("renders day banner bars with the overnight city on the right", () => {
     expect(html).toContain('class="day-bar"');
-    expect(html).toContain("Day 1 — 2026-10-01");
+    expect(html).toContain("Day 1 — 01-Oct-2026");
     expect(html).toContain('class="overnight">Overnight: Yerevan / Երևան');
   });
 
@@ -216,7 +216,7 @@ describe("client quotation package offer structure", () => {
     expect(html).toContain('class="notes-box"');
     expect(html).toContain("This is an offer only; no services have been booked at this stage.");
     expect(html).toContain("Availability and rates are subject to change until confirmation.");
-    expect(html).toContain("Valid until 2026-10-15.");
+    expect(html).toContain("Valid until 15-Oct-2026.");
   });
 
   it("closes with the thank-you banner and a contact line", () => {
@@ -243,9 +243,9 @@ describe("client quotation day-by-day itinerary", () => {
 
   it("renders a day heading, narrative, overnight city and service labels", () => {
     expect(html).toContain("Day-by-Day Itinerary");
-    expect(html).toContain("Day 1 — 2026-10-01");
-    expect(html).toContain("Day 2 — 2026-10-02");
-    expect(html).toContain("Day 3 — 2026-10-03");
+    expect(html).toContain("Day 1 — 01-Oct-2026");
+    expect(html).toContain("Day 2 — 02-Oct-2026");
+    expect(html).toContain("Day 3 — 03-Oct-2026");
     expect(html).toContain("Arrival in Yerevan, transfer to the hotel and welcome dinner.");
     expect(html).toContain("Overnight: Yerevan / Երևան");
     expect(html).toContain("<li>Airport transfer</li>");
@@ -272,7 +272,7 @@ describe("client quotation day-by-day itinerary", () => {
 
   it("skips empty narrative/overnight without stray markup", () => {
     // Day 3 has neither narrative nor overnightCity.
-    const day3 = html.slice(html.indexOf("Day 3 — 2026-10-03"));
+    const day3 = html.slice(html.indexOf("Day 3 — 03-Oct-2026"));
     expect(day3).not.toContain("Overnight:");
   });
 
@@ -393,9 +393,9 @@ describe("internal costing HTML", () => {
   it("renders the calculation trace as a structured table from snapshot data (v0.14.0)", () => {
     expect(html).toContain("Calculation trace");
     expect(html).toContain("<th>Description</th><th>Basis</th><th>Calculation</th><th>Amount</th>");
-    expect(html).toContain("Tour 2026-10-01 → 2026-10-06: 5 night(s) / 6 day(s)");
+    expect(html).toContain("Tour 01-Oct-2026 → 06-Oct-2026: 5 night(s) / 6 day(s)");
     // Consolidated accommodation row from the nightly rows.
-    expect(html).toContain("Grand Hotel Yerevan / Գրանդ Հյուրանոց — STANDARD, 2026-10-01 → 2026-10-02 (2 nights)");
+    expect(html).toContain("Grand Hotel Yerevan / Գրանդ Հյուրանոց — STANDARD, 01-Oct-2026 → 02-Oct-2026 (2 nights)");
     expect(html).toContain("8 rooms × 28,501 AMD/night");
     expect(html).toContain("2 nights × 8 rooms × 28,501");
     expect(html).toContain("456,012 AMD");

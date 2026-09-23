@@ -15,6 +15,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useToast } from "@/components/ui/toast";
 import { addDays } from "@/lib/travel/engine/dates";
+import DateField from "./DateField";
 import { PageHeader } from "./TravelShell";
 import { StateBadge, apiError, money } from "./utils";
 import type { Agency, TemplateView, TemplateVersionView } from "./types";
@@ -441,11 +442,11 @@ function InstantiateDialog({
             </div>
             <div>
               <Label>Start date</Label>
-              <Input type="date" value={form.startDate} onChange={(e) => onStartChange(e.target.value)} required />
+              <DateField value={form.startDate} onChange={onStartChange} />
             </div>
             <div>
               <Label>End date</Label>
-              <Input type="date" value={form.endDate} onChange={(e) => setForm({ ...form, endDate: e.target.value })} required />
+              <DateField value={form.endDate} onChange={(iso) => setForm({ ...form, endDate: iso })} min={form.startDate || undefined} />
             </div>
             <div>
               <Label>Adults</Label>
@@ -471,7 +472,7 @@ function InstantiateDialog({
             <Textarea rows={2} value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
           </div>
           <DialogFooter>
-            <Button type="submit" disabled={saving || !form.agencyId}>
+            <Button type="submit" disabled={saving || !form.agencyId || !form.startDate || !form.endDate}>
               {saving ? "Creating..." : "Create request"}
             </Button>
           </DialogFooter>
@@ -547,7 +548,7 @@ function BatchDialog({
           </div>
           <div>
             <Label>Start date</Label>
-            <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} required />
+            <DateField value={startDate} onChange={setStartDate} />
           </div>
           <div>
             <Label>Pax bands</Label>

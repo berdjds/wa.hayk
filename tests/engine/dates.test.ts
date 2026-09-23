@@ -3,6 +3,8 @@ import {
   addDays,
   daysBetween,
   enumerateNights,
+  formatDisplayDate,
+  formatDisplayDateRange,
   isoWeekday,
   isValidISODate,
   nightsBetween,
@@ -146,5 +148,40 @@ describe("splitStayIntervals", () => {
         { checkIn: "2026-02-30", checkOut: "2026-10-03" },
       ),
     ).toThrow(/invalid date/);
+  });
+});
+
+describe("formatDisplayDate", () => {
+  it("formats ISO dates as dd-mmm-yyyy with zero-padded day", () => {
+    expect(formatDisplayDate("2026-09-04")).toBe("04-Sep-2026");
+    expect(formatDisplayDate("2026-12-25")).toBe("25-Dec-2026");
+    expect(formatDisplayDate("2026-01-01")).toBe("01-Jan-2026");
+  });
+
+  it("handles leap day", () => {
+    expect(formatDisplayDate("2024-02-29")).toBe("29-Feb-2024");
+  });
+
+  it("returns empty string for nullish/empty input", () => {
+    expect(formatDisplayDate(null)).toBe("");
+    expect(formatDisplayDate(undefined)).toBe("");
+    expect(formatDisplayDate("")).toBe("");
+  });
+
+  it("passes non-ISO input through unchanged (never throws)", () => {
+    expect(formatDisplayDate("4 Sep 2026")).toBe("4 Sep 2026");
+    expect(formatDisplayDate("2026-13-01")).toBe("2026-13-01"); // invalid month
+    expect(formatDisplayDate("2026-02-30")).toBe("2026-02-30"); // impossible date
+    expect(formatDisplayDate("2026/09/04")).toBe("2026/09/04");
+  });
+});
+
+describe("formatDisplayDateRange", () => {
+  it("joins both sides with an arrow", () => {
+    expect(formatDisplayDateRange("2026-09-04", "2026-09-07")).toBe("04-Sep-2026 → 07-Sep-2026");
+  });
+
+  it("applies per-side passthrough for invalid input", () => {
+    expect(formatDisplayDateRange(null, "2026-09-07")).toBe(" → 07-Sep-2026");
   });
 });

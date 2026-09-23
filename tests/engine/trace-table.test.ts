@@ -71,7 +71,7 @@ describe("buildTraceRows", () => {
     const rows = build(res, input);
     const stayRow = rows.find((r) => r.description.startsWith("Grand Hotel —"));
     expect(stayRow).toBeDefined();
-    expect(stayRow!.description).toBe("Grand Hotel — DBL, 2026-10-01 → 2026-10-02 (2 nights)");
+    expect(stayRow!.description).toBe("Grand Hotel — DBL, 01-Oct-2026 → 02-Oct-2026 (2 nights)");
     expect(stayRow!.basis).toBe("1 room × 100 USD/night");
     expect(stayRow!.calculation).toBe("2 nights × 100");
     expect(stayRow!.amount).toBe("200 USD");

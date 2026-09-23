@@ -73,6 +73,25 @@ export function isoWeekday(date: string): number {
   return day === 0 ? 7 : day;
 }
 
+const MONTH_ABBR = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/**
+ * "2026-09-04" → "04-Sep-2026" (dd-mmm-yyyy, English abbreviations). Display
+ * helper for UI dates; never throws — nullish input returns "", anything that
+ * is not a valid ISO date passes through unchanged.
+ */
+export function formatDisplayDate(iso: string | null | undefined): string {
+  if (iso == null || iso === "") return "";
+  if (!isValidISODate(iso)) return iso;
+  const [y, m, d] = iso.split("-").map(Number);
+  return `${String(d).padStart(2, "0")}-${MONTH_ABBR[m - 1]}-${y}`;
+}
+
+/** "04-Sep-2026 → 07-Sep-2026" — both sides follow formatDisplayDate passthrough. */
+export function formatDisplayDateRange(from: string | null | undefined, to: string | null | undefined): string {
+  return `${formatDisplayDate(from)} → ${formatDisplayDate(to)}`;
+}
+
 /**
  * Splits the parent stay's segment partition by inserting a sub-interval.
  *
