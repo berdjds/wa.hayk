@@ -65,6 +65,12 @@ WAControl receives messages in real time while the WhatsApp session is `ready`. 
 - Verify the WhatsApp state is `ready`.
 - Check the response from `POST /api/send` for error messages.
 - Ensure the recipient JID is valid (e.g., `123456789@c.us` or `123456789@g.us` for groups).
+- "Not a WhatsApp number: <number>" means the recipient number is not registered on
+  WhatsApp — check the phone on file (v0.15.3+ fails fast with this instead of a cryptic
+  WA Web error).
+- Media (PDF/image) sends failing with "Data passed to getter must include an id property"
+  indicate the container started without the wwebjs media-id patch — check the container
+  log for `[patch-wwebjs] patched sendMessage media id` (v0.15.3; see `doc/current-issues.md`).
 - Check server logs for Puppeteer or `sendWhatsAppMessage` errors.
 
 ## Login fails

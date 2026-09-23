@@ -556,14 +556,21 @@ export async function sendWhatsAppMessage({
   // Normalize number if needed
   let finalChatId = chatId;
   if (!chatId.includes("@g.us")) {
+    let numberId: { _serialized: string } | null | undefined;
     try {
-      const numberId = await state.client.getNumberId(chatId.replace("@c.us", ""));
-      if (numberId && numberId._serialized) {
-        finalChatId = numberId._serialized;
-        console.log("[WhatsApp] normalized number to", finalChatId);
-      }
+      numberId = await state.client.getNumberId(chatId.replace("@c.us", ""));
     } catch {
-      // fall back to provided id
+      // Lookup failed — fall back to the provided id silently.
+    }
+    if (numberId === null) {
+      // getNumberId RESOLVES to null when the number is not registered on
+      // WhatsApp — fail here with a readable message instead of a cryptic
+      // downstream WA Web error.
+      throw new Error("Not a WhatsApp number: " + chatId.split("@")[0]);
+    }
+    if (numberId?._serialized) {
+      finalChatId = numberId._serialized;
+      console.log("[WhatsApp] normalized number to", finalChatId);
     }
   }
 

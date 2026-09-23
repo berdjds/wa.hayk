@@ -112,11 +112,15 @@ the code and must not be regressed:
    `msg.id._serialized` became `msg.id.$1`; `getMessageId()` reads both.
 3. **Avoid `msg.getChat()`** — it crashes with the minified `r: r` error on
    newer versions. Chat ids are derived from `msg.from`/`msg.to` instead.
-4. **Runtime patch.** `scripts/patch-wwebjs.js` (run by
-   `docker-entrypoint.sh` at container start) rewrites whatsapp-web.js's
-   injected `getChats()` from `Promise.all` to `Promise.allSettled` to survive
-   unserializable chat models. It edits `node_modules` in-place; idempotent
-   and non-fatal.
+4. **Runtime patches.** `scripts/patch-wwebjs.js` (run by
+   `docker-entrypoint.sh` at container start) applies two exact-string patches
+   to whatsapp-web.js's injected `Utils.js`: (a) `getChats()` from
+   `Promise.all` to `Promise.allSettled` to survive unserializable chat
+   models; (b) `sendMessage()` restores `message.id = newMsgKey` (and deletes
+   `__x_id`) after the `mediaOptions` spread — MediaData model internals
+   overwrite the id and break every media send with "Data passed to getter
+   must include an id property" (wwebjs#201921). It edits `node_modules`
+   in-place; each patch is idempotent and non-fatal.
 5. **No version pinning.** Pinning WhatsApp Web via `webVersion` snapshots was
    tried and abandoned (stalls at app-state sync). The client runs the live
    version.

@@ -1,8 +1,24 @@
 # Current Known Issues
 
-> Last updated: 2026-08-11 (all resolved, v0.2.6)
+> Last updated: 2026-09-23 (media-send patch, v0.15.3)
 
 This document tracks WhatsApp integration issues that affected message sync and sending in WAControl.
+
+## Media (PDF/image) sends fail with "Data passed to getter must include an id property" — RESOLVED (v0.15.3)
+
+A WhatsApp Web rollout (~2026-09-17) broke media sending: in the injected
+`sendMessage`, spreading the `mediaOptions` MediaData MobX model into the
+outgoing message overwrites the freshly-built `id: newMsgKey` (its enumerable
+internals include `__x_id`, plus `id` from `mediaOptions.toJSON()`), so WA
+Web's Msg memoize getter throws (upstream
+[wwebjs#201921](https://github.com/wwebjs/whatsapp-web.js/issues/201921) /
+[#201922](https://github.com/wwebjs/whatsapp-web.js/issues/201922); fix PRs
+#201923 / #201925). Text sends were unaffected (no `mediaOptions`). Fix:
+`scripts/patch-wwebjs.js` gained a second patch that restores
+`message.id = newMsgKey` (and deletes `__x_id`) right after the spread. Also
+shipped: `sendWhatsAppMessage` now fails fast with "Not a WhatsApp number:
+<number>" when `getNumberId()` resolves to `null`, instead of a cryptic
+downstream error.
 
 ## Resolution summary (2026-08-11, second round — production)
 
